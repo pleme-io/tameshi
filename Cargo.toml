@@ -1,0 +1,58 @@
+[package]
+name = "tameshi"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pleme Team <team@pleme.io>"]
+description = "Tameshi (試し) - Deterministic integrity attestation library for infrastructure layers"
+license = "MIT"
+repository = "https://github.com/pleme-io/tameshi"
+homepage = "https://github.com/pleme-io/tameshi"
+readme = "README.md"
+keywords = ["attestation", "integrity", "blake3", "supply-chain", "slsa"]
+categories = ["cryptography", "development-tools"]
+
+[lib]
+name = "tameshi"
+path = "src/lib.rs"
+
+[dependencies]
+# Cryptographic hashing
+blake3 = "1.5"
+sha2 = "0.10"
+hex = "0.4"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Time and identifiers
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+
+# HTTP client (for OCI registry, remote endpoints)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Configuration (layered: defaults → YAML → envvars)
+figment = { version = "0.10", features = ["yaml", "env"] }
+
+# Error handling
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+
+# Temp files
+tempfile = "3.10"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
