@@ -15,16 +15,20 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    devenv = {
+      url = "github:cachix/devenv";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { nixpkgs, substrate, crate2nix, fenix, ... }:
+  outputs = { nixpkgs, substrate, crate2nix, fenix, devenv, ... }:
     let
       systems = [ "aarch64-darwin" "x86_64-linux" "aarch64-linux" ];
 
       forEachSystem = f: nixpkgs.lib.genAttrs systems (system:
         let
           rustLibrary = import "${substrate}/lib/rust-library.nix" {
-            inherit system nixpkgs crate2nix;
+            inherit system nixpkgs crate2nix devenv;
             nixLib = substrate;
           };
           result = rustLibrary {
