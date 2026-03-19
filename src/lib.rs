@@ -35,6 +35,7 @@
 //! # }
 //! ```
 
+pub mod akeyless_client;
 pub mod alerts;
 pub mod api_types;
 pub mod certification;
@@ -59,6 +60,11 @@ pub mod verify;
 /// use tameshi::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::akeyless_client::{
+        AkeylessClient, AkeylessClientError, AkeylessConfig, HttpAkeylessClient,
+        MockAkeylessClient,
+    };
+    pub use crate::collectors::akeyless::LiveAkeylessCollector;
     pub use crate::collectors::traits::LayerCollector;
     pub use crate::collectors::MockCollector;
     pub use crate::config::ConfigLoader;

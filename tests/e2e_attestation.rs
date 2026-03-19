@@ -810,3 +810,505 @@ fn secure_signature_composition() {
     assert!(secure_master.verify_secure());
     assert!(secure_master.verify_untested());
 }
+
+// ---------------------------------------------------------------------------
+// Test 14: Hackathon demo — full multi-service attestation pipeline
+// ---------------------------------------------------------------------------
+
+/// Exercises the FULL hackathon demo flow end-to-end:
+///   Source -> Build -> Image -> Chart -> K8s -> Akeyless -> Merkle Tree
+///   -> Compliance -> Secure Signature -> Certification -> Verification
+///   -> Tamper Detection -> Gate Decision -> Merkle Inclusion Proofs
+///
+/// All mocked — no real K8s, Nix, or Akeyless needed.
+#[tokio::test]
+async fn hackathon_demo_full_pipeline() {
+    // === Step 1: Source Attestation ===
+    let source = SourceAttestation {
+        repository: "github.com/pleme-io/my-service".to_string(),
+        commit: "abc123def456".to_string(),
+        git_ref: "refs/heads/main".to_string(),
+        commit_signed: true,
+        tree_hash: Blake3Hash::digest(b"git-tree-content"),
+        flake_lock_hash: Blake3Hash::digest(b"flake-lock-content"),
+        flake_input_count: 5,
+        all_inputs_pinned: true,
+    };
+    assert!(source.commit_signed, "Source commit must be signed");
+    assert!(source.all_inputs_pinned, "All flake inputs must be pinned");
+
+    // === Step 2: Build Attestation (inshou would do this) ===
+    let nix_collector = MockCollector::new(LayerType::Nix);
+    let nix_sig = nix_collector.collect().await.unwrap();
+    assert_eq!(nix_sig.layer, LayerType::Nix);
+
+    // === Step 3: Image Attestation ===
+    let oci_collector = MockCollector::new(LayerType::Oci);
+    let oci_sig = oci_collector.collect().await.unwrap();
+    assert_eq!(oci_sig.layer, LayerType::Oci);
+
+    // === Step 4: Helm Attestation ===
+    let helm_collector = MockCollector::new(LayerType::Helm);
+    let helm_sig = helm_collector.collect().await.unwrap();
+    assert_eq!(helm_sig.layer, LayerType::Helm);
+
+    // === Step 5: Kubernetes Attestation ===
+    let k8s_collector = MockCollector::new(LayerType::Kubernetes);
+    let k8s_sig = k8s_collector.collect().await.unwrap();
+    assert_eq!(k8s_sig.layer, LayerType::Kubernetes);
+
+    // === Step 6: Akeyless Secret Attestation ===
+    let akeyless_attestation = AkeylessSecretAttestation {
+        gateway_url: "https://gw.akeyless.io".to_string(),
+        auth_method: AkeylessAuthMethod::K8s,
+        secrets_accessed: vec![
+            AkeylessSecretAccess {
+                path: "/production/db-password".to_string(),
+                secret_type: AkeylessSecretType::DynamicDatabase,
+                value_hash: Blake3Hash::digest(b"real-db-password"),
+                accessed_at: Utc::now(),
+                version: Some(3),
+            },
+            AkeylessSecretAccess {
+                path: "/production/api-key".to_string(),
+                secret_type: AkeylessSecretType::Static,
+                value_hash: Blake3Hash::digest(b"real-api-key"),
+                accessed_at: Utc::now(),
+                version: Some(1),
+            },
+        ],
+        gateway_certificate_hash: Blake3Hash::digest(b"gw-cert"),
+        session_hash: Blake3Hash::digest(b"session"),
+    };
+    let akeyless_collector = AkeylessCollector::new(akeyless_attestation.clone());
+    let akeyless_sig = akeyless_collector.collect().await.unwrap();
+    assert_eq!(akeyless_sig.layer, LayerType::Akeyless);
+    assert_eq!(akeyless_sig.inputs.len(), 2);
+    assert_eq!(akeyless_sig.inputs[0].name, "/production/db-password");
+    assert_eq!(akeyless_sig.inputs[1].name, "/production/api-key");
+
+    // === Step 7: Compose Merkle Tree ===
+    let all_sigs = vec![
+        nix_sig.clone(),
+        oci_sig.clone(),
+        helm_sig.clone(),
+        k8s_sig.clone(),
+        akeyless_sig.clone(),
+    ];
+    assert_eq!(all_sigs.len(), 5, "Must have all 5 layers");
+
+    let merkle_root = compute_merkle_root(&all_sigs);
+
+    // Verify Merkle root is deterministic
+    let merkle_root2 = compute_merkle_root(&all_sigs);
+    assert_eq!(
+        merkle_root, merkle_root2,
+        "Merkle root must be deterministic"
+    );
+
+    // Build untested master signature
+    let master = compose_merkle(&all_sigs, "production");
+    assert!(master.verify_untested(), "Untested Merkle root must verify");
+    assert!(
+        !master.is_fully_attested(),
+        "Without compliance, must not be fully attested"
+    );
+
+    // === Step 8: Compliance Check (kensa would do this) ===
+    let scan = make_vuln_scan();
+    let sbom = make_sbom();
+    let prov = make_provenance();
+
+    let compliance =
+        AttestationBuilder::new("production", "my-service", "strict-production")
+            .with_vuln_scan(&scan, true, true)
+            .with_sbom(&sbom, true)
+            .with_slsa(&prov, &SlsaLevel::L2, true)
+            .build();
+
+    assert!(compliance.all_passed, "All compliance dimensions must pass");
+    assert_eq!(compliance.dimensions.len(), 3, "3 compliance dimensions");
+    let compliance_hash = compliance.compliance_hash.clone();
+
+    // Add compliance to master for secure signature (two-phase)
+    let master_with_compliance = master.with_compliance(compliance_hash.clone());
+    assert!(
+        master_with_compliance.is_fully_attested(),
+        "Must be fully attested after compliance"
+    );
+    assert!(
+        master_with_compliance.verify_untested(),
+        "Untested must still verify"
+    );
+    assert!(
+        master_with_compliance.verify_secure(),
+        "Secure must verify"
+    );
+
+    // Verify two-phase signature composition
+    assert!(
+        master_with_compliance.compliance.is_some(),
+        "Compliance hash must be present"
+    );
+    assert!(
+        master_with_compliance.secure.is_some(),
+        "Secure signature must be present"
+    );
+    let secure = master_with_compliance.secure.as_ref().unwrap();
+    let expected_secure = Blake3Hash::combine(
+        &master_with_compliance.untested,
+        master_with_compliance.compliance.as_ref().unwrap(),
+    );
+    assert_eq!(
+        secure, &expected_secure,
+        "secure = BLAKE3(untested || compliance)"
+    );
+
+    // === Step 9: Product Certification ===
+    let build = BuildAttestation {
+        service: "my-service".to_string(),
+        derivation: "/nix/store/xxxxx-my-service.drv".to_string(),
+        closure_hash: Blake3Hash::digest(b"closure-my-service"),
+        slsa_level: SlsaLevel::L3,
+        reproducible: true,
+        hermetic: true,
+        sbom_hash: Blake3Hash::digest(b"sbom-my-service"),
+        vuln_scan_hash: Blake3Hash::digest(b"vulns-my-service"),
+        cve_count: 1,
+        critical_high_cves: 0,
+        builder: "nix-build@forge.pleme.io".to_string(),
+        built_at: Utc::now(),
+    };
+    let image = ImageAttestation {
+        image_ref: "ghcr.io/pleme-io/my-service".to_string(),
+        tag: "amd64-abc123".to_string(),
+        architecture: "amd64".to_string(),
+        manifest_hash: Blake3Hash::digest(b"manifest-my-service"),
+        cosign_verified: true,
+        signer_identity: Some("github-actions[bot]".to_string()),
+        vuln_scan_hash: Blake3Hash::digest(b"trivy-image-scan"),
+        vuln_count: 2,
+        critical_high_vulns: 0,
+        sbom_hash: Blake3Hash::digest(b"image-sbom"),
+        layer_type: LayerType::Oci,
+    };
+    let chart = ChartAttestation {
+        chart_name: "my-service".to_string(),
+        chart_version: "0.2.0".to_string(),
+        chart_hash: Blake3Hash::digest(b"chart-my-service"),
+        provenance_verified: true,
+        dependency_hashes: vec![DependencyHash {
+            name: "pleme-lib".to_string(),
+            version: "0.3.1".to_string(),
+            hash: Blake3Hash::digest(b"pleme-lib-chart"),
+        }],
+        linter_passed: true,
+        policy_passed: true,
+        registry_ref: "oci://ghcr.io/pleme-io/charts/my-service".to_string(),
+    };
+    let deployment = DeploymentAttestation {
+        namespace: "my-service-production".to_string(),
+        kustomization: "my-service-production".to_string(),
+        source_commit: "abc123def456".to_string(),
+        source_verified: true,
+        manifest_hash: Blake3Hash::digest(b"rendered-k8s-manifests"),
+        all_releases_signed: true,
+        cis_k8s_pass_rate: 0.95,
+        network_policies_verified: true,
+        running_pods: 6,
+        all_healthy: true,
+    };
+
+    let cert = ProductCertification::builder("my-service", "production", "plo")
+        .with_policy(strict_production_policy())
+        .with_source(source)
+        .with_build(build)
+        .with_image(image)
+        .with_chart(chart)
+        .with_deployment(deployment)
+        .with_compliance(compliance.clone())
+        .certify()
+        .unwrap();
+
+    assert!(
+        cert.is_certified(),
+        "Full pipeline certification must pass with strict policy"
+    );
+    assert_eq!(cert.product, "my-service");
+    assert_eq!(cert.environment, "production");
+    assert_eq!(cert.cluster, "plo");
+    // 1 source + 1 build + 1 image + 1 chart + 1 deployment + 1 compliance = 6
+    assert_eq!(cert.stage_results.len(), 6);
+    for sr in &cert.stage_results {
+        assert!(
+            sr.passed,
+            "Stage {:?} must pass: violations = {:?}",
+            sr.stage, sr.violations
+        );
+    }
+
+    // === Step 10: Verification (sekiban would do this) ===
+    let gating_sig = master_with_compliance.gating_signature().clone();
+    let verify_result = verify_master(&master_with_compliance, &gating_sig);
+    assert!(
+        verify_result.passed,
+        "Verification must pass for untampered data: {}",
+        verify_result.description
+    );
+
+    // Verify prefixed roundtrip
+    let prefixed = master_with_compliance.gating_signature_prefixed();
+    assert!(
+        prefixed.starts_with("blake3:"),
+        "Prefixed must start with blake3:"
+    );
+    let roundtrip =
+        tameshi::verify::verify_prefixed(&master_with_compliance, &prefixed);
+    assert!(roundtrip.is_ok(), "Prefixed verification roundtrip must work");
+
+    // === Step 11: Tamper Detection ===
+    // Change one secret value and verify the hash changes at every level
+    let mut tampered_attestation = akeyless_attestation;
+    tampered_attestation.secrets_accessed[0].value_hash =
+        Blake3Hash::digest(b"TAMPERED-password");
+    let tampered_collector = AkeylessCollector::new(tampered_attestation);
+    let tampered_sig = tampered_collector.collect().await.unwrap();
+
+    // Tampered Akeyless signature must differ from original
+    assert_ne!(
+        akeyless_sig.hash, tampered_sig.hash,
+        "Tampered secret MUST change the layer hash"
+    );
+
+    // Tampered Merkle root must differ
+    let tampered_sigs = vec![
+        nix_sig.clone(),
+        oci_sig.clone(),
+        helm_sig.clone(),
+        k8s_sig.clone(),
+        tampered_sig,
+    ];
+    let tampered_root = compute_merkle_root(&tampered_sigs);
+    assert_ne!(
+        merkle_root, tampered_root,
+        "Tampered secret MUST change the Merkle root"
+    );
+
+    // Tampered master verification must fail against original gating signature
+    let tampered_master = compose_merkle(&tampered_sigs, "production")
+        .with_compliance(compliance_hash.clone());
+    let tampered_verify = verify_master(&tampered_master, &gating_sig);
+    assert!(
+        !tampered_verify.passed,
+        "Tampered master must FAIL verification against original gating signature"
+    );
+
+    // === Step 12: Gate Decision ===
+    let gate_policy = tameshi::gating::GatingPolicy {
+        name: "production-gate".to_string(),
+        required_layers: vec![
+            "nix".to_string(),
+            "oci".to_string(),
+            "akeyless".to_string(),
+        ],
+        require_compliance: true,
+        max_signature_age_secs: Some(3600),
+        fail_open: false,
+    };
+    let decision = tameshi::gating::evaluate_gate(
+        &gate_policy,
+        &master_with_compliance,
+        &gating_sig,
+    );
+    assert!(
+        decision.allowed,
+        "Gate should allow valid certification: {}",
+        decision.reason
+    );
+
+    // Gate must deny tampered master
+    let tampered_decision = tameshi::gating::evaluate_gate(
+        &gate_policy,
+        &tampered_master,
+        &gating_sig, // use original expected signature
+    );
+    assert!(
+        !tampered_decision.allowed,
+        "Gate must DENY tampered master signature"
+    );
+
+    // Gate must deny when compliance is missing
+    let no_compliance_master = compose_merkle(&all_sigs, "production");
+    let no_compliance_gating = no_compliance_master.gating_signature().clone();
+    let no_compliance_decision = tameshi::gating::evaluate_gate(
+        &gate_policy,
+        &no_compliance_master,
+        &no_compliance_gating,
+    );
+    assert!(
+        !no_compliance_decision.allowed,
+        "Gate must DENY when compliance is required but missing"
+    );
+
+    // Gate must deny when required layer is missing
+    let missing_layer_policy = tameshi::gating::GatingPolicy {
+        name: "strict-gate".to_string(),
+        required_layers: vec!["fluxcd".to_string()], // not in our layers
+        require_compliance: false,
+        max_signature_age_secs: None,
+        fail_open: false,
+    };
+    let missing_decision = tameshi::gating::evaluate_gate(
+        &missing_layer_policy,
+        &master_with_compliance,
+        &gating_sig,
+    );
+    assert!(
+        !missing_decision.allowed,
+        "Gate must DENY when required layer is missing"
+    );
+
+    // === Step 13: Merkle Inclusion Proofs ===
+    let mut sorted_sigs = all_sigs.clone();
+    sorted_sigs.sort_by(|a, b| a.layer.cmp(&b.layer));
+
+    for i in 0..sorted_sigs.len() {
+        let proof = merkle_proof(&all_sigs, i).expect("Proof should exist");
+        let verified = verify_proof(
+            &proof,
+            &merkle_root,
+            &sorted_sigs[i],
+            i,
+            sorted_sigs.len(),
+        );
+        assert!(
+            verified,
+            "Proof for layer {} at index {} must verify",
+            sorted_sigs[i].layer, i
+        );
+    }
+
+    // Invalid proof: wrong leaf should NOT verify
+    let fake_sig = LayerSignature::new(
+        LayerType::Nix,
+        Blake3Hash::digest(b"fake-data"),
+        "fake",
+        vec![],
+    );
+    let proof_0 = merkle_proof(&all_sigs, 0).unwrap();
+    let invalid_proof = verify_proof(
+        &proof_0,
+        &merkle_root,
+        &fake_sig,
+        0,
+        sorted_sigs.len(),
+    );
+    assert!(!invalid_proof, "Wrong leaf data must NOT verify");
+
+    // === Step 14: Certification determinism ===
+    // Rebuild the exact same compliance and certification to verify determinism.
+    let compliance_for_cert2 =
+        AttestationBuilder::new("production", "my-service", "strict-production")
+            .with_vuln_scan(&scan, true, true)
+            .with_sbom(&sbom, true)
+            .with_slsa(&prov, &SlsaLevel::L2, true)
+            .build();
+
+    let cert2 = ProductCertification::builder("my-service", "production", "plo")
+        .with_policy(strict_production_policy())
+        .with_source(SourceAttestation {
+            repository: "github.com/pleme-io/my-service".to_string(),
+            commit: "abc123def456".to_string(),
+            git_ref: "refs/heads/main".to_string(),
+            commit_signed: true,
+            tree_hash: Blake3Hash::digest(b"git-tree-content"),
+            flake_lock_hash: Blake3Hash::digest(b"flake-lock-content"),
+            flake_input_count: 5,
+            all_inputs_pinned: true,
+        })
+        .with_build(BuildAttestation {
+            service: "my-service".to_string(),
+            derivation: "/nix/store/xxxxx-my-service.drv".to_string(),
+            closure_hash: Blake3Hash::digest(b"closure-my-service"),
+            slsa_level: SlsaLevel::L3,
+            reproducible: true,
+            hermetic: true,
+            sbom_hash: Blake3Hash::digest(b"sbom-my-service"),
+            vuln_scan_hash: Blake3Hash::digest(b"vulns-my-service"),
+            cve_count: 1,
+            critical_high_cves: 0,
+            builder: "nix-build@forge.pleme.io".to_string(),
+            built_at: Utc::now(),
+        })
+        .with_image(ImageAttestation {
+            image_ref: "ghcr.io/pleme-io/my-service".to_string(),
+            tag: "amd64-abc123".to_string(),
+            architecture: "amd64".to_string(),
+            manifest_hash: Blake3Hash::digest(b"manifest-my-service"),
+            cosign_verified: true,
+            signer_identity: Some("github-actions[bot]".to_string()),
+            vuln_scan_hash: Blake3Hash::digest(b"trivy-image-scan"),
+            vuln_count: 2,
+            critical_high_vulns: 0,
+            sbom_hash: Blake3Hash::digest(b"image-sbom"),
+            layer_type: LayerType::Oci,
+        })
+        .with_chart(ChartAttestation {
+            chart_name: "my-service".to_string(),
+            chart_version: "0.2.0".to_string(),
+            chart_hash: Blake3Hash::digest(b"chart-my-service"),
+            provenance_verified: true,
+            dependency_hashes: vec![DependencyHash {
+                name: "pleme-lib".to_string(),
+                version: "0.3.1".to_string(),
+                hash: Blake3Hash::digest(b"pleme-lib-chart"),
+            }],
+            linter_passed: true,
+            policy_passed: true,
+            registry_ref: "oci://ghcr.io/pleme-io/charts/my-service".to_string(),
+        })
+        .with_deployment(DeploymentAttestation {
+            namespace: "my-service-production".to_string(),
+            kustomization: "my-service-production".to_string(),
+            source_commit: "abc123def456".to_string(),
+            source_verified: true,
+            manifest_hash: Blake3Hash::digest(b"rendered-k8s-manifests"),
+            all_releases_signed: true,
+            cis_k8s_pass_rate: 0.95,
+            network_policies_verified: true,
+            running_pods: 6,
+            all_healthy: true,
+        })
+        .with_compliance(compliance_for_cert2)
+        .certify()
+        .unwrap();
+
+    assert_eq!(
+        cert.certification_hash, cert2.certification_hash,
+        "Same inputs must produce same certification hash"
+    );
+
+    // === Summary ===
+    println!("=== HACKATHON DEMO PIPELINE COMPLETE ===");
+    println!("Layers: {}", all_sigs.len());
+    println!("Merkle root: {}", merkle_root.to_prefixed());
+    println!("Compliance hash: {}", compliance_hash.to_prefixed());
+    println!("Secure signature: {}", secure.to_prefixed());
+    println!("Gate decision: ALLOWED");
+    println!("Akeyless secrets attested: {}", akeyless_sig.inputs.len());
+    println!("Tamper detection: WORKING");
+    println!(
+        "Certification: CERTIFIED (product={}, env={}, cluster={})",
+        cert.product, cert.environment, cert.cluster
+    );
+    println!(
+        "Merkle proofs verified: {}/{}",
+        sorted_sigs.len(),
+        sorted_sigs.len()
+    );
+    println!(
+        "Stage results: {}/{} passed",
+        cert.stage_results.iter().filter(|s| s.passed).count(),
+        cert.stage_results.len()
+    );
+}
