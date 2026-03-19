@@ -1,0 +1,21 @@
+[spec]
+path = "openapi.yaml"
+
+[output]
+dir = "./generated"
+
+[sdks]
+targets = ["go", "python", "typescript-fetch", "rust"]
+
+[servers]
+targets = ["rust-axum"]
+
+[mcp]
+targets = ["mcp-rust"]
+name = "tameshi-mcp"
+
+[schemas]
+targets = ["graphql-schema", "protobuf"]
+
+[docs]
+targets = ["markdown"]

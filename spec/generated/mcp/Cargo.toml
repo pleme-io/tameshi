@@ -1,0 +1,48 @@
+[package]
+name = "tameshi_mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89.0"
+description = "Deterministic integrity attestation and compliance verification for infrastructure.
+
+Tameshi unifies two complementary services:
+
+- **sekiban** -- Kubernetes integrity gating via deterministic BLAKE3 signature
+  verification across infrastructure layers (Nix, OCI, Helm, Tofu, etc.).
+- **kensa** -- Compliance engine that runs NIST/OSCAL assessments and drives a
+  multi-stage product certification pipeline.
+
+Together they provide a cryptographically verifiable chain from source code
+through build, image, chart, deployment, and compliance -- producing a single
+certification hash that attests the entire stack.
+"
+license = "MIT"
+
+[[bin]]
+name = "tameshi_mcp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+heck = "0.5"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+rmcp = { version = "0.15", features = ["server", "transport-io"] }
+schemars = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+urlencoding = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true
+
+[lints.clippy]
+pedantic = "warn"

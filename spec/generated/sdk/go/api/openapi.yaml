@@ -1,0 +1,2172 @@
+openapi: 3.0.3
+info:
+  contact:
+    name: pleme-io
+    url: https://github.com/pleme-io/tameshi
+  description: |
+    Deterministic integrity attestation and compliance verification for infrastructure.
+
+    Tameshi unifies two complementary services:
+
+    - **sekiban** -- Kubernetes integrity gating via deterministic BLAKE3 signature
+      verification across infrastructure layers (Nix, OCI, Helm, Tofu, etc.).
+    - **kensa** -- Compliance engine that runs NIST/OSCAL assessments and drives a
+      multi-stage product certification pipeline.
+
+    Together they provide a cryptographically verifiable chain from source code
+    through build, image, chart, deployment, and compliance -- producing a single
+    certification hash that attests the entire stack.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: Tameshi Attestation Platform API
+  version: 0.1.0
+servers:
+- description: "sekiban API -- signature gates, certifications, audit"
+  url: http://localhost:8080
+- description: "kensa API -- compliance engine, reports, certification pipeline"
+  url: http://localhost:8081
+tags:
+- description: Signature gate management (sekiban)
+  name: gates
+- description: Environment certification (sekiban)
+  name: certifications
+- description: Audit trail (sekiban)
+  name: audit
+- description: Signature computation (sekiban)
+  name: signatures
+- description: Compliance results (kensa)
+  name: compliance
+- description: Compliance reports (kensa)
+  name: reports
+- description: Product certification pipeline (kensa)
+  name: certification-pipeline
+- description: Health and readiness probes
+  name: health
+paths:
+  /api/v1/gates:
+    get:
+      description: Returns a summary of every SignatureGate resource across all namespaces.
+      operationId: listGates
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/GateSummary"
+                type: array
+          description: List of gate summaries
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Internal server error
+      summary: List all signature gates
+      tags:
+      - gates
+  /api/v1/gates/{name}:
+    get:
+      description: Returns the full SignatureGate resource including spec and status.
+      operationId: getGate
+      parameters:
+      - description: Name of the SignatureGate resource
+        explode: false
+        in: path
+        name: name
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignatureGate"
+          description: The requested signature gate
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Gate not found
+      summary: Get a signature gate by name
+      tags:
+      - gates
+  /api/v1/gates/{name}/verify:
+    get:
+      description: |
+        Triggers an immediate verification of the gate by recomputing each layer
+        hash and comparing the composite signature against the expected value.
+      operationId: verifyGate
+      parameters:
+      - description: Name of the SignatureGate resource to verify
+        explode: false
+        in: path
+        name: name
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateVerifyResult"
+          description: Verification result
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Gate not found
+      summary: Verify a signature gate
+      tags:
+      - gates
+  /api/v1/certifications:
+    get:
+      description: Returns a summary of every Certification resource across all namespaces.
+      operationId: listCertifications
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/CertificationSummary"
+                type: array
+          description: List of certification summaries
+      summary: List all certifications
+      tags:
+      - certifications
+  /api/v1/certifications/{name}:
+    get:
+      description: Returns the full Certification resource including spec and status.
+      operationId: getCertification
+      parameters:
+      - description: Name of the Certification resource
+        explode: false
+        in: path
+        name: name
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Certification"
+          description: The requested certification
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Certification not found
+      summary: Get certification by name
+      tags:
+      - certifications
+  /api/v1/audit/{environment}:
+    get:
+      description: Returns the ordered list of audit entries for the specified environment.
+      operationId: getAuditTrail
+      parameters:
+      - description: "Environment name (e.g. plo, zek)"
+        explode: false
+        in: path
+        name: environment
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/AuditEntry"
+                type: array
+          description: Audit trail entries in chronological order
+      summary: Get audit trail for environment
+      tags:
+      - audit
+  /api/v1/signatures/compute:
+    post:
+      description: |
+        Computes a deterministic BLAKE3 composite signature from the requested
+        infrastructure layers for the given environment.
+      operationId: computeSignature
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComputeSignatureRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComputeSignatureResponse"
+          description: Computed signature
+      summary: Compute a signature
+      tags:
+      - signatures
+  /api/v1/compliance/results:
+    get:
+      description: Returns summaries of all compliance assessment results.
+      operationId: listComplianceResults
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseResultSummaryList"
+          description: List of compliance result summaries
+      summary: List compliance results
+      tags:
+      - compliance
+  /api/v1/compliance/results/{id}:
+    get:
+      description: Returns the full compliance result including assessment details.
+      operationId: getComplianceResult
+      parameters:
+      - description: Unique identifier of the compliance result
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplianceResult"
+          description: The requested compliance result
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Compliance result not found
+      summary: Get compliance result by ID
+      tags:
+      - compliance
+  /api/v1/compliance/hash:
+    get:
+      description: Returns the BLAKE3 hash of the most recent compliance assessment.
+      operationId: getComplianceHash
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseHashResponse"
+          description: Latest compliance hash
+      summary: Get latest compliance hash
+      tags:
+      - compliance
+  /api/v1/compliance/run:
+    post:
+      description: Triggers a new compliance assessment run against the configured
+        baseline.
+      operationId: runComplianceAssessment
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRunResponse"
+          description: Assessment run initiated
+      summary: Run compliance assessment
+      tags:
+      - compliance
+  /api/v1/compliance/report:
+    get:
+      description: |
+        Generates a compliance report in the requested format. Supports OSCAL
+        and NIST output formats.
+      operationId: getComplianceReport
+      parameters:
+      - description: Report output format
+        explode: true
+        in: query
+        name: format
+        required: false
+        schema:
+          default: oscal
+          enum:
+          - oscal
+          - nist
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                description: Report content in the requested format (OSCAL or NIST
+                  JSON)
+                type: object
+          description: Generated compliance report
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid format parameter
+      summary: Generate compliance report
+      tags:
+      - reports
+  /api/v1/compliance/certify:
+    post:
+      description: |
+        Runs the multi-stage certification pipeline for a product deployment.
+        Evaluates source, build, image, chart, and deployment attestations
+        against the specified policy, producing a deterministic certification hash.
+      operationId: certifyProduct
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertifyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseCertifyResponse"
+          description: Certification result
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid request
+      summary: Certify a product
+      tags:
+      - certification-pipeline
+  /healthz:
+    get:
+      description: Returns 200 when the service process is alive.
+      operationId: healthz
+      responses:
+        "200":
+          description: Service is alive
+      summary: Liveness probe
+      tags:
+      - health
+  /readyz:
+    get:
+      description: "Returns 200 when the service is ready to accept traffic, 503 otherwise."
+      operationId: readyz
+      responses:
+        "200":
+          description: Service is ready
+        "503":
+          description: Service is not ready
+      summary: Readiness probe
+      tags:
+      - health
+components:
+  schemas:
+    Blake3Hash:
+      description: BLAKE3 hash in prefixed hex format
+      example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      pattern: "^blake3:[a-f0-9]{64}$"
+      type: string
+    LayerType:
+      description: Infrastructure layer type used for signature computation
+      enum:
+      - nix
+      - oci
+      - helm
+      - tofu
+      - kubernetes
+      - kindling
+      - tatara
+      - fluxcd
+      - argocd
+      - akeyless
+      type: string
+    GateSummary:
+      description: Abbreviated view of a SignatureGate for list responses
+      example:
+        phase: Pending
+        currentSignature: currentSignature
+        name: name
+        namespace: namespace
+        layers:
+        - nix
+        - nix
+        expectedSignature: expectedSignature
+      properties:
+        name:
+          description: Name of the SignatureGate resource
+          type: string
+        namespace:
+          description: Kubernetes namespace
+          type: string
+        phase:
+          $ref: "#/components/schemas/GatePhase"
+        layers:
+          description: Infrastructure layers this gate covers
+          items:
+            $ref: "#/components/schemas/LayerType"
+          type: array
+        expectedSignature:
+          description: Expected composite signature
+          nullable: true
+          type: string
+        currentSignature:
+          description: Most recently computed composite signature
+          nullable: true
+          type: string
+      required:
+      - layers
+      - name
+      - namespace
+      - phase
+      type: object
+    SignatureGate:
+      description: Full SignatureGate resource with spec and status
+      example:
+        name: name
+        namespace: namespace
+        spec:
+          layers:
+          - nix
+          - nix
+          expectedSignature: expectedSignature
+          compliancePolicy: compliancePolicy
+          targetResources:
+          - operations:
+            - operations
+            - operations
+            kind: kind
+            group: group
+          - operations:
+            - operations
+            - operations
+            kind: kind
+            group: group
+          verificationIntervalSecs: 0
+          expectedCertificationHash: expectedCertificationHash
+        status:
+          phase: Pending
+          currentSignature: currentSignature
+          admissionDecisions:
+            allowed: 1
+            denied: 5
+          layerStatuses:
+          - verified: true
+            lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+            error: error
+            layer: null
+            hash: hash
+          - verified: true
+            lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+            error: error
+            layer: null
+            hash: hash
+          lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+          message: message
+          failureCount: 6
+      properties:
+        name:
+          description: Name of the SignatureGate resource
+          type: string
+        namespace:
+          description: Kubernetes namespace
+          type: string
+        spec:
+          $ref: "#/components/schemas/SignatureGateSpec"
+        status:
+          $ref: "#/components/schemas/SignatureGateStatus"
+      required:
+      - name
+      - namespace
+      - spec
+      - status
+      type: object
+    SignatureGateSpec:
+      description: Desired state of a SignatureGate
+      example:
+        layers:
+        - nix
+        - nix
+        expectedSignature: expectedSignature
+        compliancePolicy: compliancePolicy
+        targetResources:
+        - operations:
+          - operations
+          - operations
+          kind: kind
+          group: group
+        - operations:
+          - operations
+          - operations
+          kind: kind
+          group: group
+        verificationIntervalSecs: 0
+        expectedCertificationHash: expectedCertificationHash
+      properties:
+        layers:
+          description: Infrastructure layers to include in signature computation
+          items:
+            $ref: "#/components/schemas/LayerType"
+          type: array
+        expectedSignature:
+          description: Expected deterministic composite signature
+          type: string
+        targetResources:
+          description: Kubernetes resources this gate controls admission for
+          items:
+            $ref: "#/components/schemas/TargetResource"
+          type: array
+        compliancePolicy:
+          description: Name of the CertificationPolicy to enforce
+          nullable: true
+          type: string
+        expectedCertificationHash:
+          description: Expected certification hash from the compliance engine
+          nullable: true
+          type: string
+        verificationIntervalSecs:
+          description: How often to re-verify the gate in seconds
+          nullable: true
+          type: integer
+      required:
+      - expectedSignature
+      - layers
+      type: object
+    SignatureGateStatus:
+      description: Observed state of a SignatureGate
+      example:
+        phase: Pending
+        currentSignature: currentSignature
+        admissionDecisions:
+          allowed: 1
+          denied: 5
+        layerStatuses:
+        - verified: true
+          lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+          error: error
+          layer: null
+          hash: hash
+        - verified: true
+          lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+          error: error
+          layer: null
+          hash: hash
+        lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+        message: message
+        failureCount: 6
+      properties:
+        phase:
+          $ref: "#/components/schemas/GatePhase"
+        currentSignature:
+          description: Most recently computed composite signature
+          nullable: true
+          type: string
+        lastVerifiedAt:
+          description: Timestamp of the last successful verification
+          format: date-time
+          nullable: true
+          type: string
+        layerStatuses:
+          description: Per-layer verification status
+          items:
+            $ref: "#/components/schemas/LayerStatus"
+          type: array
+        message:
+          description: Human-readable status message
+          nullable: true
+          type: string
+        failureCount:
+          description: Number of consecutive verification failures
+          nullable: true
+          type: integer
+        admissionDecisions:
+          $ref: "#/components/schemas/AdmissionDecisionCounts"
+      required:
+      - phase
+      type: object
+    GatePhase:
+      description: Current phase of a signature gate
+      enum:
+      - Pending
+      - Verified
+      - Failed
+      - Stale
+      type: string
+    TargetResource:
+      description: Kubernetes resource targeted by a gate for admission control
+      example:
+        operations:
+        - operations
+        - operations
+        kind: kind
+        group: group
+      properties:
+        group:
+          description: "API group (e.g. apps, batch, empty string for core)"
+          type: string
+        kind:
+          description: "Resource kind (e.g. Deployment, Job)"
+          type: string
+        operations:
+          description: "Admission operations to intercept (CREATE, UPDATE, DELETE)"
+          items:
+            type: string
+          type: array
+      required:
+      - group
+      - kind
+      - operations
+      type: object
+    LayerStatus:
+      description: Verification status for a single infrastructure layer
+      example:
+        verified: true
+        lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+        error: error
+        layer: null
+        hash: hash
+      properties:
+        layer:
+          $ref: "#/components/schemas/LayerType"
+        hash:
+          description: Computed BLAKE3 hash for this layer
+          type: string
+        verified:
+          description: Whether the layer hash matches the expected value
+          type: boolean
+        lastVerifiedAt:
+          description: Timestamp of the last verification for this layer
+          format: date-time
+          nullable: true
+          type: string
+        error:
+          description: Error message if verification failed
+          nullable: true
+          type: string
+      required:
+      - hash
+      - layer
+      - verified
+      type: object
+    AdmissionDecisionCounts:
+      description: Running counts of admission decisions made by this gate
+      example:
+        allowed: 1
+        denied: 5
+      properties:
+        allowed:
+          description: Number of requests allowed through the gate
+          type: integer
+        denied:
+          description: Number of requests denied by the gate
+          type: integer
+      type: object
+    GateVerifyResult:
+      description: Result of an on-demand gate verification
+      example:
+        phase: Pending
+        currentSignature: currentSignature
+        layerStatuses:
+        - verified: true
+          lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+          error: error
+          layer: null
+          hash: hash
+        - verified: true
+          lastVerifiedAt: 2000-01-23T04:56:07.000+00:00
+          error: error
+          layer: null
+          hash: hash
+        name: name
+        verified: true
+        expectedSignature: expectedSignature
+      properties:
+        name:
+          description: Name of the verified gate
+          type: string
+        verified:
+          description: Whether the gate passed verification
+          type: boolean
+        phase:
+          $ref: "#/components/schemas/GatePhase"
+        expectedSignature:
+          description: The expected composite signature
+          nullable: true
+          type: string
+        currentSignature:
+          description: The freshly computed composite signature
+          nullable: true
+          type: string
+        layerStatuses:
+          description: Per-layer verification results
+          items:
+            $ref: "#/components/schemas/LayerStatus"
+          type: array
+      required:
+      - name
+      - phase
+      - verified
+      type: object
+    CertificationSummary:
+      description: Abbreviated view of a Certification for list responses
+      example:
+        phase: Pending
+        gates:
+        - gates
+        - gates
+        environment: environment
+        name: name
+        namespace: namespace
+        masterSignature: masterSignature
+      properties:
+        name:
+          description: Name of the Certification resource
+          type: string
+        namespace:
+          description: Kubernetes namespace
+          type: string
+        environment:
+          description: "Target environment (e.g. plo, zek)"
+          type: string
+        phase:
+          $ref: "#/components/schemas/CertPhase"
+        gates:
+          description: Names of the SignatureGates included in this certification
+          items:
+            type: string
+          type: array
+        masterSignature:
+          description: Composite master signature across all gates
+          nullable: true
+          type: string
+      required:
+      - environment
+      - name
+      - namespace
+      - phase
+      type: object
+    Certification:
+      description: Full Certification resource with spec and status
+      example:
+        name: name
+        namespace: namespace
+        spec:
+          gates:
+          - gates
+          - gates
+          environment: environment
+          auditRetentionDays: 0
+        status:
+          phase: Pending
+          gateStatuses:
+          - phase: Pending
+            lastCheckedAt: 2000-01-23T04:56:07.000+00:00
+            name: name
+            verified: true
+          - phase: Pending
+            lastCheckedAt: 2000-01-23T04:56:07.000+00:00
+            name: name
+            verified: true
+          masterSignature: masterSignature
+          lastCertifiedAt: 2000-01-23T04:56:07.000+00:00
+          complianceSignature: complianceSignature
+          auditTrail:
+          - signature: signature
+            resource: resource
+            allowed: true
+            action: SignatureComputed
+            details: details
+            timestamp: 2000-01-23T04:56:07.000+00:00
+          - signature: signature
+            resource: resource
+            allowed: true
+            action: SignatureComputed
+            details: details
+            timestamp: 2000-01-23T04:56:07.000+00:00
+          secureSignature: secureSignature
+      properties:
+        name:
+          description: Name of the Certification resource
+          type: string
+        namespace:
+          description: Kubernetes namespace
+          type: string
+        spec:
+          $ref: "#/components/schemas/CertificationSpec"
+        status:
+          $ref: "#/components/schemas/CertificationStatus"
+      required:
+      - name
+      - namespace
+      - spec
+      - status
+      type: object
+    CertificationSpec:
+      description: Desired state of a Certification
+      example:
+        gates:
+        - gates
+        - gates
+        environment: environment
+        auditRetentionDays: 0
+      properties:
+        environment:
+          description: Target environment name
+          type: string
+        gates:
+          description: Names of SignatureGate resources to include
+          items:
+            type: string
+          type: array
+        auditRetentionDays:
+          description: Number of days to retain audit trail entries
+          nullable: true
+          type: integer
+      required:
+      - environment
+      - gates
+      type: object
+    CertificationStatus:
+      description: Observed state of a Certification
+      example:
+        phase: Pending
+        gateStatuses:
+        - phase: Pending
+          lastCheckedAt: 2000-01-23T04:56:07.000+00:00
+          name: name
+          verified: true
+        - phase: Pending
+          lastCheckedAt: 2000-01-23T04:56:07.000+00:00
+          name: name
+          verified: true
+        masterSignature: masterSignature
+        lastCertifiedAt: 2000-01-23T04:56:07.000+00:00
+        complianceSignature: complianceSignature
+        auditTrail:
+        - signature: signature
+          resource: resource
+          allowed: true
+          action: SignatureComputed
+          details: details
+          timestamp: 2000-01-23T04:56:07.000+00:00
+        - signature: signature
+          resource: resource
+          allowed: true
+          action: SignatureComputed
+          details: details
+          timestamp: 2000-01-23T04:56:07.000+00:00
+        secureSignature: secureSignature
+      properties:
+        phase:
+          $ref: "#/components/schemas/CertPhase"
+        masterSignature:
+          description: Composite master signature across all gates
+          nullable: true
+          type: string
+        complianceSignature:
+          description: BLAKE3 hash of the compliance assessment result
+          nullable: true
+          type: string
+        secureSignature:
+          description: BLAKE3 hash combining master and compliance signatures
+          nullable: true
+          type: string
+        lastCertifiedAt:
+          description: Timestamp of the last successful certification
+          format: date-time
+          nullable: true
+          type: string
+        gateStatuses:
+          description: Status of each gate included in this certification
+          items:
+            $ref: "#/components/schemas/GateStatusRef"
+          type: array
+        auditTrail:
+          description: Ordered audit trail for this certification
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+          type: array
+      required:
+      - phase
+      type: object
+    CertPhase:
+      description: Current phase of a certification
+      enum:
+      - Pending
+      - Certified
+      - Degraded
+      - Failed
+      type: string
+    GateStatusRef:
+      description: Reference to a gate's status within a certification
+      example:
+        phase: Pending
+        lastCheckedAt: 2000-01-23T04:56:07.000+00:00
+        name: name
+        verified: true
+      properties:
+        name:
+          description: Name of the referenced SignatureGate
+          type: string
+        verified:
+          description: Whether the gate is currently verified
+          type: boolean
+        phase:
+          $ref: "#/components/schemas/GatePhase"
+        lastCheckedAt:
+          description: Timestamp of the last status check
+          format: date-time
+          nullable: true
+          type: string
+      required:
+      - name
+      - phase
+      - verified
+      type: object
+    AuditEntry:
+      description: Single entry in the audit trail
+      example:
+        signature: signature
+        resource: resource
+        allowed: true
+        action: SignatureComputed
+        details: details
+        timestamp: 2000-01-23T04:56:07.000+00:00
+      properties:
+        timestamp:
+          description: When the audit event occurred
+          format: date-time
+          type: string
+        action:
+          $ref: "#/components/schemas/AuditAction"
+        signature:
+          description: Signature associated with this audit event
+          type: string
+        details:
+          description: Human-readable details about the event
+          nullable: true
+          type: string
+        resource:
+          description: Kubernetes resource involved (e.g. apps/v1/Deployment/my-app)
+          nullable: true
+          type: string
+        allowed:
+          description: Whether the operation was allowed (for admission events)
+          nullable: true
+          type: boolean
+      required:
+      - action
+      - signature
+      - timestamp
+      type: object
+    AuditAction:
+      description: Type of audit action
+      enum:
+      - SignatureComputed
+      - SignatureVerified
+      - VerificationFailed
+      - ComplianceTestRun
+      - Certified
+      - Degraded
+      - GateAllowed
+      - GateDenied
+      type: string
+    ComputeSignatureRequest:
+      description: Request to compute a deterministic composite signature
+      example:
+        environment: environment
+        layers:
+        - nix
+        - nix
+      properties:
+        layers:
+          description: Infrastructure layers to include in the computation
+          items:
+            $ref: "#/components/schemas/LayerType"
+          type: array
+        environment:
+          description: Target environment name
+          type: string
+      required:
+      - environment
+      - layers
+      type: object
+    ComputeSignatureResponse:
+      description: Result of a signature computation
+      example:
+        environment: environment
+        signature: signature
+        layers:
+        - layers
+        - layers
+      properties:
+        signature:
+          description: Computed BLAKE3 composite signature
+          type: string
+        layers:
+          description: Layer types that contributed to the signature
+          items:
+            type: string
+          type: array
+        environment:
+          description: Environment the signature was computed for
+          type: string
+      required:
+      - environment
+      - layers
+      - signature
+      type: object
+    LayerSignature:
+      description: Signature data for a single infrastructure layer
+      properties:
+        layer:
+          $ref: "#/components/schemas/LayerType"
+        hash:
+          description: BLAKE3 hash of all inputs for this layer
+          type: string
+        metadata:
+          $ref: "#/components/schemas/SignatureMetadata"
+        inputs:
+          description: Individual input hashes that compose this layer signature
+          items:
+            $ref: "#/components/schemas/InputHash"
+          type: array
+      required:
+      - hash
+      - inputs
+      - layer
+      - metadata
+      type: object
+    SignatureMetadata:
+      description: Metadata about a signature computation
+      properties:
+        computedAt:
+          description: Timestamp when the signature was computed
+          format: date-time
+          type: string
+        collectorVersion:
+          description: Version of the collector that produced this signature
+          type: string
+        source:
+          description: Identifier for the source that produced the inputs
+          type: string
+        environment:
+          description: Environment context for the computation
+          nullable: true
+          type: string
+      required:
+      - collectorVersion
+      - computedAt
+      - source
+      type: object
+    InputHash:
+      description: Hash of a single input artifact within a layer
+      properties:
+        name:
+          description: Logical name of the input artifact
+          type: string
+        hash:
+          description: BLAKE3 hash of the input content
+          type: string
+        size:
+          description: Size of the input in bytes
+          nullable: true
+          type: integer
+      required:
+      - hash
+      - name
+      type: object
+    MasterSignature:
+      description: Composite master signature across all infrastructure layers
+      properties:
+        untested:
+          description: Raw composite hash before compliance or security attestation
+          type: string
+        compliance:
+          description: Hash incorporating compliance assessment results
+          nullable: true
+          type: string
+        secure:
+          description: Hash incorporating security scan results
+          nullable: true
+          type: string
+        layers:
+          description: Per-layer signatures that compose the master
+          items:
+            $ref: "#/components/schemas/LayerSignature"
+          type: array
+        computedAt:
+          description: Timestamp when the master signature was computed
+          format: date-time
+          type: string
+        environment:
+          description: Environment the master signature covers
+          type: string
+      required:
+      - computedAt
+      - environment
+      - layers
+      - untested
+      type: object
+    ResultSummary:
+      description: Abbreviated view of a compliance result
+      example:
+        environment: environment
+        totalControls: 0
+        notSatisfied: 1
+        satisfied: 6
+        performedAt: 2000-01-23T04:56:07.000+00:00
+        id: id
+        baseline: low
+        complianceHash: complianceHash
+        allSatisfied: true
+      properties:
+        id:
+          description: Unique identifier for this compliance result
+          type: string
+        environment:
+          description: Environment that was assessed
+          type: string
+        baseline:
+          $ref: "#/components/schemas/ComplianceBaseline"
+        complianceHash:
+          description: BLAKE3 hash of the assessment result
+          type: string
+        allSatisfied:
+          description: Whether all controls are satisfied
+          type: boolean
+        totalControls:
+          description: Total number of controls assessed
+          type: integer
+        satisfied:
+          description: Number of satisfied controls
+          type: integer
+        notSatisfied:
+          description: Number of unsatisfied controls
+          type: integer
+        performedAt:
+          description: When the assessment was performed
+          format: date-time
+          type: string
+      required:
+      - allSatisfied
+      - baseline
+      - complianceHash
+      - environment
+      - id
+      - notSatisfied
+      - performedAt
+      - satisfied
+      - totalControls
+      type: object
+    ComplianceResult:
+      description: Full compliance assessment result
+      example:
+        assessmentResult: "{}"
+        environment: environment
+        computedAt: 2000-01-23T04:56:07.000+00:00
+        frameworkHash: frameworkHash
+        catalogHash: catalogHash
+        id: id
+        baseline: low
+        complianceHash: complianceHash
+        allSatisfied: true
+      properties:
+        id:
+          description: Unique identifier for this compliance result
+          type: string
+        environment:
+          description: Environment that was assessed
+          type: string
+        baseline:
+          $ref: "#/components/schemas/ComplianceBaseline"
+        frameworkHash:
+          description: BLAKE3 hash of the compliance framework definition
+          type: string
+        catalogHash:
+          description: BLAKE3 hash of the control catalog
+          type: string
+        assessmentResult:
+          description: Full OSCAL assessment result object
+          type: object
+        complianceHash:
+          description: BLAKE3 hash of the entire assessment result
+          type: string
+        allSatisfied:
+          description: Whether all controls are satisfied
+          type: boolean
+        computedAt:
+          description: When the result was computed
+          format: date-time
+          type: string
+      required:
+      - allSatisfied
+      - assessmentResult
+      - baseline
+      - catalogHash
+      - complianceHash
+      - computedAt
+      - environment
+      - frameworkHash
+      - id
+      type: object
+    HashResponse:
+      description: Latest compliance hash information
+      example:
+        environment: environment
+        computedAt: 2000-01-23T04:56:07.000+00:00
+        baseline: low
+        complianceHash: complianceHash
+      properties:
+        complianceHash:
+          description: BLAKE3 hash of the most recent compliance assessment
+          type: string
+        environment:
+          description: Environment of the assessment
+          type: string
+        baseline:
+          $ref: "#/components/schemas/ComplianceBaseline"
+        computedAt:
+          description: When the hash was computed
+          format: date-time
+          type: string
+      required:
+      - baseline
+      - complianceHash
+      - computedAt
+      - environment
+      type: object
+    RunResponse:
+      description: Response from triggering a compliance assessment
+      example:
+        message: message
+        status: status
+      properties:
+        status:
+          description: "Status of the run (e.g. started, completed)"
+          type: string
+        message:
+          description: Human-readable message about the run
+          type: string
+      required:
+      - message
+      - status
+      type: object
+    ComplianceBaseline:
+      description: NIST compliance baseline level
+      enum:
+      - low
+      - moderate
+      - high
+      type: string
+    CertifyRequest:
+      description: Request to certify a product deployment through the multi-stage
+        pipeline
+      example:
+        cluster: cluster
+        product: product
+        environment: environment
+        images:
+        - vulnScanHash: vulnScanHash
+          vulnCount: 5
+          manifestHash: manifestHash
+          imageRef: imageRef
+          tag: tag
+          signerIdentity: signerIdentity
+          sbomHash: sbomHash
+          architecture: architecture
+          cosignVerified: true
+          criticalHighVulns: 5
+        - vulnScanHash: vulnScanHash
+          vulnCount: 5
+          manifestHash: manifestHash
+          imageRef: imageRef
+          tag: tag
+          signerIdentity: signerIdentity
+          sbomHash: sbomHash
+          architecture: architecture
+          cosignVerified: true
+          criticalHighVulns: 5
+        charts:
+        - chartName: chartName
+          chartVersion: chartVersion
+          policyPassed: true
+          registryRef: registryRef
+          provenanceVerified: true
+          chartHash: chartHash
+          dependencyHashes:
+          - dependencyHashes
+          - dependencyHashes
+          linterPassed: true
+        - chartName: chartName
+          chartVersion: chartVersion
+          policyPassed: true
+          registryRef: registryRef
+          provenanceVerified: true
+          chartHash: chartHash
+          dependencyHashes:
+          - dependencyHashes
+          - dependencyHashes
+          linterPassed: true
+        builds:
+        - vulnScanHash: vulnScanHash
+          slsaLevel: L0
+          reproducible: true
+          builtAt: 2000-01-23T04:56:07.000+00:00
+          service: service
+          hermetic: true
+          criticalHighCves: 1
+          builder: builder
+          derivation: derivation
+          closureHash: closureHash
+          cveCount: 6
+          sbomHash: sbomHash
+        - vulnScanHash: vulnScanHash
+          slsaLevel: L0
+          reproducible: true
+          builtAt: 2000-01-23T04:56:07.000+00:00
+          service: service
+          hermetic: true
+          criticalHighCves: 1
+          builder: builder
+          derivation: derivation
+          closureHash: closureHash
+          cveCount: 6
+          sbomHash: sbomHash
+        source:
+          gitRef: gitRef
+          flakeInputCount: 0
+          treeHash: treeHash
+          allInputsPinned: true
+          commit: commit
+          repository: repository
+          flakeLockHash: flakeLockHash
+          commitSigned: true
+        deployment:
+          kustomization: kustomization
+          allReleasesSigned: true
+          manifestHash: manifestHash
+          namespace: namespace
+          cisK8sPassRate: 2.302136
+          sourceVerified: true
+          allHealthy: true
+          networkPoliciesVerified: true
+          runningPods: 7
+          sourceCommit: sourceCommit
+        policy: default
+      properties:
+        product:
+          description: Product name being certified
+          type: string
+        environment:
+          description: "Target environment (e.g. plo, zek)"
+          type: string
+        cluster:
+          description: Kubernetes cluster name
+          type: string
+        source:
+          $ref: "#/components/schemas/SourceAttestation"
+        builds:
+          description: Build attestations for each service
+          items:
+            $ref: "#/components/schemas/BuildAttestation"
+          type: array
+        images:
+          description: Container image attestations
+          items:
+            $ref: "#/components/schemas/ImageAttestation"
+          type: array
+        charts:
+          description: Helm chart attestations
+          items:
+            $ref: "#/components/schemas/ChartAttestation"
+          type: array
+        deployment:
+          $ref: "#/components/schemas/DeploymentAttestation"
+        policy:
+          default: default
+          description: Name of the CertificationPolicy to evaluate against
+          type: string
+      required:
+      - builds
+      - charts
+      - cluster
+      - deployment
+      - environment
+      - images
+      - product
+      - source
+      type: object
+    CertifyResponse:
+      description: Result of the certification pipeline
+      example:
+        certificationHash: certificationHash
+        violations:
+        - violations
+        - violations
+        stages:
+        - stage: stage
+          violations:
+          - violations
+          - violations
+          passed: true
+          hash: hash
+        - stage: stage
+          violations:
+          - violations
+          - violations
+          passed: true
+          hash: hash
+        certified: true
+        complianceHash: complianceHash
+      properties:
+        certified:
+          description: Whether the product passed certification
+          type: boolean
+        certificationHash:
+          description: Deterministic BLAKE3 hash of the entire certification
+          type: string
+        complianceHash:
+          description: BLAKE3 hash of the compliance dimension
+          nullable: true
+          type: string
+        stages:
+          description: Result for each pipeline stage
+          items:
+            $ref: "#/components/schemas/StageStatus"
+          type: array
+        violations:
+          description: List of policy violations found
+          items:
+            type: string
+          type: array
+      required:
+      - certificationHash
+      - certified
+      - stages
+      - violations
+      type: object
+    StageStatus:
+      description: Result of a single certification pipeline stage
+      example:
+        stage: stage
+        violations:
+        - violations
+        - violations
+        passed: true
+        hash: hash
+      properties:
+        stage:
+          description: "Stage name (e.g. source, build, image, chart, deployment)"
+          type: string
+        passed:
+          description: Whether the stage passed
+          type: boolean
+        hash:
+          description: BLAKE3 hash of the stage attestation data
+          type: string
+        violations:
+          description: Policy violations found in this stage
+          items:
+            type: string
+          type: array
+      required:
+      - hash
+      - passed
+      - stage
+      - violations
+      type: object
+    SourceAttestation:
+      description: Attestation of source code integrity
+      example:
+        gitRef: gitRef
+        flakeInputCount: 0
+        treeHash: treeHash
+        allInputsPinned: true
+        commit: commit
+        repository: repository
+        flakeLockHash: flakeLockHash
+        commitSigned: true
+      properties:
+        repository:
+          description: Git repository URL
+          type: string
+        commit:
+          description: Full commit SHA
+          type: string
+        gitRef:
+          description: Git reference (branch or tag)
+          type: string
+        commitSigned:
+          description: Whether the commit has a valid GPG/SSH signature
+          type: boolean
+        treeHash:
+          description: Git tree hash of the commit
+          type: string
+        flakeLockHash:
+          description: BLAKE3 hash of flake.lock
+          type: string
+        flakeInputCount:
+          description: Number of flake inputs
+          type: integer
+        allInputsPinned:
+          description: Whether all flake inputs are pinned to exact revisions
+          type: boolean
+      required:
+      - allInputsPinned
+      - commit
+      - commitSigned
+      - flakeInputCount
+      - flakeLockHash
+      - gitRef
+      - repository
+      - treeHash
+      type: object
+    BuildAttestation:
+      description: Attestation of a build artifact
+      example:
+        vulnScanHash: vulnScanHash
+        slsaLevel: L0
+        reproducible: true
+        builtAt: 2000-01-23T04:56:07.000+00:00
+        service: service
+        hermetic: true
+        criticalHighCves: 1
+        builder: builder
+        derivation: derivation
+        closureHash: closureHash
+        cveCount: 6
+        sbomHash: sbomHash
+      properties:
+        service:
+          description: Name of the service that was built
+          type: string
+        derivation:
+          description: Nix store derivation path
+          type: string
+        closureHash:
+          description: BLAKE3 hash of the Nix closure
+          type: string
+        slsaLevel:
+          $ref: "#/components/schemas/SlsaLevel"
+        reproducible:
+          description: Whether the build is reproducible
+          type: boolean
+        hermetic:
+          description: Whether the build is hermetic (no network access)
+          type: boolean
+        sbomHash:
+          description: BLAKE3 hash of the software bill of materials
+          nullable: true
+          type: string
+        vulnScanHash:
+          description: BLAKE3 hash of vulnerability scan results
+          nullable: true
+          type: string
+        cveCount:
+          description: Total number of CVEs found
+          nullable: true
+          type: integer
+        criticalHighCves:
+          description: Number of critical and high severity CVEs
+          nullable: true
+          type: integer
+        builder:
+          description: "Builder identity (e.g. nix, bazel)"
+          nullable: true
+          type: string
+        builtAt:
+          description: Timestamp when the build completed
+          format: date-time
+          nullable: true
+          type: string
+      required:
+      - closureHash
+      - derivation
+      - hermetic
+      - reproducible
+      - service
+      - slsaLevel
+      type: object
+    ImageAttestation:
+      description: Attestation of a container image
+      example:
+        vulnScanHash: vulnScanHash
+        vulnCount: 5
+        manifestHash: manifestHash
+        imageRef: imageRef
+        tag: tag
+        signerIdentity: signerIdentity
+        sbomHash: sbomHash
+        architecture: architecture
+        cosignVerified: true
+        criticalHighVulns: 5
+      properties:
+        imageRef:
+          description: Full image reference (registry/repo)
+          type: string
+        tag:
+          description: Image tag
+          type: string
+        architecture:
+          description: "Target CPU architecture (e.g. amd64, arm64)"
+          type: string
+        manifestHash:
+          description: OCI manifest digest
+          type: string
+        cosignVerified:
+          description: Whether the image signature was verified with cosign
+          type: boolean
+        signerIdentity:
+          description: Identity of the cosign signer
+          nullable: true
+          type: string
+        vulnScanHash:
+          description: BLAKE3 hash of vulnerability scan results
+          nullable: true
+          type: string
+        vulnCount:
+          description: Total number of vulnerabilities found
+          nullable: true
+          type: integer
+        criticalHighVulns:
+          description: Number of critical and high severity vulnerabilities
+          nullable: true
+          type: integer
+        sbomHash:
+          description: BLAKE3 hash of the image SBOM
+          nullable: true
+          type: string
+      required:
+      - architecture
+      - cosignVerified
+      - imageRef
+      - manifestHash
+      - tag
+      type: object
+    ChartAttestation:
+      description: Attestation of a Helm chart
+      example:
+        chartName: chartName
+        chartVersion: chartVersion
+        policyPassed: true
+        registryRef: registryRef
+        provenanceVerified: true
+        chartHash: chartHash
+        dependencyHashes:
+        - dependencyHashes
+        - dependencyHashes
+        linterPassed: true
+      properties:
+        chartName:
+          description: Helm chart name
+          type: string
+        chartVersion:
+          description: Helm chart version
+          type: string
+        chartHash:
+          description: BLAKE3 hash of the packaged chart
+          type: string
+        provenanceVerified:
+          description: Whether the chart provenance file was verified
+          type: boolean
+        dependencyHashes:
+          description: BLAKE3 hashes of chart dependencies
+          items:
+            type: string
+          nullable: true
+          type: array
+        linterPassed:
+          description: Whether the chart passed helm lint
+          type: boolean
+        policyPassed:
+          description: Whether the chart passed OPA/Kyverno policies
+          type: boolean
+        registryRef:
+          description: OCI registry reference for the chart
+          nullable: true
+          type: string
+      required:
+      - chartHash
+      - chartName
+      - chartVersion
+      - linterPassed
+      - policyPassed
+      - provenanceVerified
+      type: object
+    DeploymentAttestation:
+      description: Attestation of a Kubernetes deployment
+      example:
+        kustomization: kustomization
+        allReleasesSigned: true
+        manifestHash: manifestHash
+        namespace: namespace
+        cisK8sPassRate: 2.302136
+        sourceVerified: true
+        allHealthy: true
+        networkPoliciesVerified: true
+        runningPods: 7
+        sourceCommit: sourceCommit
+      properties:
+        namespace:
+          description: Kubernetes namespace
+          type: string
+        kustomization:
+          description: FluxCD Kustomization name
+          type: string
+        sourceCommit:
+          description: Git commit the deployment was sourced from
+          type: string
+        sourceVerified:
+          description: Whether the source commit signature was verified
+          type: boolean
+        manifestHash:
+          description: BLAKE3 hash of rendered Kubernetes manifests
+          type: string
+        allReleasesSigned:
+          description: Whether all HelmRelease resources have verified signatures
+          type: boolean
+        cisK8sPassRate:
+          description: CIS Kubernetes benchmark pass rate (0.0 to 1.0)
+          format: float
+          nullable: true
+          type: number
+        networkPoliciesVerified:
+          description: Whether required NetworkPolicy resources are in place
+          type: boolean
+        runningPods:
+          description: Number of running pods in the deployment
+          type: integer
+        allHealthy:
+          description: Whether all pods are in healthy state
+          type: boolean
+      required:
+      - allHealthy
+      - allReleasesSigned
+      - kustomization
+      - manifestHash
+      - namespace
+      - networkPoliciesVerified
+      - runningPods
+      - sourceCommit
+      - sourceVerified
+      type: object
+    SlsaLevel:
+      description: SLSA (Supply-chain Levels for Software Artifacts) level
+      enum:
+      - L0
+      - L1
+      - L2
+      - L3
+      - L4
+      type: string
+    AkeylessSecretAttestation:
+      description: Attestation of Akeyless secret access during deployment
+      properties:
+        gatewayUrl:
+          description: URL of the Akeyless Gateway
+          type: string
+        authMethod:
+          $ref: "#/components/schemas/AkeylessAuthMethod"
+        secretsAccessed:
+          description: List of secrets accessed during deployment
+          items:
+            $ref: "#/components/schemas/AkeylessSecretAccess"
+          type: array
+        gatewayCertificateHash:
+          description: BLAKE3 hash of the gateway TLS certificate
+          type: string
+        sessionHash:
+          description: BLAKE3 hash of the authentication session
+          type: string
+      required:
+      - authMethod
+      - gatewayCertificateHash
+      - gatewayUrl
+      - secretsAccessed
+      - sessionHash
+      type: object
+    AkeylessAuthMethod:
+      description: Akeyless authentication method type
+      enum:
+      - ApiKey
+      - AwsIam
+      - AzureAd
+      - GcpGce
+      - K8s
+      - Saml
+      - Oidc
+      - Certificate
+      - Universal
+      type: string
+    AkeylessSecretAccess:
+      description: Record of a single Akeyless secret access
+      properties:
+        path:
+          description: Akeyless secret path
+          type: string
+        secretType:
+          $ref: "#/components/schemas/AkeylessSecretType"
+        valueHash:
+          description: BLAKE3 hash of the secret value (not the secret itself)
+          type: string
+        accessedAt:
+          description: Timestamp when the secret was accessed
+          format: date-time
+          type: string
+        version:
+          description: Secret version number
+          nullable: true
+          type: integer
+      required:
+      - accessedAt
+      - path
+      - secretType
+      - valueHash
+      type: object
+    AkeylessSecretType:
+      description: Type of Akeyless secret
+      enum:
+      - Static
+      - DynamicAwsIam
+      - DynamicGcp
+      - DynamicAzure
+      - DynamicK8s
+      - DynamicDatabase
+      - DynamicCustom
+      - RotatedSecret
+      - SshCertificate
+      - PkiCertificate
+      type: string
+    ComplianceAttestation:
+      description: Multi-dimensional compliance attestation for a deployment artifact
+      properties:
+        environment:
+          description: Environment being attested
+          type: string
+        artifact:
+          description: Artifact identifier being attested
+          type: string
+        dimensions:
+          description: Individual compliance dimensions assessed
+          items:
+            $ref: "#/components/schemas/ComplianceDimension"
+          type: array
+        complianceHash:
+          description: BLAKE3 hash of all dimension results combined
+          type: string
+        computedAt:
+          description: When the attestation was computed
+          format: date-time
+          type: string
+        policyName:
+          description: Name of the policy applied
+          type: string
+        allPassed:
+          description: Whether all required dimensions passed
+          type: boolean
+      required:
+      - allPassed
+      - artifact
+      - complianceHash
+      - computedAt
+      - dimensions
+      - environment
+      - policyName
+      type: object
+    ComplianceDimension:
+      description: A single compliance dimension within an attestation
+      properties:
+        dimensionType:
+          $ref: "#/components/schemas/DimensionType"
+        hash:
+          description: BLAKE3 hash of the dimension assessment data
+          type: string
+        passed:
+          description: Whether this dimension passed
+          type: boolean
+        summary:
+          description: Human-readable summary of the assessment
+          type: string
+        assessedAt:
+          description: When this dimension was assessed
+          format: date-time
+          type: string
+        required:
+          description: Whether this dimension is required for certification
+          type: boolean
+      required:
+      - assessedAt
+      - dimensionType
+      - hash
+      - passed
+      - required
+      - summary
+      type: object
+    DimensionType:
+      description: Type of compliance dimension
+      enum:
+      - NistAssessment
+      - VulnerabilityScan
+      - Sbom
+      - SlsaProvenance
+      - CosignSignature
+      - InTotoAttestation
+      - CisBenchmark
+      - DisaStig
+      - Soc2
+      - PciDss
+      - OwaspAsvs
+      - Iso27001
+      - FedRamp
+      - CsaStar
+      - FrameworkSelfAttestation
+      type: string
+    CertificationPolicy:
+      description: Policy defining certification requirements
+      properties:
+        name:
+          description: Policy name
+          type: string
+        requireSignedCommits:
+          description: Require all commits to be GPG/SSH signed
+          nullable: true
+          type: boolean
+        requirePinnedInputs:
+          description: Require all Nix flake inputs to be pinned
+          nullable: true
+          type: boolean
+        minSlsaLevel:
+          $ref: "#/components/schemas/SlsaLevel"
+        requireReproducible:
+          description: Require builds to be reproducible
+          nullable: true
+          type: boolean
+        maxCriticalHighCves:
+          description: Maximum allowed critical+high CVEs across all builds
+          nullable: true
+          type: integer
+        requireImageSignatures:
+          description: Require all container images to have cosign signatures
+          nullable: true
+          type: boolean
+        requireChartProvenance:
+          description: Require Helm chart provenance verification
+          nullable: true
+          type: boolean
+        requireSourceVerification:
+          description: Require source commit signature verification
+          nullable: true
+          type: boolean
+        minCisPassRate:
+          description: Minimum CIS Kubernetes benchmark pass rate (0.0 to 1.0)
+          format: float
+          nullable: true
+          type: number
+        requireNetworkPolicies:
+          description: Require NetworkPolicy resources for all namespaces
+          nullable: true
+          type: boolean
+        requireCompliance:
+          description: Require compliance assessment to pass
+          nullable: true
+          type: boolean
+      required:
+      - name
+      type: object
+    VerificationResult:
+      description: Result of a signature verification
+      properties:
+        passed:
+          description: Whether verification passed
+          type: boolean
+        expected:
+          description: Expected signature or hash value
+          type: string
+        actual:
+          description: Actual computed signature or hash value
+          type: string
+        description:
+          description: Human-readable description of what was verified
+          type: string
+        layerResults:
+          description: Per-layer verification results
+          items:
+            $ref: "#/components/schemas/LayerVerification"
+          type: array
+      required:
+      - actual
+      - description
+      - expected
+      - passed
+      type: object
+    LayerVerification:
+      description: Verification result for a single layer
+      properties:
+        layer:
+          $ref: "#/components/schemas/LayerType"
+        passed:
+          description: Whether this layer passed verification
+          type: boolean
+        expected:
+          description: Expected hash for this layer
+          type: string
+        actual:
+          description: Actual computed hash for this layer
+          type: string
+      required:
+      - actual
+      - expected
+      - layer
+      - passed
+      type: object
+    GateDecision:
+      description: An admission decision made by a signature gate
+      properties:
+        allowed:
+          description: Whether the admission request was allowed
+          type: boolean
+        reason:
+          description: Human-readable reason for the decision
+          type: string
+        signature:
+          description: Current gate signature at time of decision
+          type: string
+        expected:
+          description: Expected gate signature at time of decision
+          type: string
+        decidedAt:
+          description: Timestamp of the admission decision
+          format: date-time
+          type: string
+        gate:
+          description: Name of the gate that made the decision
+          type: string
+      required:
+      - allowed
+      - decidedAt
+      - expected
+      - gate
+      - reason
+      - signature
+      type: object
+    ErrorResponse:
+      description: Standard error response
+      example:
+        error: error
+        status: 0
+      properties:
+        error:
+          description: Human-readable error message
+          type: string
+        status:
+          description: HTTP status code
+          nullable: true
+          type: integer
+      required:
+      - error
+      type: object
+    ApiResponseResultSummaryList:
+      description: API response wrapping a list of compliance result summaries
+      example:
+        data:
+        - environment: environment
+          totalControls: 0
+          notSatisfied: 1
+          satisfied: 6
+          performedAt: 2000-01-23T04:56:07.000+00:00
+          id: id
+          baseline: low
+          complianceHash: complianceHash
+          allSatisfied: true
+        - environment: environment
+          totalControls: 0
+          notSatisfied: 1
+          satisfied: 6
+          performedAt: 2000-01-23T04:56:07.000+00:00
+          id: id
+          baseline: low
+          complianceHash: complianceHash
+          allSatisfied: true
+      properties:
+        data:
+          description: List of compliance result summaries
+          items:
+            $ref: "#/components/schemas/ResultSummary"
+          type: array
+      required:
+      - data
+      type: object
+    ApiResponseHashResponse:
+      description: API response wrapping a compliance hash
+      example:
+        data:
+          environment: environment
+          computedAt: 2000-01-23T04:56:07.000+00:00
+          baseline: low
+          complianceHash: complianceHash
+      properties:
+        data:
+          $ref: "#/components/schemas/HashResponse"
+      required:
+      - data
+      type: object
+    ApiResponseRunResponse:
+      description: API response wrapping a compliance run result
+      example:
+        data:
+          message: message
+          status: status
+      properties:
+        data:
+          $ref: "#/components/schemas/RunResponse"
+      required:
+      - data
+      type: object
+    ApiResponseCertifyResponse:
+      description: API response wrapping a certification result
+      example:
+        data:
+          certificationHash: certificationHash
+          violations:
+          - violations
+          - violations
+          stages:
+          - stage: stage
+            violations:
+            - violations
+            - violations
+            passed: true
+            hash: hash
+          - stage: stage
+            violations:
+            - violations
+            - violations
+            passed: true
+            hash: hash
+          certified: true
+          complianceHash: complianceHash
+      properties:
+        data:
+          $ref: "#/components/schemas/CertifyResponse"
+      required:
+      - data
+      type: object
