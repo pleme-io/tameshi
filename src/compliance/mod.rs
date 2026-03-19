@@ -34,6 +34,7 @@
 //! | Unified composition | `dimensions` | All of the above |
 
 pub mod akeyless;
+pub mod akeyless_target;
 pub mod cis;
 pub mod cve;
 pub mod dimensions;

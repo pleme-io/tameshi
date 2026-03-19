@@ -24,4 +24,5 @@ spec:
         - UPDATE
   compliancePolicy: nist-moderate
   expectedCertificationHash: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  requireTargetAttestation: true
   verificationIntervalSecs: 300

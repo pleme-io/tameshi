@@ -23,6 +23,8 @@ Chart (Helm chart hash)
     |
 Secrets (Akeyless access hash) <-- NEW
     |
+Targets (Akeyless target attestation hash) <-- NEW
+    |
 Deploy (K8s manifest hash)
     |
 +---------------------------+
@@ -94,6 +96,31 @@ kensa hash
 # 3. No secret substitution attack occurred
 ```
 
+### Step 4.5: Target Attestation
+
+```bash
+# The target attestation covers:
+# - Each Akeyless target's name and type (database, AWS, K8s, etc.)
+# - BLAKE3 hash of the target configuration (connection details, parameters)
+# - BLAKE3 hash of the target credentials (NOT the credentials themselves)
+# - BLAKE3 hash of the backend endpoint URL/address
+# - BLAKE3 hash of the backend TLS certificate (when TLS is configured)
+# - Whether TLS verification is enabled for the backend
+# - Associated dynamic secret producer metadata (name, type, TTL)
+
+# This proves:
+# 1. The correct targets are configured with the expected endpoints
+# 2. No credential substitution attack occurred
+# 3. The TLS trust chain to backends is intact
+# 4. Dynamic secret producers are bound to the right targets
+
+# The target attestation hash annotation is:
+#   sekiban.pleme.io/target-attestation-hash: blake3:<hex>
+#
+# When requireTargetAttestation is true on the SignatureGate,
+# the admission webhook enforces this annotation's presence and validity.
+```
+
 ### Step 5: Deploy with Sekiban Gate
 
 ```bash
@@ -135,6 +162,9 @@ kubectl apply -f demo/attested-deployment.yaml
 | Secrets accessed at deploy time -- no audit trail in the signature | Akeyless access hashed into master signature |
 | Can't prove which gateway provided secrets | Gateway TLS cert hash in attestation |
 | Secret substitution attacks possible | Any change to secret values changes the master hash |
+| Target endpoints unverified at deploy time | Target configuration hashed into attestation chain |
+| Target credential swaps undetectable | Credential hashes in target attestation dimension |
+| Dynamic secret producers unlinked from targets | Producer-to-target binding in attestation hash |
 | Compliance is a separate, disconnected process | NIST 800-53 controls mapped to attestation dimensions |
 | No cryptographic proof of deployment integrity | BLAKE3 Merkle tree with inclusion proofs |
 
@@ -142,7 +172,7 @@ kubectl apply -f demo/attested-deployment.yaml
 
 | Component | Role |
 |-----------|------|
-| **tameshi** | Core attestation library -- BLAKE3 hashing, Merkle trees, compliance mapping |
+| **tameshi** | Core attestation library -- BLAKE3 hashing, Merkle trees, compliance mapping, target verification |
 | **sekiban** | K8s admission controller -- gates deployments on valid signatures |
 | **kensa** | Compliance engine -- NIST 800-53, OSCAL reports, compliance hashing |
 | **inshou** | Nix integrity gate -- hashes Nix closures, pre-rebuild verification |

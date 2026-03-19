@@ -61,12 +61,19 @@ pub mod verify;
 /// ```
 pub mod prelude {
     pub use crate::akeyless_client::{
-        AkeylessClient, AkeylessClientError, AkeylessConfig, HttpAkeylessClient,
-        MockAkeylessClient,
+        AkeylessClient, AkeylessClientError, AkeylessConfig, DynamicSecretInfo,
+        HttpAkeylessClient, ItemAssociation, MockAkeylessClient, TargetInfo,
     };
     pub use crate::collectors::akeyless::LiveAkeylessCollector;
+    pub use crate::collectors::akeyless_target::{
+        AkeylessTargetCollector, LiveAkeylessTargetCollector,
+    };
     pub use crate::collectors::traits::LayerCollector;
     pub use crate::collectors::MockCollector;
+    pub use crate::compliance::akeyless_target::{
+        AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation,
+        compute_multi_target_hash, compute_target_attestation_hash,
+    };
     pub use crate::config::ConfigLoader;
     pub use crate::hash::{AttestationHasher, Blake3Hash, Blake3Hasher, Sha256Hash};
     pub use crate::merkle::{compose_merkle, compute_merkle_root};

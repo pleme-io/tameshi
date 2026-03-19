@@ -35,6 +35,9 @@ pub enum LayerType {
     ArgoCD,
     /// Akeyless secret management
     Akeyless,
+    /// Akeyless target infrastructure
+    #[serde(rename = "akeyless_target")]
+    AkeylessTarget,
 }
 
 impl fmt::Display for LayerType {
@@ -50,6 +53,7 @@ impl fmt::Display for LayerType {
             Self::FluxCD => write!(f, "fluxcd"),
             Self::ArgoCD => write!(f, "argocd"),
             Self::Akeyless => write!(f, "akeyless"),
+            Self::AkeylessTarget => write!(f, "akeyless_target"),
         }
     }
 }
@@ -69,6 +73,7 @@ impl FromStr for LayerType {
             "fluxcd" | "flux" => Ok(Self::FluxCD),
             "argocd" | "argo" => Ok(Self::ArgoCD),
             "akeyless" => Ok(Self::Akeyless),
+            "akeyless_target" | "akeylesstarget" => Ok(Self::AkeylessTarget),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
@@ -322,6 +327,7 @@ mod tests {
             LayerType::FluxCD,
             LayerType::ArgoCD,
             LayerType::Akeyless,
+            LayerType::AkeylessTarget,
         ];
         for lt in types {
             let s = lt.to_string();
@@ -464,7 +470,7 @@ mod tests {
             LayerType::Nix, LayerType::Oci, LayerType::Helm,
             LayerType::Tofu, LayerType::Kubernetes, LayerType::Kindling,
             LayerType::Tatara, LayerType::FluxCD, LayerType::ArgoCD,
-            LayerType::Akeyless,
+            LayerType::Akeyless, LayerType::AkeylessTarget,
         ];
         for i in 0..types.len() {
             for j in 0..types.len() {

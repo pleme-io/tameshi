@@ -111,6 +111,8 @@ pub enum DimensionType {
     CsaStar,
     /// Framework self-attestation.
     FrameworkSelfAttestation,
+    /// Akeyless target infrastructure verification.
+    AkeylessTargetVerification,
 }
 
 impl std::fmt::Display for DimensionType {
@@ -131,6 +133,9 @@ impl std::fmt::Display for DimensionType {
             DimensionType::FedRamp => write!(f, "FedRAMP"),
             DimensionType::CsaStar => write!(f, "CSA STAR"),
             DimensionType::FrameworkSelfAttestation => write!(f, "Framework Self-Attestation"),
+            DimensionType::AkeylessTargetVerification => {
+                write!(f, "Akeyless Target Verification")
+            }
         }
     }
 }
@@ -342,6 +347,29 @@ impl AttestationBuilder {
         self
     }
 
+    /// Add an Akeyless target verification dimension.
+    ///
+    /// Computes a composite hash from the provided target attestations
+    /// using [`super::akeyless_target::compute_multi_target_hash`] and
+    /// adds it as a compliance dimension.
+    pub fn with_akeyless_target(
+        mut self,
+        attestations: &[super::akeyless_target::AkeylessTargetAttestation],
+        required: bool,
+    ) -> Self {
+        let hash = super::akeyless_target::compute_multi_target_hash(attestations);
+        let passed = !attestations.is_empty();
+        self.dimensions.push(ComplianceDimension {
+            dimension_type: DimensionType::AkeylessTargetVerification,
+            hash,
+            passed,
+            summary: format!("{} target(s) attested", attestations.len()),
+            assessed_at: chrono::Utc::now(),
+            required,
+        });
+        self
+    }
+
     /// Add a framework self-attestation dimension.
     ///
     /// The hash should come from [`crate::selftest::compute_framework_hash`]
@@ -533,5 +561,69 @@ mod tests {
         assert_eq!(DimensionType::VulnerabilityScan.to_string(), "CVE/Vulnerability Scan");
         assert_eq!(DimensionType::Sbom.to_string(), "SBOM");
         assert_eq!(DimensionType::SlsaProvenance.to_string(), "SLSA Provenance");
+        assert_eq!(
+            DimensionType::AkeylessTargetVerification.to_string(),
+            "Akeyless Target Verification"
+        );
+    }
+
+    fn make_target_attestation(name: &str) -> super::super::akeyless_target::AkeylessTargetAttestation {
+        use super::super::akeyless_target::*;
+        use super::super::akeyless::AkeylessSecretType;
+        AkeylessTargetAttestation {
+            target_name: name.to_string(),
+            target_type: AkeylessTargetType::Database,
+            target_config_hash: Blake3Hash::digest(b"config"),
+            target_credential_hash: Blake3Hash::digest(b"creds"),
+            backend_endpoint_hash: Blake3Hash::digest(b"endpoint"),
+            backend_tls_cert_hash: Some(Blake3Hash::digest(b"tls")),
+            backend_tls_verified: true,
+            associated_producers: vec![ProducerAssociation {
+                producer_name: "/producers/dynamic".to_string(),
+                producer_type: AkeylessSecretType::DynamicDatabase,
+                user_ttl: "1h".to_string(),
+                target_assoc_id: None,
+            }],
+            attested_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn builder_with_akeyless_target_produces_correct_hash() {
+        let targets = vec![
+            make_target_attestation("/targets/db"),
+            make_target_attestation("/targets/api"),
+        ];
+
+        let attestation = AttestationBuilder::new("production", "myapp", "default")
+            .with_akeyless_target(&targets, true)
+            .build();
+
+        assert_eq!(attestation.dimensions.len(), 1);
+        let dim = &attestation.dimensions[0];
+        assert_eq!(dim.dimension_type, DimensionType::AkeylessTargetVerification);
+        assert!(dim.passed);
+        assert!(dim.required);
+        assert_eq!(dim.summary, "2 target(s) attested");
+
+        // Hash should match compute_multi_target_hash
+        let expected = super::super::akeyless_target::compute_multi_target_hash(&targets);
+        assert_eq!(dim.hash, expected);
+    }
+
+    #[test]
+    fn builder_akeyless_target_required_blocks_when_failed() {
+        // Empty attestation list means passed=false
+        let attestation = AttestationBuilder::new("production", "myapp", "default")
+            .with_akeyless_target(&[], true) // required=true, no targets => passed=false
+            .build();
+
+        assert_eq!(attestation.dimensions.len(), 1);
+        let dim = &attestation.dimensions[0];
+        assert_eq!(dim.dimension_type, DimensionType::AkeylessTargetVerification);
+        assert!(!dim.passed);
+        assert!(dim.required);
+        // Required dimension failed => all_passed should be false
+        assert!(!attestation.all_passed);
     }
 }
