@@ -7,6 +7,8 @@ use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::{InputHash, LayerSignature, LayerType};
 
+use super::traits::LayerCollector;
+
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::debug;
@@ -130,4 +132,63 @@ pub async fn hash_remote_state(working_dir: &str) -> Result<LayerSignature> {
     let tmpfile = tempfile::NamedTempFile::new()?;
     tokio::fs::write(tmpfile.path(), &output.stdout).await?;
     hash_state(tmpfile.path().to_str().unwrap_or("/tmp/state.json")).await
+}
+
+/// Source for OpenTofu/Terraform state collection.
+#[derive(Clone, Debug)]
+pub enum TofuSource {
+    /// Hash a local state file.
+    StateFile(String),
+    /// Hash a plan file.
+    PlanFile(String),
+    /// Hash remote state by pulling from the working directory.
+    RemoteState(String),
+}
+
+/// OpenTofu/Terraform state collector.
+///
+/// Wraps the standalone functions in a [`LayerCollector`] implementation.
+pub struct TofuCollector {
+    /// Source to collect from.
+    pub source: TofuSource,
+}
+
+impl TofuCollector {
+    /// Create a collector for a local state file.
+    #[must_use]
+    pub fn from_state(state_path: &str) -> Self {
+        Self {
+            source: TofuSource::StateFile(state_path.to_string()),
+        }
+    }
+
+    /// Create a collector for a plan file.
+    #[must_use]
+    pub fn from_plan(plan_path: &str) -> Self {
+        Self {
+            source: TofuSource::PlanFile(plan_path.to_string()),
+        }
+    }
+
+    /// Create a collector for remote state.
+    #[must_use]
+    pub fn from_remote(working_dir: &str) -> Self {
+        Self {
+            source: TofuSource::RemoteState(working_dir.to_string()),
+        }
+    }
+}
+
+impl LayerCollector for TofuCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        match &self.source {
+            TofuSource::StateFile(path) => hash_state(path).await,
+            TofuSource::PlanFile(path) => hash_plan(path).await,
+            TofuSource::RemoteState(dir) => hash_remote_state(dir).await,
+        }
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Tofu
+    }
 }

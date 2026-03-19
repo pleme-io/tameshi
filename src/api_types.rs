@@ -135,7 +135,7 @@ pub struct AuditEntry {
 }
 
 /// Audit actions.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditAction {
     /// Signature was computed.
@@ -154,6 +154,32 @@ pub enum AuditAction {
     GateAllowed,
     /// Provisioning was gated (denied).
     GateDenied,
+}
+
+impl std::fmt::Display for CertificationPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CertificationPhase::Pending => write!(f, "pending"),
+            CertificationPhase::Certified => write!(f, "certified"),
+            CertificationPhase::Degraded => write!(f, "degraded"),
+            CertificationPhase::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl std::fmt::Display for AuditAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuditAction::SignatureComputed => write!(f, "signature_computed"),
+            AuditAction::SignatureVerified => write!(f, "signature_verified"),
+            AuditAction::VerificationFailed => write!(f, "verification_failed"),
+            AuditAction::ComplianceTestRun => write!(f, "compliance_test_run"),
+            AuditAction::Certified => write!(f, "certified"),
+            AuditAction::Degraded => write!(f, "degraded"),
+            AuditAction::GateAllowed => write!(f, "gate_allowed"),
+            AuditAction::GateDenied => write!(f, "gate_denied"),
+        }
+    }
 }
 
 /// Gate decision — the result of a gating check.
@@ -196,5 +222,165 @@ impl GateDecision {
             decided_at: Utc::now(),
             gate: gate.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_signature_request_serde_roundtrip() {
+        let req = ComputeSignatureRequest {
+            layers: vec![LayerType::Nix, LayerType::Oci],
+            environment: "production".to_string(),
+            include_compliance: true,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: ComputeSignatureRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.environment, "production");
+        assert!(deserialized.include_compliance);
+        assert_eq!(deserialized.layers.len(), 2);
+    }
+
+    #[test]
+    fn verify_signature_request_serde_roundtrip() {
+        let req = VerifySignatureRequest {
+            expected: "blake3:abc123".to_string(),
+            environment: "staging".to_string(),
+            layers: vec![],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: VerifySignatureRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.expected, "blake3:abc123");
+        assert_eq!(deserialized.environment, "staging");
+    }
+
+    #[test]
+    fn certification_phase_serde_roundtrip() {
+        for phase in &[
+            CertificationPhase::Pending,
+            CertificationPhase::Certified,
+            CertificationPhase::Degraded,
+            CertificationPhase::Failed,
+        ] {
+            let json = serde_json::to_string(phase).unwrap();
+            let deserialized: CertificationPhase = serde_json::from_str(&json).unwrap();
+            assert_eq!(*phase, deserialized);
+        }
+    }
+
+    #[test]
+    fn certification_phase_display() {
+        assert_eq!(CertificationPhase::Pending.to_string(), "pending");
+        assert_eq!(CertificationPhase::Certified.to_string(), "certified");
+        assert_eq!(CertificationPhase::Degraded.to_string(), "degraded");
+        assert_eq!(CertificationPhase::Failed.to_string(), "failed");
+    }
+
+    #[test]
+    fn audit_action_display() {
+        assert_eq!(AuditAction::SignatureComputed.to_string(), "signature_computed");
+        assert_eq!(AuditAction::GateDenied.to_string(), "gate_denied");
+    }
+
+    #[test]
+    fn audit_action_serde_roundtrip() {
+        for action in &[
+            AuditAction::SignatureComputed,
+            AuditAction::SignatureVerified,
+            AuditAction::VerificationFailed,
+            AuditAction::ComplianceTestRun,
+            AuditAction::Certified,
+            AuditAction::Degraded,
+            AuditAction::GateAllowed,
+            AuditAction::GateDenied,
+        ] {
+            let json = serde_json::to_string(action).unwrap();
+            let deserialized: AuditAction = serde_json::from_str(&json).unwrap();
+            assert_eq!(*action, deserialized);
+        }
+    }
+
+    #[test]
+    fn gate_decision_allow_fields() {
+        let sig = Blake3Hash::digest(b"sig");
+        let expected = Blake3Hash::digest(b"sig");
+        let decision = GateDecision::allow(&sig, &expected, "test-gate");
+        assert!(decision.allowed);
+        assert_eq!(decision.gate, "test-gate");
+        assert_eq!(decision.reason, "Signature verified");
+        assert!(decision.signature.starts_with("blake3:"));
+    }
+
+    #[test]
+    fn gate_decision_deny_fields() {
+        let sig = Blake3Hash::digest(b"wrong");
+        let expected = Blake3Hash::digest(b"right");
+        let decision = GateDecision::deny(&sig, &expected, "my-gate", "mismatch");
+        assert!(!decision.allowed);
+        assert_eq!(decision.reason, "mismatch");
+        assert_ne!(decision.signature, decision.expected);
+    }
+
+    #[test]
+    fn gate_decision_serde_roundtrip() {
+        let sig = Blake3Hash::digest(b"sig");
+        let decision = GateDecision::allow(&sig, &sig, "gate");
+        let json = serde_json::to_string(&decision).unwrap();
+        let deserialized: GateDecision = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.allowed, decision.allowed);
+        assert_eq!(deserialized.gate, decision.gate);
+    }
+
+    #[test]
+    fn certification_status_serde_roundtrip() {
+        let status = CertificationStatus {
+            environment: "prod".to_string(),
+            phase: CertificationPhase::Certified,
+            master_signature: Some("blake3:abc".to_string()),
+            compliance_signature: None,
+            secure_signature: None,
+            last_certified_at: Some(Utc::now()),
+            layers: vec![LayerCertificationStatus {
+                layer: LayerType::Nix,
+                hash: "blake3:def".to_string(),
+                verified: true,
+                last_verified_at: Some(Utc::now()),
+            }],
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let deserialized: CertificationStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.environment, "prod");
+        assert_eq!(deserialized.phase, CertificationPhase::Certified);
+        assert_eq!(deserialized.layers.len(), 1);
+    }
+
+    #[test]
+    fn audit_entry_serde_roundtrip() {
+        let entry = AuditEntry {
+            timestamp: Utc::now(),
+            environment: "staging".to_string(),
+            action: AuditAction::SignatureComputed,
+            signature: "blake3:xxx".to_string(),
+            details: Some("computed successfully".to_string()),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let deserialized: AuditEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.environment, "staging");
+        assert_eq!(deserialized.action, AuditAction::SignatureComputed);
+    }
+
+    #[test]
+    fn layer_verification_result_serde_roundtrip() {
+        let result = LayerVerificationResult {
+            layer: LayerType::Helm,
+            verified: true,
+            hash: "blake3:abc".to_string(),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: LayerVerificationResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.layer, LayerType::Helm);
+        assert!(deserialized.verified);
     }
 }

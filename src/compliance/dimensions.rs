@@ -42,7 +42,7 @@ use super::slsa::{CosignVerification, InTotoAttestation, SlsaProvenance};
 use super::standards::{StandardAssessment, StandardId};
 
 /// A complete multi-dimensional compliance attestation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ComplianceAttestation {
     /// Environment being attested.
     pub environment: String,
@@ -61,7 +61,7 @@ pub struct ComplianceAttestation {
 }
 
 /// A single compliance dimension.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ComplianceDimension {
     /// Dimension type.
     pub dimension_type: DimensionType,

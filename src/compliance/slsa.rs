@@ -157,6 +157,46 @@ pub enum ArtifactType {
     StaticAsset,
 }
 
+impl std::fmt::Display for ArtifactType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArtifactType::OciImage => write!(f, "OCI Image"),
+            ArtifactType::NixStorePath => write!(f, "Nix Store Path"),
+            ArtifactType::HelmChart => write!(f, "Helm Chart"),
+            ArtifactType::RustBinary => write!(f, "Rust Binary"),
+            ArtifactType::NpmPackage => write!(f, "NPM Package"),
+            ArtifactType::StaticAsset => write!(f, "Static Asset"),
+        }
+    }
+}
+
+impl std::fmt::Display for BuildType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuildType::NixBuild => write!(f, "Nix Build"),
+            BuildType::GithubActions => write!(f, "GitHub Actions"),
+            BuildType::LocalDev => write!(f, "Local Dev"),
+            BuildType::Forge => write!(f, "Forge"),
+            BuildType::Other(s) => write!(f, "Other({s})"),
+        }
+    }
+}
+
+impl std::fmt::Display for MaterialType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MaterialType::SourceCode => write!(f, "Source Code"),
+            MaterialType::NixFlakeInput => write!(f, "Nix Flake Input"),
+            MaterialType::NixDerivation => write!(f, "Nix Derivation"),
+            MaterialType::NpmDependency => write!(f, "NPM Dependency"),
+            MaterialType::RustCrate => write!(f, "Rust Crate"),
+            MaterialType::OciBaseImage => write!(f, "OCI Base Image"),
+            MaterialType::BuildTool => write!(f, "Build Tool"),
+            MaterialType::Configuration => write!(f, "Configuration"),
+        }
+    }
+}
+
 /// Sigstore/cosign signature verification result.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CosignVerification {
@@ -205,8 +245,16 @@ pub struct InTotoAttestation {
 ///   hermetic
 /// )
 /// ```
+#[must_use]
 pub fn compute_provenance_hash(provenance: &SlsaProvenance) -> Blake3Hash {
-    let mut data = Vec::new();
+    let material_count = provenance.materials.len();
+    let mut data = Vec::with_capacity(
+        provenance.builder_id.len()
+            + provenance.source_commit.len()
+            + material_count * 32
+            + 32
+            + 10
+    );
     data.extend_from_slice(provenance.builder_id.as_bytes());
     data.extend_from_slice(provenance.source_commit.as_bytes());
 
@@ -226,6 +274,7 @@ pub fn compute_provenance_hash(provenance: &SlsaProvenance) -> Blake3Hash {
 }
 
 /// Determine the SLSA level from build properties.
+#[must_use]
 pub fn determine_slsa_level(
     has_provenance: bool,
     hosted_build: bool,

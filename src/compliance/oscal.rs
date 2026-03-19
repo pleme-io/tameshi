@@ -131,6 +131,28 @@ pub enum RiskLevel {
     Info,
 }
 
+impl std::fmt::Display for ControlStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ControlStatus::Satisfied => write!(f, "satisfied"),
+            ControlStatus::NotSatisfied => write!(f, "not_satisfied"),
+            ControlStatus::Other => write!(f, "other"),
+        }
+    }
+}
+
+impl std::fmt::Display for RiskLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RiskLevel::Critical => write!(f, "critical"),
+            RiskLevel::High => write!(f, "high"),
+            RiskLevel::Medium => write!(f, "medium"),
+            RiskLevel::Low => write!(f, "low"),
+            RiskLevel::Info => write!(f, "info"),
+        }
+    }
+}
+
 /// OSCAL Catalog — a collection of security controls.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Catalog {
@@ -238,4 +260,192 @@ fn count_controls(controls: &[Control]) -> usize {
         .iter()
         .map(|c| 1 + count_controls(&c.enhancements))
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_assessment() -> AssessmentResult {
+        AssessmentResult {
+            uuid: Uuid::new_v4(),
+            title: "Test Assessment".to_string(),
+            description: "Test".to_string(),
+            start: Utc::now(),
+            end: Some(Utc::now()),
+            activities: vec![AssessmentActivity {
+                uuid: Uuid::new_v4(),
+                title: "Activity 1".to_string(),
+                description: "test activity".to_string(),
+                related_controls: vec!["AC-2".to_string()],
+            }],
+            results: vec![
+                ControlResult {
+                    control_id: "AC-2".to_string(),
+                    status: ControlStatus::Satisfied,
+                    description: "passed".to_string(),
+                    findings: vec![],
+                    assessed_at: Utc::now(),
+                },
+                ControlResult {
+                    control_id: "SC-7".to_string(),
+                    status: ControlStatus::NotSatisfied,
+                    description: "failed".to_string(),
+                    findings: vec![Finding {
+                        uuid: Uuid::new_v4(),
+                        title: "Open port".to_string(),
+                        description: "Port 22 exposed".to_string(),
+                        risk: RiskLevel::High,
+                        remediation: Some("Close port 22".to_string()),
+                    }],
+                    assessed_at: Utc::now(),
+                },
+            ],
+            assessment_metadata: AssessmentMetadata {
+                framework_hash: Blake3Hash::digest(b"framework"),
+                catalog_hash: Blake3Hash::digest(b"catalog"),
+                profile_hashes: vec![ProfileHash {
+                    name: "test-profile".to_string(),
+                    hash: Blake3Hash::digest(b"profile"),
+                    version: "1.0".to_string(),
+                }],
+                framework_version: "1.0".to_string(),
+                framework_name: "test".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn control_status_display() {
+        assert_eq!(ControlStatus::Satisfied.to_string(), "satisfied");
+        assert_eq!(ControlStatus::NotSatisfied.to_string(), "not_satisfied");
+        assert_eq!(ControlStatus::Other.to_string(), "other");
+    }
+
+    #[test]
+    fn risk_level_display() {
+        assert_eq!(RiskLevel::Critical.to_string(), "critical");
+        assert_eq!(RiskLevel::High.to_string(), "high");
+        assert_eq!(RiskLevel::Info.to_string(), "info");
+    }
+
+    #[test]
+    fn control_status_serde_roundtrip() {
+        for status in &[ControlStatus::Satisfied, ControlStatus::NotSatisfied, ControlStatus::Other] {
+            let json = serde_json::to_string(status).unwrap();
+            let deserialized: ControlStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(*status, deserialized);
+        }
+    }
+
+    #[test]
+    fn assessment_all_satisfied_false_when_failures() {
+        let assessment = make_assessment();
+        assert!(!assessment.all_satisfied());
+    }
+
+    #[test]
+    fn assessment_status_counts() {
+        let assessment = make_assessment();
+        let (satisfied, not_satisfied, other) = assessment.status_counts();
+        assert_eq!(satisfied, 1);
+        assert_eq!(not_satisfied, 1);
+        assert_eq!(other, 0);
+    }
+
+    #[test]
+    fn assessment_compute_hash_deterministic() {
+        let assessment = make_assessment();
+        let h1 = assessment.compute_hash();
+        let h2 = assessment.compute_hash();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn assessment_serde_roundtrip() {
+        let assessment = make_assessment();
+        let json = serde_json::to_string(&assessment).unwrap();
+        let deserialized: AssessmentResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.title, "Test Assessment");
+        assert_eq!(deserialized.results.len(), 2);
+    }
+
+    #[test]
+    fn catalog_serde_roundtrip() {
+        let catalog = Catalog {
+            uuid: Uuid::new_v4(),
+            title: "Test Catalog".to_string(),
+            version: "1.0".to_string(),
+            groups: vec![ControlGroup {
+                id: "AC".to_string(),
+                title: "Access Control".to_string(),
+                controls: vec![Control {
+                    id: "AC-1".to_string(),
+                    title: "Policy".to_string(),
+                    description: "test".to_string(),
+                    enhancements: vec![],
+                }],
+            }],
+        };
+        let json = serde_json::to_string(&catalog).unwrap();
+        let deserialized: Catalog = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.title, "Test Catalog");
+        assert_eq!(deserialized.control_count(), 1);
+    }
+
+    #[test]
+    fn catalog_count_includes_enhancements() {
+        let catalog = Catalog {
+            uuid: Uuid::new_v4(),
+            title: "Test".to_string(),
+            version: "1.0".to_string(),
+            groups: vec![ControlGroup {
+                id: "AC".to_string(),
+                title: "Access Control".to_string(),
+                controls: vec![Control {
+                    id: "AC-2".to_string(),
+                    title: "Account Management".to_string(),
+                    description: "".to_string(),
+                    enhancements: vec![
+                        Control {
+                            id: "AC-2(1)".to_string(),
+                            title: "Automated System".to_string(),
+                            description: "".to_string(),
+                            enhancements: vec![],
+                        },
+                    ],
+                }],
+            }],
+        };
+        assert_eq!(catalog.control_count(), 2);
+    }
+
+    #[test]
+    fn profile_serde_roundtrip() {
+        let profile = Profile {
+            uuid: Uuid::new_v4(),
+            title: "Moderate Baseline".to_string(),
+            catalog_ref: "nist-800-53-rev5".to_string(),
+            selected_controls: vec!["AC-2".to_string(), "SC-7".to_string()],
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        let deserialized: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.title, "Moderate Baseline");
+        assert_eq!(deserialized.selected_controls.len(), 2);
+    }
+
+    #[test]
+    fn finding_serde_roundtrip() {
+        let finding = Finding {
+            uuid: Uuid::new_v4(),
+            title: "Test Finding".to_string(),
+            description: "Some issue".to_string(),
+            risk: RiskLevel::Medium,
+            remediation: None,
+        };
+        let json = serde_json::to_string(&finding).unwrap();
+        let deserialized: Finding = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.risk, RiskLevel::Medium);
+        assert!(deserialized.remediation.is_none());
+    }
 }

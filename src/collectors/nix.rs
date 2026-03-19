@@ -7,6 +7,8 @@ use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::{InputHash, LayerSignature, LayerType};
 
+use super::traits::LayerCollector;
+
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::debug;
@@ -138,13 +140,54 @@ async fn hash_store_path(path: &str) -> Result<Blake3Hash> {
 }
 
 /// Compute composite hash from sorted input hashes.
+#[inline]
 fn compute_composite_hash(inputs: &[InputHash]) -> Blake3Hash {
     if inputs.is_empty() {
         return Blake3Hash::digest(b"empty-nix-closure");
     }
-    let mut data = Vec::new();
+    let mut data = Vec::with_capacity(inputs.len() * 32);
     for input in inputs {
         data.extend_from_slice(&input.hash.0);
     }
     Blake3Hash::digest(&data)
+}
+
+/// Nix store closure collector.
+///
+/// Wraps the standalone functions in a [`LayerCollector`] implementation.
+/// If `store_path` is set, hashes that specific closure; otherwise hashes
+/// the current system profile.
+pub struct NixCollector {
+    /// Optional Nix store path. If `None`, the current system profile is hashed.
+    pub store_path: Option<String>,
+}
+
+impl NixCollector {
+    /// Create a collector for a specific store path.
+    #[must_use]
+    pub fn for_path(store_path: &str) -> Self {
+        Self {
+            store_path: Some(store_path.to_string()),
+        }
+    }
+
+    /// Create a collector for the current system profile.
+    #[must_use]
+    pub fn system_profile() -> Self {
+        Self { store_path: None }
+    }
+}
+
+impl LayerCollector for NixCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        if let Some(ref path) = self.store_path {
+            hash_closure(path).await
+        } else {
+            hash_system_profile().await
+        }
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Nix
+    }
 }

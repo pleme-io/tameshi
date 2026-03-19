@@ -7,19 +7,40 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as Sha2Digest, Sha256};
 use std::fmt;
+use std::str::FromStr;
 
 /// A BLAKE3 hash value (32 bytes).
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Blake3Hash(#[serde(with = "hex_bytes")] pub [u8; 32]);
 
+impl AsRef<[u8]> for Blake3Hash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl FromStr for Blake3Hash {
+    type Err = const_hex::FromHexError;
+
+    /// Parse from a hex string or a `blake3:`-prefixed hex string.
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let hex_str = s.strip_prefix("blake3:").unwrap_or(s);
+        Self::from_hex(hex_str)
+    }
+}
+
 impl Blake3Hash {
     /// Compute BLAKE3 hash of arbitrary bytes.
+    #[inline]
+    #[must_use]
     pub fn digest(data: &[u8]) -> Self {
         let hash = blake3::hash(data);
         Self(*hash.as_bytes())
     }
 
     /// Compute BLAKE3 hash by concatenating two hashes (for Merkle nodes).
+    #[inline]
+    #[must_use]
     pub fn combine(left: &Blake3Hash, right: &Blake3Hash) -> Self {
         let mut combined = Vec::with_capacity(64);
         combined.extend_from_slice(&left.0);
@@ -28,25 +49,34 @@ impl Blake3Hash {
     }
 
     /// Create from hex string.
-    pub fn from_hex(s: &str) -> Result<Self, hex::FromHexError> {
-        let bytes = hex::decode(s)?;
+    ///
+    /// Returns an error if the hex string is invalid or doesn't decode to exactly 32 bytes.
+    pub fn from_hex(s: &str) -> Result<Self, const_hex::FromHexError> {
+        let bytes = const_hex::decode(s)?;
+        if bytes.len() != 32 {
+            return Err(const_hex::FromHexError::InvalidStringLength);
+        }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
         Ok(Self(arr))
     }
 
     /// Return hex-encoded string.
+    #[inline]
+    #[must_use]
     pub fn to_hex(&self) -> String {
-        hex::encode(self.0)
+        const_hex::encode(self.0)
     }
 
     /// Return prefixed string (e.g., "blake3:abc123...").
+    #[inline]
+    #[must_use]
     pub fn to_prefixed(&self) -> String {
         format!("blake3:{}", self.to_hex())
     }
 
     /// Parse from prefixed string.
-    pub fn from_prefixed(s: &str) -> Result<Self, hex::FromHexError> {
+    pub fn from_prefixed(s: &str) -> Result<Self, const_hex::FromHexError> {
         let hex_str = s.strip_prefix("blake3:").unwrap_or(s);
         Self::from_hex(hex_str)
     }
@@ -64,12 +94,41 @@ impl fmt::Display for Blake3Hash {
     }
 }
 
+impl From<Blake3Hash> for String {
+    fn from(hash: Blake3Hash) -> Self {
+        hash.to_hex()
+    }
+}
+
+impl From<&Blake3Hash> for String {
+    fn from(hash: &Blake3Hash) -> Self {
+        hash.to_hex()
+    }
+}
+
 /// A SHA-256 hash value (32 bytes).
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sha256Hash(#[serde(with = "hex_bytes")] pub [u8; 32]);
 
+impl AsRef<[u8]> for Sha256Hash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl FromStr for Sha256Hash {
+    type Err = const_hex::FromHexError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let hex_str = s.strip_prefix("sha256:").unwrap_or(s);
+        Self::from_hex(hex_str)
+    }
+}
+
 impl Sha256Hash {
     /// Compute SHA-256 hash of arbitrary bytes.
+    #[inline]
+    #[must_use]
     pub fn digest(data: &[u8]) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(data);
@@ -80,16 +139,23 @@ impl Sha256Hash {
     }
 
     /// Create from hex string.
-    pub fn from_hex(s: &str) -> Result<Self, hex::FromHexError> {
-        let bytes = hex::decode(s)?;
+    ///
+    /// Returns an error if the hex string is invalid or doesn't decode to exactly 32 bytes.
+    pub fn from_hex(s: &str) -> Result<Self, const_hex::FromHexError> {
+        let bytes = const_hex::decode(s)?;
+        if bytes.len() != 32 {
+            return Err(const_hex::FromHexError::InvalidStringLength);
+        }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
         Ok(Self(arr))
     }
 
     /// Return hex-encoded string.
+    #[inline]
+    #[must_use]
     pub fn to_hex(&self) -> String {
-        hex::encode(self.0)
+        const_hex::encode(self.0)
     }
 }
 
@@ -106,19 +172,101 @@ impl fmt::Display for Sha256Hash {
 }
 
 /// Hash arbitrary bytes with BLAKE3 and return hex string.
+#[inline]
+#[must_use]
 pub fn blake3_hex(data: &[u8]) -> String {
     Blake3Hash::digest(data).to_hex()
 }
 
-/// Hash a file's contents with BLAKE3.
-pub async fn blake3_file(path: &std::path::Path) -> crate::error::Result<Blake3Hash> {
+/// Hash a file's contents with BLAKE3 using streaming 64KB buffers.
+///
+/// This avoids loading the entire file into memory, making it suitable
+/// for large files (store paths, OCI layers, etc.).
+pub fn blake3_file(path: &std::path::Path) -> crate::error::Result<Blake3Hash> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path)?;
+    let mut reader = std::io::BufReader::with_capacity(65536, file);
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    Ok(Blake3Hash(hasher.finalize().into()))
+}
+
+/// Hash a file's contents with BLAKE3 asynchronously.
+///
+/// Reads the file via tokio and hashes its contents. For very large files,
+/// prefer [`blake3_file`] which uses streaming buffers.
+pub async fn blake3_file_async(path: &std::path::Path) -> crate::error::Result<Blake3Hash> {
     let data = tokio::fs::read(path).await?;
     Ok(Blake3Hash::digest(&data))
 }
 
 /// Hash a string with BLAKE3.
+#[inline]
+#[must_use]
 pub fn blake3_str(s: &str) -> Blake3Hash {
     Blake3Hash::digest(s.as_bytes())
+}
+
+/// Generic hasher trait for attestation hashing.
+///
+/// Enables consumers to use different hash algorithms while maintaining
+/// a uniform interface. `Blake3Hasher` is the default implementation.
+pub trait AttestationHasher: Send + Sync + Clone {
+    /// The output type of the hash function.
+    type Output: AsRef<[u8]> + Clone + Eq + std::fmt::Debug + Send + Sync;
+
+    /// Hash arbitrary bytes.
+    fn hash(data: &[u8]) -> Self::Output;
+
+    /// Hash a file's contents using streaming buffers.
+    fn hash_file(path: &std::path::Path) -> crate::error::Result<Self::Output>;
+
+    /// Combine two hash outputs (for Merkle node construction).
+    fn combine(a: &Self::Output, b: &Self::Output) -> Self::Output;
+
+    /// Encode a hash output as a hex string.
+    fn to_hex(output: &Self::Output) -> String;
+
+    /// Decode a hex string into a hash output.
+    fn from_hex(hex: &str) -> crate::error::Result<Self::Output>;
+}
+
+/// Blake3 implementation of `AttestationHasher`.
+#[derive(Clone, Debug)]
+pub struct Blake3Hasher;
+
+impl AttestationHasher for Blake3Hasher {
+    type Output = Blake3Hash;
+
+    fn hash(data: &[u8]) -> Blake3Hash {
+        Blake3Hash::digest(data)
+    }
+
+    fn hash_file(path: &std::path::Path) -> crate::error::Result<Blake3Hash> {
+        blake3_file(path)
+    }
+
+    fn combine(a: &Blake3Hash, b: &Blake3Hash) -> Blake3Hash {
+        Blake3Hash::combine(a, b)
+    }
+
+    fn to_hex(output: &Blake3Hash) -> String {
+        output.to_hex()
+    }
+
+    fn from_hex(hex: &str) -> crate::error::Result<Blake3Hash> {
+        Blake3Hash::from_hex(hex).map_err(|e| {
+            crate::error::TameshiError::InvalidInput(format!("invalid hex: {e}"))
+        })
+    }
 }
 
 /// Serde helper for [u8; 32] as hex.
@@ -129,7 +277,7 @@ mod hex_bytes {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&hex::encode(bytes))
+        serializer.serialize_str(&const_hex::encode(bytes))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
@@ -137,7 +285,7 @@ mod hex_bytes {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+        let bytes = const_hex::decode(&s).map_err(serde::de::Error::custom)?;
         let mut arr = [0u8; 32];
         if bytes.len() != 32 {
             return Err(serde::de::Error::custom(format!(
@@ -216,5 +364,196 @@ mod tests {
         let json = serde_json::to_string(&h).unwrap();
         let h2: Blake3Hash = serde_json::from_str(&json).unwrap();
         assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn attestation_hasher_blake3_consistency() {
+        let data = b"attestation hasher test";
+        let direct = Blake3Hash::digest(data);
+        let via_trait = Blake3Hasher::hash(data);
+        assert_eq!(direct, via_trait);
+    }
+
+    #[test]
+    fn attestation_hasher_combine() {
+        let a = Blake3Hash::digest(b"a");
+        let b = Blake3Hash::digest(b"b");
+        let direct = Blake3Hash::combine(&a, &b);
+        let via_trait = Blake3Hasher::combine(&a, &b);
+        assert_eq!(direct, via_trait);
+    }
+
+    #[test]
+    fn const_hex_encode_decode() {
+        let original = [0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33,
+                        0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+                        0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02, 0x03, 0x04,
+                        0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c];
+        let encoded = const_hex::encode(original);
+        let decoded = const_hex::decode(&encoded).unwrap();
+        assert_eq!(&original[..], &decoded[..]);
+    }
+
+    #[test]
+    fn attestation_hasher_hex_roundtrip() {
+        let h = Blake3Hasher::hash(b"roundtrip");
+        let hex_str = Blake3Hasher::to_hex(&h);
+        let h2 = Blake3Hasher::from_hex(&hex_str).unwrap();
+        assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn attestation_hasher_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.bin");
+        std::fs::write(&file_path, b"file content for hasher trait").unwrap();
+        let direct = blake3_file(&file_path).unwrap();
+        let via_trait = Blake3Hasher::hash_file(&file_path).unwrap();
+        assert_eq!(direct, via_trait);
+    }
+
+    #[test]
+    fn blake3_from_string_conversion() {
+        let h = Blake3Hash::digest(b"test");
+        let s: String = h.clone().into();
+        let h2 = Blake3Hash::from_hex(&s).unwrap();
+        assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn blake3_from_ref_conversion() {
+        let h = Blake3Hash::digest(b"ref-test");
+        let s: String = (&h).into();
+        assert_eq!(s, h.to_hex());
+    }
+
+    #[test]
+    fn blake3_from_str_parse() {
+        let h = Blake3Hash::digest(b"parse-test");
+        let hex = h.to_hex();
+        let parsed: Blake3Hash = hex.parse().unwrap();
+        assert_eq!(h, parsed);
+    }
+
+    #[test]
+    fn blake3_from_str_with_prefix() {
+        let h = Blake3Hash::digest(b"prefixed-parse");
+        let prefixed = h.to_prefixed();
+        let parsed: Blake3Hash = prefixed.parse().unwrap();
+        assert_eq!(h, parsed);
+    }
+
+    #[test]
+    fn blake3_invalid_hex_errors() {
+        let result = Blake3Hash::from_hex("not-valid-hex");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn blake3_wrong_length_hex_errors() {
+        let result = Blake3Hash::from_hex("abcd");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sha256_hex_roundtrip() {
+        let h = Sha256Hash::digest(b"sha256 roundtrip");
+        let hex = h.to_hex();
+        let h2 = Sha256Hash::from_hex(&hex).unwrap();
+        assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn sha256_from_str_parse() {
+        let h = Sha256Hash::digest(b"sha256 parse");
+        let hex = h.to_hex();
+        let parsed: Sha256Hash = hex.parse().unwrap();
+        assert_eq!(h, parsed);
+    }
+
+    #[test]
+    fn sha256_from_str_with_prefix() {
+        let h = Sha256Hash::digest(b"sha256 prefix");
+        let prefixed = format!("sha256:{}", h.to_hex());
+        let parsed: Sha256Hash = prefixed.parse().unwrap();
+        assert_eq!(h, parsed);
+    }
+
+    #[test]
+    fn blake3_empty_input() {
+        let h = Blake3Hash::digest(b"");
+        assert_ne!(h, Blake3Hash([0u8; 32]));
+    }
+
+    #[test]
+    fn blake3_large_input() {
+        let data = vec![0xABu8; 1_000_000];
+        let h1 = Blake3Hash::digest(&data);
+        let h2 = Blake3Hash::digest(&data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn blake3_unicode_input() {
+        let h = blake3_str("Hello, \u{4e16}\u{754c}!"); // "Hello, 世界!"
+        assert_ne!(h, Blake3Hash::digest(b""));
+    }
+
+    #[test]
+    fn blake3_file_nonexistent() {
+        let result = blake3_file(std::path::Path::new("/nonexistent/path/file.bin"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn attestation_hasher_from_hex_invalid() {
+        let result = Blake3Hasher::from_hex("zzz-invalid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sha256_serde_roundtrip() {
+        let h = Sha256Hash::digest(b"sha256 serde");
+        let json = serde_json::to_string(&h).unwrap();
+        let h2: Sha256Hash = serde_json::from_str(&json).unwrap();
+        assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn blake3_display_and_debug() {
+        let h = Blake3Hash::digest(b"display");
+        let display = format!("{h}");
+        let debug = format!("{h:?}");
+        assert_eq!(display.len(), 64); // 32 bytes * 2 hex chars
+        assert!(debug.starts_with("Blake3("));
+    }
+
+    #[test]
+    fn sha256_display_and_debug() {
+        let h = Sha256Hash::digest(b"display");
+        let display = format!("{h}");
+        let debug = format!("{h:?}");
+        assert_eq!(display.len(), 64);
+        assert!(debug.starts_with("SHA256("));
+    }
+
+    #[test]
+    fn blake3_as_ref() {
+        let h = Blake3Hash::digest(b"asref");
+        let bytes: &[u8] = h.as_ref();
+        assert_eq!(bytes.len(), 32);
+    }
+
+    #[test]
+    fn blake3_hash_impl() {
+        use std::collections::HashSet;
+        let h1 = Blake3Hash::digest(b"a");
+        let h2 = Blake3Hash::digest(b"b");
+        let h3 = Blake3Hash::digest(b"a");
+        let mut set = HashSet::new();
+        set.insert(h1.clone());
+        set.insert(h2);
+        set.insert(h3);
+        assert_eq!(set.len(), 2); // h1 and h3 are the same
     }
 }

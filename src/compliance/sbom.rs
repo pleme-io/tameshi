@@ -70,6 +70,40 @@ pub enum SbomGenerator {
     Trivy,
 }
 
+impl std::fmt::Display for SbomFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SbomFormat::Spdx => write!(f, "SPDX"),
+            SbomFormat::CycloneDx => write!(f, "CycloneDX"),
+        }
+    }
+}
+
+impl std::fmt::Display for SbomGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SbomGenerator::Syft => write!(f, "Syft"),
+            SbomGenerator::NixSbom => write!(f, "nix-sbom"),
+            SbomGenerator::CycloneDxCli => write!(f, "cyclonedx-cli"),
+            SbomGenerator::Trivy => write!(f, "Trivy"),
+        }
+    }
+}
+
+impl std::fmt::Display for SbomSubjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SbomSubjectType::OciImage => write!(f, "OCI Image"),
+            SbomSubjectType::NixClosure => write!(f, "Nix Closure"),
+            SbomSubjectType::NixDerivation => write!(f, "Nix Derivation"),
+            SbomSubjectType::HelmChart => write!(f, "Helm Chart"),
+            SbomSubjectType::RustCrate => write!(f, "Rust Crate"),
+            SbomSubjectType::NpmPackage => write!(f, "NPM Package"),
+            SbomSubjectType::Application => write!(f, "Application"),
+        }
+    }
+}
+
 impl SbomGenerator {
     pub fn nix_attr(&self) -> &str {
         match self {
@@ -153,6 +187,7 @@ impl NtiaCompliance {
 /// ```text
 /// sbom_attestation_hash = BLAKE3(generator_hash || sbom_hash || artifact_hash)
 /// ```
+#[must_use]
 pub fn compute_sbom_hash(attestation: &SbomAttestation) -> Blake3Hash {
     let mut data = Vec::new();
     data.extend_from_slice(&attestation.generator_hash.0);
@@ -162,6 +197,7 @@ pub fn compute_sbom_hash(attestation: &SbomAttestation) -> Blake3Hash {
 }
 
 /// Combine multiple SBOM hashes (e.g., SPDX + CycloneDX for same artifact).
+#[must_use]
 pub fn combine_sbom_hashes(attestations: &[SbomAttestation]) -> Blake3Hash {
     let mut hashes: Vec<Blake3Hash> = attestations.iter().map(|a| compute_sbom_hash(a)).collect();
     hashes.sort_by(|a, b| a.to_hex().cmp(&b.to_hex()));

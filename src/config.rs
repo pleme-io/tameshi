@@ -47,6 +47,46 @@ use serde::Serialize;
 
 use crate::error::TameshiError;
 
+/// Abstraction over configuration loading.
+///
+/// Allows consumers to inject custom config loading strategies
+/// (e.g., loading from Kubernetes ConfigMaps, remote endpoints, etc.)
+/// while keeping the same interface.
+pub trait ConfigLoader: Send + Sync {
+    /// Load configuration from the provider.
+    fn load<T>(&self) -> Result<T, TameshiError>
+    where
+        T: Default + Serialize + serde::de::DeserializeOwned;
+}
+
+/// Default config loader using the layered figment pattern.
+pub struct FigmentConfigLoader {
+    /// Environment variable prefix.
+    pub env_prefix: String,
+    /// YAML file paths to search.
+    pub yaml_paths: Vec<String>,
+}
+
+impl FigmentConfigLoader {
+    /// Create a new figment config loader.
+    pub fn new(env_prefix: &str, yaml_paths: &[&str]) -> Self {
+        Self {
+            env_prefix: env_prefix.to_string(),
+            yaml_paths: yaml_paths.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+}
+
+impl ConfigLoader for FigmentConfigLoader {
+    fn load<T>(&self) -> Result<T, TameshiError>
+    where
+        T: Default + Serialize + serde::de::DeserializeOwned,
+    {
+        let path_refs: Vec<&str> = self.yaml_paths.iter().map(|s| s.as_str()).collect();
+        load_config(&self.env_prefix, &path_refs)
+    }
+}
+
 /// Load a configuration using the layered pattern: defaults → YAML → env vars.
 ///
 /// - `env_prefix`: Environment variable prefix (e.g., `"SEKIBAN"` → `SEKIBAN_LISTEN_ADDR`)
@@ -108,16 +148,6 @@ mod tests {
         debug: bool,
     }
 
-    impl TestConfig {
-        fn with_defaults() -> Self {
-            Self {
-                host: "localhost".to_string(),
-                port: 8080,
-                debug: false,
-            }
-        }
-    }
-
     // Note: We can't implement Default twice, so we test via Serialized defaults directly
 
     #[test]
@@ -158,7 +188,8 @@ mod tests {
         .unwrap();
 
         // Set env var to override host
-        std::env::set_var("TAMESHI_TEST_OVR_HOST", "from-env");
+        // SAFETY: test-only, single-threaded access to env vars
+        unsafe { std::env::set_var("TAMESHI_TEST_OVR_HOST", "from-env") };
 
         let config: TestConfig =
             load_config("TAMESHI_TEST_OVR", &[yaml_path.to_str().unwrap()]).unwrap();
@@ -168,17 +199,20 @@ mod tests {
         assert!(!config.debug); // from yaml
 
         // Clean up
-        std::env::remove_var("TAMESHI_TEST_OVR_HOST");
+        // SAFETY: test-only, single-threaded access to env vars
+        unsafe { std::env::remove_var("TAMESHI_TEST_OVR_HOST") };
     }
 
     #[test]
     fn env_only_mode() {
-        std::env::set_var("TAMESHI_TEST_ENV_PORT", "4000");
+        // SAFETY: test-only, single-threaded access to env vars
+        unsafe { std::env::set_var("TAMESHI_TEST_ENV_PORT", "4000") };
 
         let config: TestConfig = load_config_env_only("TAMESHI_TEST_ENV").unwrap();
         assert_eq!(config.port, 4000);
 
-        std::env::remove_var("TAMESHI_TEST_ENV_PORT");
+        // SAFETY: test-only, single-threaded access to env vars
+        unsafe { std::env::remove_var("TAMESHI_TEST_ENV_PORT") };
     }
 
     #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -220,8 +254,11 @@ mod tests {
         )
         .unwrap();
 
-        std::env::set_var("TAMESHI_TEST_NENV_SERVER__HOST", "from-env");
-        std::env::set_var("TAMESHI_TEST_NENV_LOG_LEVEL", "trace");
+        // SAFETY: test-only, single-threaded access to env vars
+        unsafe {
+            std::env::set_var("TAMESHI_TEST_NENV_SERVER__HOST", "from-env");
+            std::env::set_var("TAMESHI_TEST_NENV_LOG_LEVEL", "trace");
+        }
 
         let config: NestedConfig =
             load_config("TAMESHI_TEST_NENV", &[yaml_path.to_str().unwrap()]).unwrap();
@@ -230,8 +267,11 @@ mod tests {
         assert_eq!(config.server.port, 5000); // from yaml
         assert_eq!(config.log_level, "trace"); // from env
 
-        std::env::remove_var("TAMESHI_TEST_NENV_SERVER__HOST");
-        std::env::remove_var("TAMESHI_TEST_NENV_LOG_LEVEL");
+        // SAFETY: test-only, single-threaded access to env vars
+        unsafe {
+            std::env::remove_var("TAMESHI_TEST_NENV_SERVER__HOST");
+            std::env::remove_var("TAMESHI_TEST_NENV_LOG_LEVEL");
+        }
     }
 
     #[test]

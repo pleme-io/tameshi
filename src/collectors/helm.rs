@@ -7,6 +7,8 @@ use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::{InputHash, LayerSignature, LayerType};
 
+use super::traits::LayerCollector;
+
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::debug;
@@ -127,13 +129,59 @@ pub async fn hash_provenance(prov_path: &str) -> Result<InputHash> {
     })
 }
 
+#[inline]
 fn compute_composite(inputs: &[InputHash]) -> Blake3Hash {
     if inputs.is_empty() {
         return Blake3Hash::digest(b"empty-helm-chart");
     }
-    let mut data = Vec::new();
+    let mut data = Vec::with_capacity(inputs.len() * 32);
     for input in inputs {
         data.extend_from_slice(&input.hash.0);
     }
     Blake3Hash::digest(&data)
+}
+
+/// Helm chart collector.
+///
+/// Wraps the standalone functions in a [`LayerCollector`] implementation.
+/// Supports both local chart directories and OCI-stored charts.
+pub struct HelmCollector {
+    /// Chart reference: either a local path or an OCI reference.
+    pub chart_ref: String,
+    /// Whether `chart_ref` is an OCI reference.
+    pub is_oci: bool,
+}
+
+impl HelmCollector {
+    /// Create a collector for a local chart directory.
+    #[must_use]
+    pub fn from_dir(chart_path: &str) -> Self {
+        Self {
+            chart_ref: chart_path.to_string(),
+            is_oci: false,
+        }
+    }
+
+    /// Create a collector for an OCI-stored chart.
+    #[must_use]
+    pub fn from_oci(chart_ref: &str) -> Self {
+        Self {
+            chart_ref: chart_ref.to_string(),
+            is_oci: true,
+        }
+    }
+}
+
+impl LayerCollector for HelmCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        if self.is_oci {
+            hash_chart_oci(&self.chart_ref).await
+        } else {
+            hash_chart_dir(&self.chart_ref).await
+        }
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Helm
+    }
 }

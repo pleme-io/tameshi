@@ -1,0 +1,10 @@
+apiVersion: sekiban.pleme.io/v1alpha1
+kind: Certification
+metadata:
+  name: production-cert
+  namespace: default
+spec:
+  environment: production
+  gates:
+    - production-gate
+  auditRetentionDays: 90

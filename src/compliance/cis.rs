@@ -102,6 +102,18 @@ pub enum CisCheckStatus {
     NotApplicable,
 }
 
+impl std::fmt::Display for CisCheckStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CisCheckStatus::Pass => write!(f, "PASS"),
+            CisCheckStatus::Fail => write!(f, "FAIL"),
+            CisCheckStatus::Warn => write!(f, "WARN"),
+            CisCheckStatus::Info => write!(f, "INFO"),
+            CisCheckStatus::NotApplicable => write!(f, "N/A"),
+        }
+    }
+}
+
 /// CIS benchmark summary.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CisSummary {
@@ -186,6 +198,7 @@ pub struct CisBenchmarkMapping {
 }
 
 /// Compute CIS benchmark hash for the compliance chain.
+#[must_use]
 pub fn compute_cis_hash(result: &CisBenchmarkResult) -> Blake3Hash {
     let mut data = Vec::new();
     data.extend_from_slice(&result.tool_hash.0);
@@ -220,6 +233,7 @@ impl Default for CisPolicy {
 }
 
 /// Evaluate a CIS benchmark result against policy.
+#[must_use]
 pub fn evaluate_cis_policy(result: &CisBenchmarkResult, policy: &CisPolicy) -> bool {
     result.summary.scored_pass_rate >= policy.min_scored_pass_rate
         && result.summary.scored_fail <= policy.max_scored_failures

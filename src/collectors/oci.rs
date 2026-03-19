@@ -7,6 +7,8 @@ use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::{InputHash, LayerSignature, LayerType};
 
+use super::traits::LayerCollector;
+
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::debug;
@@ -90,7 +92,7 @@ pub async fn hash_images(image_refs: &[&str]) -> Result<LayerSignature> {
 }
 
 /// Parse OCI manifest JSON to extract layer digest references.
-fn parse_manifest_layers(manifest_bytes: &[u8], source: &str) -> Result<Vec<InputHash>> {
+pub fn parse_manifest_layers(manifest_bytes: &[u8], source: &str) -> Result<Vec<InputHash>> {
     let manifest: serde_json::Value =
         serde_json::from_slice(manifest_bytes).map_err(|e| TameshiError::CollectorError {
             layer: "oci".to_string(),
@@ -150,4 +152,32 @@ fn parse_manifest_layers(manifest_bytes: &[u8], source: &str) -> Result<Vec<Inpu
     }
 
     Ok(inputs)
+}
+
+/// OCI image manifest collector.
+///
+/// Wraps the standalone functions in a [`LayerCollector`] implementation.
+pub struct OciCollector {
+    /// OCI image reference (e.g., `ghcr.io/pleme-io/app:latest`).
+    pub image_ref: String,
+}
+
+impl OciCollector {
+    /// Create a collector for a specific image reference.
+    #[must_use]
+    pub fn new(image_ref: &str) -> Self {
+        Self {
+            image_ref: image_ref.to_string(),
+        }
+    }
+}
+
+impl LayerCollector for OciCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        hash_manifest(&self.image_ref).await
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Oci
+    }
 }

@@ -309,4 +309,72 @@ mod tests {
         assert!(output.passed);
         assert!(!output.attestation_json.is_empty());
     }
+
+    #[test]
+    fn image_attestation_creation() {
+        let att = image_attestation(
+            "ghcr.io/org/app",
+            "latest",
+            "amd64",
+            Blake3Hash::digest(b"manifest"),
+            true,
+            Some("ci@org.com".to_string()),
+            Blake3Hash::digest(b"vulns"),
+            3,
+            0,
+            Blake3Hash::digest(b"sbom"),
+        );
+        assert_eq!(att.image_ref, "ghcr.io/org/app");
+        assert!(att.cosign_verified);
+        assert_eq!(att.layer_type, LayerType::Oci);
+    }
+
+    #[test]
+    fn chart_attestation_creation() {
+        let att = chart_attestation(
+            "my-chart",
+            "1.0.0",
+            Blake3Hash::digest(b"chart"),
+            true,
+            vec![],
+            true,
+            true,
+            "oci://ghcr.io/org/charts/my-chart",
+        );
+        assert_eq!(att.chart_name, "my-chart");
+        assert!(att.provenance_verified);
+        assert!(att.linter_passed);
+    }
+
+    #[test]
+    fn ci_stage_output_serde_roundtrip() {
+        let output = CiStageOutput {
+            stage: "build".to_string(),
+            hash: "blake3:abc".to_string(),
+            passed: true,
+            attestation_json: r#"{"key":"value"}"#.to_string(),
+        };
+        let json = serde_json::to_string(&output).unwrap();
+        let deserialized: CiStageOutput = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.stage, "build");
+        assert!(deserialized.passed);
+    }
+
+    #[test]
+    fn annotation_patch_deterministic() {
+        let sig = Blake3Hash::digest(b"sig");
+        let cert = Blake3Hash::digest(b"cert");
+        let annotations = sekiban_annotations(&sig, Some(&cert), None);
+        let patch1 = render_annotation_patch(&annotations);
+        let patch2 = render_annotation_patch(&annotations);
+        assert_eq!(patch1, patch2);
+    }
+
+    #[test]
+    fn annotation_constants_have_pleme_prefix() {
+        assert!(ANNOTATION_SIGNATURE.starts_with("sekiban.pleme.io/"));
+        assert!(ANNOTATION_CERTIFICATION.starts_with("sekiban.pleme.io/"));
+        assert!(ANNOTATION_COMPLIANCE.starts_with("sekiban.pleme.io/"));
+        assert!(ANNOTATION_CHANGESET.starts_with("sekiban.pleme.io/"));
+    }
 }

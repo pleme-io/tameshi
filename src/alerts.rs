@@ -257,6 +257,18 @@ pub enum NotificationChannel {
     Log,
 }
 
+/// Trait for dispatching alerts.
+///
+/// Abstracts over alert delivery so consumers can inject custom
+/// dispatchers (e.g., in-memory for testing, custom webhook logic).
+pub trait AlertSender: Send + Sync {
+    /// Dispatch an alert. Implementations should handle channel routing.
+    fn dispatch(
+        &self,
+        alert: &Alert,
+    ) -> impl std::future::Future<Output = ()> + Send;
+}
+
 /// Alert dispatcher — sends alerts to configured channels.
 #[derive(Clone)]
 pub struct AlertDispatcher {
@@ -412,6 +424,46 @@ impl AlertDispatcher {
     }
 }
 
+impl AlertSender for AlertDispatcher {
+    async fn dispatch(&self, alert: &Alert) {
+        AlertDispatcher::dispatch(self, alert).await;
+    }
+}
+
+/// A no-op alert sender for testing.
+///
+/// Records dispatched alerts in memory for assertions.
+pub struct MockAlertSender {
+    alerts: std::sync::Mutex<Vec<Alert>>,
+}
+
+impl MockAlertSender {
+    /// Create a new mock alert sender.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            alerts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Get all dispatched alerts.
+    pub fn alerts(&self) -> Vec<Alert> {
+        self.alerts.lock().unwrap().clone()
+    }
+}
+
+impl Default for MockAlertSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AlertSender for MockAlertSender {
+    async fn dispatch(&self, alert: &Alert) {
+        self.alerts.lock().unwrap().push(alert.clone());
+    }
+}
+
 /// Compute HMAC-SHA256 signature for webhook payloads.
 fn compute_webhook_signature(secret: &str, body: &[u8]) -> String {
     use sha2::Sha256;
@@ -420,7 +472,7 @@ fn compute_webhook_signature(secret: &str, body: &[u8]) -> String {
     hasher.update(secret.as_bytes());
     hasher.update(body);
     let result = hasher.finalize();
-    format!("sha256={}", hex::encode(result))
+    format!("sha256={}", const_hex::encode(result))
 }
 
 #[cfg(test)]
@@ -474,5 +526,99 @@ mod tests {
         );
         assert!(alert.summary.contains("Compliance FAILED"));
         assert!(alert.summary.contains("2 controls"));
+    }
+
+    #[test]
+    fn alert_severity_display() {
+        assert_eq!(AlertSeverity::Info.to_string(), "info");
+        assert_eq!(AlertSeverity::Warning.to_string(), "warning");
+        assert_eq!(AlertSeverity::Critical.to_string(), "critical");
+        assert_eq!(AlertSeverity::Emergency.to_string(), "emergency");
+    }
+
+    #[test]
+    fn alert_severity_serde_roundtrip() {
+        for severity in &[AlertSeverity::Info, AlertSeverity::Warning, AlertSeverity::Critical, AlertSeverity::Emergency] {
+            let json = serde_json::to_string(severity).unwrap();
+            let deserialized: AlertSeverity = serde_json::from_str(&json).unwrap();
+            assert_eq!(*severity, deserialized);
+        }
+    }
+
+    #[test]
+    fn alert_serde_roundtrip() {
+        let alert = Alert::gate_denied(
+            "Deployment", "app", "default",
+            &Blake3Hash::digest(b"expected"), None,
+            "missing sig", "prod",
+        );
+        let json = serde_json::to_string(&alert).unwrap();
+        let deserialized: Alert = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.severity, AlertSeverity::Critical);
+        assert_eq!(deserialized.source, "sekiban");
+    }
+
+    #[test]
+    fn notification_channel_serde_roundtrip() {
+        let channels = vec![
+            NotificationChannel::Log,
+            NotificationChannel::Webhook {
+                url: "https://example.com".to_string(),
+                secret: None,
+                headers: None,
+            },
+            NotificationChannel::Discord {
+                webhook_url: "https://discord.com/api/webhooks/123".to_string(),
+                username: Some("TestBot".to_string()),
+            },
+            NotificationChannel::Slack {
+                webhook_url: "https://hooks.slack.com/xxx".to_string(),
+                channel: Some("#alerts".to_string()),
+            },
+            NotificationChannel::KubernetesEvent {
+                namespace: Some("default".to_string()),
+            },
+        ];
+        for channel in &channels {
+            let json = serde_json::to_string(channel).unwrap();
+            let deserialized: NotificationChannel = serde_json::from_str(&json).unwrap();
+            let json2 = serde_json::to_string(&deserialized).unwrap();
+            assert_eq!(json, json2);
+        }
+    }
+
+    #[test]
+    fn webhook_signature_deterministic() {
+        let sig1 = compute_webhook_signature("secret", b"body");
+        let sig2 = compute_webhook_signature("secret", b"body");
+        assert_eq!(sig1, sig2);
+        assert!(sig1.starts_with("sha256="));
+    }
+
+    #[test]
+    fn webhook_signature_changes_with_secret() {
+        let sig1 = compute_webhook_signature("secret1", b"body");
+        let sig2 = compute_webhook_signature("secret2", b"body");
+        assert_ne!(sig1, sig2);
+    }
+
+    #[tokio::test]
+    async fn mock_alert_sender_records_alerts() {
+        let sender = MockAlertSender::new();
+        let alert = Alert::gate_denied(
+            "Pod", "nginx", "default",
+            &Blake3Hash::digest(b"sig"), None,
+            "denied", "test",
+        );
+        sender.dispatch(&alert).await;
+        let alerts = sender.alerts();
+        assert_eq!(alerts.len(), 1);
+        assert!(alerts[0].summary.contains("Gate DENIED"));
+    }
+
+    #[test]
+    fn log_only_dispatcher() {
+        let dispatcher = AlertDispatcher::log_only();
+        assert_eq!(dispatcher.channels.len(), 1);
     }
 }

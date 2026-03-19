@@ -8,6 +8,8 @@ use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::{InputHash, LayerSignature, LayerType};
 
+use super::traits::LayerCollector;
+
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::debug;
@@ -160,7 +162,7 @@ async fn collect_manifests(dir: &str, inputs: &mut Vec<InputHash>) -> Result<()>
 
 /// Strip volatile fields that change between reads (resourceVersion, uid,
 /// creationTimestamp, managedFields, etc.) for deterministic hashing.
-fn strip_volatile_fields(value: &mut serde_json::Value) {
+pub fn strip_volatile_fields(value: &mut serde_json::Value) {
     if let Some(obj) = value.as_object_mut() {
         // Strip from metadata
         if let Some(metadata) = obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
@@ -184,13 +186,73 @@ fn strip_volatile_fields(value: &mut serde_json::Value) {
     }
 }
 
+#[inline]
 fn compute_composite(inputs: &[InputHash]) -> Blake3Hash {
     if inputs.is_empty() {
         return Blake3Hash::digest(b"empty-kubernetes-manifests");
     }
-    let mut data = Vec::new();
+    let mut data = Vec::with_capacity(inputs.len() * 32);
     for input in inputs {
         data.extend_from_slice(&input.hash.0);
     }
     Blake3Hash::digest(&data)
+}
+
+/// Source for Kubernetes manifest collection.
+#[derive(Clone, Debug)]
+pub enum KubernetesSource {
+    /// Hash a directory of static manifests.
+    ManifestDir(String),
+    /// Hash the live state of a namespace.
+    NamespaceState(String),
+    /// Hash a kustomize build output.
+    KustomizeBuild(String),
+}
+
+/// Kubernetes manifest collector.
+///
+/// Wraps the standalone functions in a [`LayerCollector`] implementation.
+pub struct KubernetesCollector {
+    /// Source to collect from.
+    pub source: KubernetesSource,
+}
+
+impl KubernetesCollector {
+    /// Create a collector for a manifest directory.
+    #[must_use]
+    pub fn from_dir(dir_path: &str) -> Self {
+        Self {
+            source: KubernetesSource::ManifestDir(dir_path.to_string()),
+        }
+    }
+
+    /// Create a collector for a live namespace.
+    #[must_use]
+    pub fn from_namespace(namespace: &str) -> Self {
+        Self {
+            source: KubernetesSource::NamespaceState(namespace.to_string()),
+        }
+    }
+
+    /// Create a collector for a kustomize build.
+    #[must_use]
+    pub fn from_kustomize(dir_path: &str) -> Self {
+        Self {
+            source: KubernetesSource::KustomizeBuild(dir_path.to_string()),
+        }
+    }
+}
+
+impl LayerCollector for KubernetesCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        match &self.source {
+            KubernetesSource::ManifestDir(path) => hash_manifest_dir(path).await,
+            KubernetesSource::NamespaceState(ns) => hash_namespace_state(ns).await,
+            KubernetesSource::KustomizeBuild(path) => hash_kustomize_build(path).await,
+        }
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Kubernetes
+    }
 }

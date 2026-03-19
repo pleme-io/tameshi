@@ -50,4 +50,5 @@ pub mod merkle;
 pub mod reporting;
 pub mod selftest;
 pub mod signature;
+pub mod traits;
 pub mod verify;

@@ -8,7 +8,7 @@ use crate::hash::Blake3Hash;
 use crate::signature::MasterSignature;
 
 /// Result of a verification check.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerificationResult {
     /// Whether verification passed.
     pub passed: bool,
@@ -23,7 +23,7 @@ pub struct VerificationResult {
 }
 
 /// Verification status for a single layer.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LayerVerification {
     /// Layer name.
     pub layer: String,
@@ -41,6 +41,7 @@ pub struct LayerVerification {
 /// 1. Untested signature matches Merkle root recomputation
 /// 2. If compliance is present, secure signature is valid
 /// 3. Gating signature matches expected
+#[must_use]
 pub fn verify_master(master: &MasterSignature, expected: &Blake3Hash) -> VerificationResult {
     let actual = master.gating_signature().clone();
     let untested_valid = master.verify_untested();
@@ -174,5 +175,65 @@ mod tests {
         let master = merkle::compose_merkle(&layers, "test");
         let prefixed = master.gating_signature_prefixed();
         assert!(verify_prefixed(&master, &prefixed).is_ok());
+    }
+
+    #[test]
+    fn verify_prefixed_invalid_format() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let master = merkle::compose_merkle(&layers, "test");
+        let result = verify_prefixed(&master, "not-a-valid-hash");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_untested_wrong_hash() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let master = merkle::compose_merkle(&layers, "test");
+        let wrong = Blake3Hash::digest(b"wrong");
+        let result = verify_untested(&master, &wrong);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_secure_wrong_hash() {
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix"),
+            make_layer(LayerType::Oci, b"oci"),
+        ];
+        let compliance = Blake3Hash::digest(b"compliance");
+        let master = merkle::compose_merkle(&layers, "prod").with_compliance(compliance);
+        let wrong = Blake3Hash::digest(b"wrong-secure");
+        let result = verify_secure(&master, &wrong);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_master_description_contains_environment() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let master = merkle::compose_merkle(&layers, "my-env");
+        let expected = master.gating_signature().clone();
+        let result = verify_master(&master, &expected);
+        assert!(result.description.contains("my-env"));
+    }
+
+    #[test]
+    fn verification_result_equality() {
+        let h1 = Blake3Hash::digest(b"a");
+        let h2 = Blake3Hash::digest(b"a");
+        let r1 = VerificationResult {
+            passed: true,
+            expected: h1.clone(),
+            actual: h1.clone(),
+            description: "test".to_string(),
+            layer_results: vec![],
+        };
+        let r2 = VerificationResult {
+            passed: true,
+            expected: h2.clone(),
+            actual: h2,
+            description: "test".to_string(),
+            layer_results: vec![],
+        };
+        assert_eq!(r1, r2);
     }
 }

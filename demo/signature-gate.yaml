@@ -1,0 +1,27 @@
+apiVersion: sekiban.pleme.io/v1alpha1
+kind: SignatureGate
+metadata:
+  name: production-gate
+  namespace: default
+spec:
+  layers:
+    - nix
+    - oci
+    - helm
+    - kubernetes
+    - akeyless
+  expectedSignature: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  targetResources:
+    - group: apps
+      kind: Deployment
+      operations:
+        - CREATE
+        - UPDATE
+    - group: apps
+      kind: StatefulSet
+      operations:
+        - CREATE
+        - UPDATE
+  compliancePolicy: nist-moderate
+  expectedCertificationHash: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+  verificationIntervalSecs: 300

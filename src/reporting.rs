@@ -259,7 +259,7 @@ pub struct ReportRequest {
 }
 
 /// Report output formats.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReportFormat {
     #[default]
@@ -268,4 +268,208 @@ pub enum ReportFormat {
     Nist,
     Html,
     Csv,
+}
+
+impl std::fmt::Display for ReportFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReportFormat::Json => write!(f, "json"),
+            ReportFormat::Oscal => write!(f, "oscal"),
+            ReportFormat::Nist => write!(f, "nist"),
+            ReportFormat::Html => write!(f, "html"),
+            ReportFormat::Csv => write!(f, "csv"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn environment_status_display() {
+        assert_eq!(EnvironmentStatus::Green.to_string(), "green");
+        assert_eq!(EnvironmentStatus::Yellow.to_string(), "yellow");
+        assert_eq!(EnvironmentStatus::Red.to_string(), "red");
+        assert_eq!(EnvironmentStatus::Unknown.to_string(), "unknown");
+    }
+
+    #[test]
+    fn environment_status_serde_roundtrip() {
+        for status in &[
+            EnvironmentStatus::Green,
+            EnvironmentStatus::Yellow,
+            EnvironmentStatus::Red,
+            EnvironmentStatus::Unknown,
+        ] {
+            let json = serde_json::to_string(status).unwrap();
+            let deserialized: EnvironmentStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(*status, deserialized);
+        }
+    }
+
+    #[test]
+    fn report_format_display() {
+        assert_eq!(ReportFormat::Json.to_string(), "json");
+        assert_eq!(ReportFormat::Oscal.to_string(), "oscal");
+        assert_eq!(ReportFormat::Csv.to_string(), "csv");
+    }
+
+    #[test]
+    fn report_format_default_is_json() {
+        let format = ReportFormat::default();
+        assert_eq!(format, ReportFormat::Json);
+    }
+
+    #[test]
+    fn report_format_serde_roundtrip() {
+        for fmt in &[
+            ReportFormat::Json,
+            ReportFormat::Oscal,
+            ReportFormat::Nist,
+            ReportFormat::Html,
+            ReportFormat::Csv,
+        ] {
+            let json = serde_json::to_string(fmt).unwrap();
+            let deserialized: ReportFormat = serde_json::from_str(&json).unwrap();
+            assert_eq!(*fmt, deserialized);
+        }
+    }
+
+    #[test]
+    fn report_request_serde_roundtrip() {
+        let req = ReportRequest {
+            environment: "production".to_string(),
+            from: None,
+            to: None,
+            include_trends: true,
+            include_drift: false,
+            format: ReportFormat::Oscal,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: ReportRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.environment, "production");
+        assert!(deserialized.include_trends);
+        assert!(!deserialized.include_drift);
+        assert_eq!(deserialized.format, ReportFormat::Oscal);
+    }
+
+    #[test]
+    fn report_request_defaults() {
+        let json = r#"{"environment": "staging"}"#;
+        let req: ReportRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.environment, "staging");
+        assert!(!req.include_trends);
+        assert!(!req.include_drift);
+        assert_eq!(req.format, ReportFormat::Json);
+    }
+
+    #[test]
+    fn signature_report_serde_roundtrip() {
+        let report = SignatureReport {
+            untested: "blake3:abc".to_string(),
+            compliance: Some("blake3:def".to_string()),
+            secure: Some("blake3:ghi".to_string()),
+            fully_attested: true,
+            computed_at: Utc::now(),
+            age_seconds: 300,
+            stale: false,
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: SignatureReport = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.fully_attested);
+        assert!(!deserialized.stale);
+    }
+
+    #[test]
+    fn layer_report_serde_roundtrip() {
+        let report = LayerReport {
+            layer: LayerType::Nix,
+            hash: "blake3:abc".to_string(),
+            verified: true,
+            input_count: 42,
+            last_verified_at: Utc::now(),
+            source: "/nix/store/xxx".to_string(),
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: LayerReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.layer, LayerType::Nix);
+        assert!(deserialized.verified);
+        assert_eq!(deserialized.input_count, 42);
+    }
+
+    #[test]
+    fn compliance_summary_serde_roundtrip() {
+        let summary = ComplianceSummary {
+            total_controls: 100,
+            passed: 95,
+            failed: 3,
+            skipped: 2,
+            pass_rate: 0.95,
+            compliance_hash: "blake3:xxx".to_string(),
+            framework: "kensa".to_string(),
+            baseline: "moderate".to_string(),
+            failed_controls: vec!["AC-2".to_string(), "SC-7".to_string()],
+            last_assessed_at: Utc::now(),
+            family_breakdown: vec![ControlFamilyReport {
+                family: "AC".to_string(),
+                name: "Access Control".to_string(),
+                total: 10,
+                passed: 9,
+                failed: 1,
+            }],
+        };
+        let json = serde_json::to_string(&summary).unwrap();
+        let deserialized: ComplianceSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.total_controls, 100);
+        assert_eq!(deserialized.failed_controls.len(), 2);
+    }
+
+    #[test]
+    fn drift_report_no_drift() {
+        let report = DriftReport {
+            drift_detected: false,
+            drifted_layers: vec![],
+            baseline_established_at: Utc::now(),
+            drift_detected_at: None,
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: DriftReport = serde_json::from_str(&json).unwrap();
+        assert!(!deserialized.drift_detected);
+        assert!(deserialized.drifted_layers.is_empty());
+    }
+
+    #[test]
+    fn drift_report_with_drift() {
+        let report = DriftReport {
+            drift_detected: true,
+            drifted_layers: vec![LayerDrift {
+                layer: LayerType::Oci,
+                expected_hash: "blake3:aaa".to_string(),
+                actual_hash: "blake3:bbb".to_string(),
+                detected_at: Utc::now(),
+            }],
+            baseline_established_at: Utc::now(),
+            drift_detected_at: Some(Utc::now()),
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: DriftReport = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.drift_detected);
+        assert_eq!(deserialized.drifted_layers.len(), 1);
+    }
+
+    #[test]
+    fn trend_data_point_serde_roundtrip() {
+        let point = TrendDataPoint {
+            timestamp: Utc::now(),
+            pass_rate: 0.95,
+            gate_denials: 2,
+            alerts: 1,
+            certified: true,
+        };
+        let json = serde_json::to_string(&point).unwrap();
+        let deserialized: TrendDataPoint = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.certified);
+        assert_eq!(deserialized.gate_denials, 2);
+    }
 }

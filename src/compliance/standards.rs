@@ -101,6 +101,43 @@ pub enum MappingConfidence {
     Low,
 }
 
+impl std::fmt::Display for MappingConfidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MappingConfidence::Exact => write!(f, "exact"),
+            MappingConfidence::High => write!(f, "high"),
+            MappingConfidence::Moderate => write!(f, "moderate"),
+            MappingConfidence::Low => write!(f, "low"),
+        }
+    }
+}
+
+impl std::fmt::Display for StandardControlStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StandardControlStatus::Pass => write!(f, "pass"),
+            StandardControlStatus::Fail => write!(f, "fail"),
+            StandardControlStatus::NotApplicable => write!(f, "not_applicable"),
+            StandardControlStatus::Manual => write!(f, "manual"),
+            StandardControlStatus::NotAssessed => write!(f, "not_assessed"),
+        }
+    }
+}
+
+impl std::fmt::Display for ArtifactCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArtifactCategory::ContainerImage => write!(f, "Container Image"),
+            ArtifactCategory::KubernetesResource => write!(f, "Kubernetes Resource"),
+            ArtifactCategory::HelmChart => write!(f, "Helm Chart"),
+            ArtifactCategory::NixDerivation => write!(f, "Nix Derivation"),
+            ArtifactCategory::InfrastructureCode => write!(f, "Infrastructure Code"),
+            ArtifactCategory::Application => write!(f, "Application"),
+            ArtifactCategory::SupplyChain => write!(f, "Supply Chain"),
+        }
+    }
+}
+
 /// Assessment result for any standard.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StandardAssessment {
@@ -185,6 +222,7 @@ impl StandardSummary {
 }
 
 /// Compute assessment hash for any standard.
+#[must_use]
 pub fn compute_standard_hash(assessment: &StandardAssessment) -> Blake3Hash {
     let mut data = Vec::new();
     data.extend_from_slice(&assessment.tool_hash.0);
@@ -307,6 +345,7 @@ pub fn iso27001_automatable() -> Vec<(&'static str, &'static str, Vec<&'static s
 }
 
 /// Compute a unified compliance hash across multiple standards.
+#[must_use]
 pub fn compute_multi_standard_hash(assessments: &[StandardAssessment]) -> Blake3Hash {
     let mut hashes: Vec<Blake3Hash> = assessments.iter().map(|a| compute_standard_hash(a)).collect();
     hashes.sort_by(|a, b| a.to_hex().cmp(&b.to_hex()));

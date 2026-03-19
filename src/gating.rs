@@ -17,13 +17,13 @@
 //! | Helm | Chart verification | inshou/sekiban (provenance check) |
 //! | OpenTofu | Pre-apply check | inshou (state verification) |
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::api_types::GateDecision;
 use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::MasterSignature;
+use crate::traits::Clock;
 
 /// A gating policy that defines what must be verified before provisioning.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,10 +54,25 @@ impl Default for GatingPolicy {
 }
 
 /// Evaluate a gating decision against a master signature and expected hash.
+///
+/// Uses [`SystemClock`](crate::traits::SystemClock) for signature age checks.
+/// For deterministic testing, use [`evaluate_gate_with_clock`] instead.
+#[must_use]
 pub fn evaluate_gate(
     policy: &GatingPolicy,
     master: &MasterSignature,
     expected: &Blake3Hash,
+) -> GateDecision {
+    evaluate_gate_with_clock(policy, master, expected, &crate::traits::SystemClock)
+}
+
+/// Evaluate a gating decision with an injected clock for deterministic testing.
+#[must_use]
+pub fn evaluate_gate_with_clock(
+    policy: &GatingPolicy,
+    master: &MasterSignature,
+    expected: &Blake3Hash,
+    clock: &impl Clock,
 ) -> GateDecision {
     // Check if compliance is required and present
     if policy.require_compliance && !master.is_fully_attested() {
@@ -71,7 +86,7 @@ pub fn evaluate_gate(
 
     // Check signature age if configured
     if let Some(max_age) = policy.max_signature_age_secs {
-        let age = Utc::now()
+        let age = clock.now()
             .signed_duration_since(master.computed_at)
             .num_seconds();
         if age > max_age as i64 {
@@ -134,21 +149,25 @@ pub fn evaluate_gate(
 }
 
 /// Fetch the expected signature from a remote endpoint.
+///
+/// Uses the default [`ReqwestHttpClient`](crate::traits::ReqwestHttpClient).
+/// For testing, use [`fetch_expected_signature_with`] with a mock client.
 pub async fn fetch_expected_signature(endpoint: &str, environment: &str) -> Result<Blake3Hash> {
-    let client = reqwest::Client::new();
+    fetch_expected_signature_with(endpoint, environment, &crate::traits::ReqwestHttpClient::new()).await
+}
+
+/// Fetch the expected signature from a remote endpoint using an injected HTTP client.
+pub async fn fetch_expected_signature_with(
+    endpoint: &str,
+    environment: &str,
+    client: &impl crate::traits::HttpClient,
+) -> Result<Blake3Hash> {
     let url = format!("{}/api/v1/gates/{}/verify", endpoint, environment);
 
-    let resp = client.get(&url).send().await.map_err(|e| {
+    let body: serde_json::Value = client.get_json(&url).await.map_err(|_| {
         TameshiError::CollectorError {
             layer: "gate".to_string(),
-            message: format!("failed to fetch signature from {}: {}", url, e),
-        }
-    })?;
-
-    let body: serde_json::Value = resp.json().await.map_err(|e| {
-        TameshiError::CollectorError {
-            layer: "gate".to_string(),
-            message: format!("failed to parse gate response: {}", e),
+            message: format!("failed to fetch signature from {}", url),
         }
     })?;
 
@@ -166,6 +185,7 @@ pub async fn fetch_expected_signature(endpoint: &str, environment: &str) -> Resu
 }
 
 /// Tatara-specific gating: verify a job submission has a valid signature.
+#[must_use]
 pub fn gate_tatara_job(
     job_spec: &serde_json::Value,
     expected_signature: &Blake3Hash,
@@ -207,6 +227,7 @@ pub fn gate_tatara_job(
 }
 
 /// FluxCD gating: verify a Kustomization/HelmRelease annotation.
+#[must_use]
 pub fn gate_fluxcd_resource(
     annotations: &std::collections::HashMap<String, String>,
     expected_signature: &Blake3Hash,
@@ -244,6 +265,7 @@ pub fn gate_fluxcd_resource(
 }
 
 /// ArgoCD gating: verify sync operation has valid signature.
+#[must_use]
 pub fn gate_argocd_sync(
     app_annotations: &std::collections::HashMap<String, String>,
     expected_signature: &Blake3Hash,
@@ -340,5 +362,184 @@ mod tests {
         let annotations = std::collections::HashMap::new();
         let decision = gate_fluxcd_resource(&annotations, &expected);
         assert!(!decision.allowed);
+    }
+
+    #[test]
+    fn gate_with_clock_detects_stale_signature() {
+        use crate::traits::FixedClock;
+
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            max_signature_age_secs: Some(60), // 1 minute
+            ..Default::default()
+        };
+
+        // Freeze clock 120 seconds in the future — signature should be stale
+        let future_time = master.computed_at + chrono::Duration::seconds(120);
+        let clock = FixedClock::new(future_time);
+        let decision = evaluate_gate_with_clock(&policy, &master, &expected, &clock);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("stale"));
+    }
+
+    #[test]
+    fn gate_with_clock_accepts_fresh_signature() {
+        use crate::traits::FixedClock;
+
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            max_signature_age_secs: Some(3600),
+            ..Default::default()
+        };
+
+        // Freeze clock 10 seconds in the future — signature is fresh
+        let near_future = master.computed_at + chrono::Duration::seconds(10);
+        let clock = FixedClock::new(near_future);
+        let decision = evaluate_gate_with_clock(&policy, &master, &expected, &clock);
+        assert!(decision.allowed);
+    }
+
+    #[test]
+    fn gate_denies_missing_required_layer() {
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            required_layers: vec!["helm".to_string()], // not present in master
+            require_compliance: false,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("Required layer"));
+    }
+
+    #[test]
+    fn tatara_job_gate_wrong_signature() {
+        let expected = Blake3Hash::digest(b"correct-sig");
+        let wrong = Blake3Hash::digest(b"wrong-sig");
+        let job = serde_json::json!({
+            "metadata": {
+                "signature": wrong.to_prefixed()
+            }
+        });
+        let decision = gate_tatara_job(&job, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("does not match"));
+    }
+
+    #[test]
+    fn tatara_job_gate_invalid_format() {
+        let expected = Blake3Hash::digest(b"sig");
+        let job = serde_json::json!({
+            "metadata": {
+                "signature": "not-a-valid-blake3-hash"
+            }
+        });
+        let decision = gate_tatara_job(&job, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("Invalid signature format"));
+    }
+
+    #[test]
+    fn fluxcd_gate_wrong_signature() {
+        let expected = Blake3Hash::digest(b"correct");
+        let wrong = Blake3Hash::digest(b"wrong");
+        let mut annotations = std::collections::HashMap::new();
+        annotations.insert(
+            "sekiban.pleme.io/signature".to_string(),
+            wrong.to_prefixed(),
+        );
+        let decision = gate_fluxcd_resource(&annotations, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("does not match"));
+    }
+
+    #[test]
+    fn fluxcd_gate_invalid_format_annotation() {
+        let expected = Blake3Hash::digest(b"sig");
+        let mut annotations = std::collections::HashMap::new();
+        annotations.insert(
+            "sekiban.pleme.io/signature".to_string(),
+            "not-blake3:garbage".to_string(),
+        );
+        let decision = gate_fluxcd_resource(&annotations, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("Invalid signature format"));
+    }
+
+    #[test]
+    fn argocd_gate_delegates_to_fluxcd() {
+        let expected = Blake3Hash::digest(b"sig");
+        let mut annotations = std::collections::HashMap::new();
+        annotations.insert(
+            "sekiban.pleme.io/signature".to_string(),
+            expected.to_prefixed(),
+        );
+        let decision = gate_argocd_sync(&annotations, &expected);
+        assert!(decision.allowed);
+    }
+
+    #[test]
+    fn gating_policy_serde_roundtrip() {
+        let policy = GatingPolicy {
+            name: "custom-policy".to_string(),
+            required_layers: vec!["nix".to_string(), "oci".to_string()],
+            require_compliance: true,
+            max_signature_age_secs: Some(7200),
+            fail_open: false,
+        };
+        let json = serde_json::to_string(&policy).unwrap();
+        let deserialized: GatingPolicy = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "custom-policy");
+        assert_eq!(deserialized.required_layers.len(), 2);
+        assert_eq!(deserialized.max_signature_age_secs, Some(7200));
+    }
+
+    #[tokio::test]
+    async fn fetch_expected_signature_with_mock() {
+        let client = crate::traits::MockHttpClient::new();
+        let expected_hash = Blake3Hash::digest(b"env-sig");
+        let response = serde_json::json!({
+            "expected_signature": expected_hash.to_prefixed()
+        });
+        client.add_json_response(
+            "https://gate.example.com/api/v1/gates/production/verify",
+            &response,
+        );
+
+        let result = fetch_expected_signature_with(
+            "https://gate.example.com",
+            "production",
+            &client,
+        ).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_hash);
+    }
+
+    #[tokio::test]
+    async fn fetch_expected_signature_with_missing_field() {
+        let client = crate::traits::MockHttpClient::new();
+        let response = serde_json::json!({"other_field": "value"});
+        client.add_json_response(
+            "https://gate.example.com/api/v1/gates/staging/verify",
+            &response,
+        );
+
+        let result = fetch_expected_signature_with(
+            "https://gate.example.com",
+            "staging",
+            &client,
+        ).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_no_max_age_allows_any_signature() {
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            max_signature_age_secs: None,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(decision.allowed);
     }
 }

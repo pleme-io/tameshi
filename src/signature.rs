@@ -7,6 +7,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 use crate::hash::Blake3Hash;
 
@@ -32,26 +33,51 @@ pub enum LayerType {
     FluxCD,
     /// ArgoCD application state
     ArgoCD,
+    /// Akeyless secret management
+    Akeyless,
 }
 
 impl fmt::Display for LayerType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LayerType::Nix => write!(f, "nix"),
-            LayerType::Oci => write!(f, "oci"),
-            LayerType::Helm => write!(f, "helm"),
-            LayerType::Tofu => write!(f, "tofu"),
-            LayerType::Kubernetes => write!(f, "kubernetes"),
-            LayerType::Kindling => write!(f, "kindling"),
-            LayerType::Tatara => write!(f, "tatara"),
-            LayerType::FluxCD => write!(f, "fluxcd"),
-            LayerType::ArgoCD => write!(f, "argocd"),
+            Self::Nix => write!(f, "nix"),
+            Self::Oci => write!(f, "oci"),
+            Self::Helm => write!(f, "helm"),
+            Self::Tofu => write!(f, "tofu"),
+            Self::Kubernetes => write!(f, "kubernetes"),
+            Self::Kindling => write!(f, "kindling"),
+            Self::Tatara => write!(f, "tatara"),
+            Self::FluxCD => write!(f, "fluxcd"),
+            Self::ArgoCD => write!(f, "argocd"),
+            Self::Akeyless => write!(f, "akeyless"),
+        }
+    }
+}
+
+impl FromStr for LayerType {
+    type Err = crate::error::TameshiError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "nix" => Ok(Self::Nix),
+            "oci" => Ok(Self::Oci),
+            "helm" => Ok(Self::Helm),
+            "tofu" | "terraform" => Ok(Self::Tofu),
+            "kubernetes" | "k8s" => Ok(Self::Kubernetes),
+            "kindling" => Ok(Self::Kindling),
+            "tatara" => Ok(Self::Tatara),
+            "fluxcd" | "flux" => Ok(Self::FluxCD),
+            "argocd" | "argo" => Ok(Self::ArgoCD),
+            "akeyless" => Ok(Self::Akeyless),
+            other => Err(crate::error::TameshiError::InvalidInput(format!(
+                "unknown layer type: '{other}'"
+            ))),
         }
     }
 }
 
 /// Metadata about how a hash was produced.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignatureMetadata {
     /// When the signature was computed.
     pub computed_at: DateTime<Utc>,
@@ -65,7 +91,7 @@ pub struct SignatureMetadata {
 }
 
 /// A single input that was hashed as part of a layer signature.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InputHash {
     /// Human-readable identifier for the input.
     pub name: String,
@@ -77,7 +103,7 @@ pub struct InputHash {
 }
 
 /// A hash signature for a single infrastructure layer.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayerSignature {
     /// Which infrastructure layer this signature covers.
     pub layer: LayerType,
@@ -91,6 +117,7 @@ pub struct LayerSignature {
 
 impl LayerSignature {
     /// Create a new layer signature.
+    #[must_use]
     pub fn new(
         layer: LayerType,
         hash: Blake3Hash,
@@ -111,12 +138,14 @@ impl LayerSignature {
     }
 
     /// Set the environment label.
+    #[must_use]
     pub fn with_environment(mut self, env: &str) -> Self {
         self.metadata.environment = Some(env.to_string());
         self
     }
 
     /// Recompute and verify the layer hash from inputs.
+    #[must_use]
     pub fn verify_inputs(&self) -> bool {
         if self.inputs.is_empty() {
             return true; // No inputs to verify against
@@ -134,7 +163,7 @@ impl LayerSignature {
 }
 
 /// The composed master signature for an environment.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MasterSignature {
     /// Merkle root of all layer signatures (before compliance).
     pub untested: Blake3Hash,
@@ -154,6 +183,7 @@ pub struct MasterSignature {
 
 impl MasterSignature {
     /// Create a new master signature from an untested Merkle root.
+    #[must_use]
     pub fn new(untested: Blake3Hash, layers: Vec<LayerSignature>, environment: &str) -> Self {
         Self {
             untested,
@@ -166,6 +196,7 @@ impl MasterSignature {
     }
 
     /// Add compliance hash and compute the final secure signature.
+    #[must_use]
     pub fn with_compliance(mut self, compliance_hash: Blake3Hash) -> Self {
         let secure = Blake3Hash::combine(&self.untested, &compliance_hash);
         self.compliance = Some(compliance_hash);
@@ -174,12 +205,14 @@ impl MasterSignature {
     }
 
     /// Verify the untested signature by recomputing the Merkle root.
+    #[must_use]
     pub fn verify_untested(&self) -> bool {
         let recomputed = crate::merkle::compute_merkle_root(&self.layers);
         recomputed == self.untested
     }
 
     /// Verify the secure signature (untested + compliance).
+    #[must_use]
     pub fn verify_secure(&self) -> bool {
         match (&self.compliance, &self.secure) {
             (Some(compliance), Some(secure)) => {
@@ -191,17 +224,20 @@ impl MasterSignature {
     }
 
     /// Check if this signature is fully attested (has compliance).
+    #[must_use]
     pub fn is_fully_attested(&self) -> bool {
         self.compliance.is_some() && self.secure.is_some()
     }
 
     /// Get the effective gating signature.
     /// Returns secure if available, otherwise untested.
+    #[must_use]
     pub fn gating_signature(&self) -> &Blake3Hash {
         self.secure.as_ref().unwrap_or(&self.untested)
     }
 
     /// Return prefixed string of the gating signature.
+    #[must_use]
     pub fn gating_signature_prefixed(&self) -> String {
         self.gating_signature().to_prefixed()
     }
@@ -241,5 +277,133 @@ mod tests {
         assert!(master.verify_untested());
         assert!(master.verify_secure());
         assert!(master.is_fully_attested());
+    }
+
+    #[test]
+    fn layer_type_from_str() {
+        assert_eq!("nix".parse::<LayerType>().unwrap(), LayerType::Nix);
+        assert_eq!("oci".parse::<LayerType>().unwrap(), LayerType::Oci);
+        assert_eq!("terraform".parse::<LayerType>().unwrap(), LayerType::Tofu);
+        assert_eq!("k8s".parse::<LayerType>().unwrap(), LayerType::Kubernetes);
+        assert_eq!("flux".parse::<LayerType>().unwrap(), LayerType::FluxCD);
+        assert_eq!("argo".parse::<LayerType>().unwrap(), LayerType::ArgoCD);
+        assert!("unknown_type".parse::<LayerType>().is_err());
+    }
+
+    #[test]
+    fn layer_type_display_roundtrip() {
+        let types = vec![
+            LayerType::Nix,
+            LayerType::Oci,
+            LayerType::Helm,
+            LayerType::Tofu,
+            LayerType::Kubernetes,
+            LayerType::Kindling,
+            LayerType::Tatara,
+            LayerType::FluxCD,
+            LayerType::ArgoCD,
+            LayerType::Akeyless,
+        ];
+        for lt in types {
+            let s = lt.to_string();
+            let parsed: LayerType = s.parse().unwrap();
+            assert_eq!(lt, parsed);
+        }
+    }
+
+    #[test]
+    fn layer_signature_serde_roundtrip() {
+        let sig = make_layer(LayerType::Helm, b"helm-data");
+        let json = serde_json::to_string(&sig).unwrap();
+        let deserialized: LayerSignature = serde_json::from_str(&json).unwrap();
+        assert_eq!(sig.layer, deserialized.layer);
+        assert_eq!(sig.hash, deserialized.hash);
+    }
+
+    #[test]
+    fn master_signature_serde_roundtrip() {
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix"),
+            make_layer(LayerType::Oci, b"oci"),
+        ];
+        let root = crate::merkle::compute_merkle_root(&layers);
+        let compliance = Blake3Hash::digest(b"compliance");
+        let master = MasterSignature::new(root, layers, "prod").with_compliance(compliance);
+
+        let json = serde_json::to_string(&master).unwrap();
+        let deserialized: MasterSignature = serde_json::from_str(&json).unwrap();
+        assert_eq!(master.untested, deserialized.untested);
+        assert_eq!(master.secure, deserialized.secure);
+        assert_eq!(master.environment, deserialized.environment);
+    }
+
+    #[test]
+    fn layer_signature_with_environment() {
+        let sig = make_layer(LayerType::Nix, b"nix")
+            .with_environment("production");
+        assert_eq!(sig.metadata.environment, Some("production".to_string()));
+    }
+
+    #[test]
+    fn layer_signature_verify_inputs_empty() {
+        let sig = make_layer(LayerType::Nix, b"nix");
+        assert!(sig.verify_inputs()); // No inputs = trivially valid
+    }
+
+    #[test]
+    fn layer_signature_verify_inputs_valid() {
+        let inputs = vec![
+            InputHash {
+                name: "a".to_string(),
+                hash: Blake3Hash::digest(b"a"),
+                size_bytes: None,
+            },
+            InputHash {
+                name: "b".to_string(),
+                hash: Blake3Hash::digest(b"b"),
+                size_bytes: None,
+            },
+        ];
+        // Compute the expected composite hash from sorted inputs
+        let mut sorted = inputs.clone();
+        sorted.sort_by(|a, b| a.name.cmp(&b.name));
+        let mut data = Vec::new();
+        for input in &sorted {
+            data.extend_from_slice(&input.hash.0);
+        }
+        let composite = Blake3Hash::digest(&data);
+
+        let sig = LayerSignature::new(LayerType::Nix, composite, "test", inputs);
+        assert!(sig.verify_inputs());
+    }
+
+    #[test]
+    fn master_signature_verify_secure_without_compliance() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let root = crate::merkle::compute_merkle_root(&layers);
+        let master = MasterSignature::new(root, layers, "test");
+        assert!(!master.verify_secure()); // No compliance = cannot verify secure
+    }
+
+    #[test]
+    fn master_signature_gating_signature_prefixed() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let root = crate::merkle::compute_merkle_root(&layers);
+        let master = MasterSignature::new(root, layers, "test");
+        let prefixed = master.gating_signature_prefixed();
+        assert!(prefixed.starts_with("blake3:"));
+        assert_eq!(prefixed.len(), 71); // "blake3:" (7) + 64 hex chars
+    }
+
+    #[test]
+    fn input_hash_serde_roundtrip() {
+        let input = InputHash {
+            name: "test-input".to_string(),
+            hash: Blake3Hash::digest(b"data"),
+            size_bytes: Some(1024),
+        };
+        let json = serde_json::to_string(&input).unwrap();
+        let deserialized: InputHash = serde_json::from_str(&json).unwrap();
+        assert_eq!(input, deserialized);
     }
 }

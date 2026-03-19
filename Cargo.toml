@@ -1,7 +1,8 @@
 [package]
 name = "tameshi"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.89.0"
 authors = ["Pleme Team <team@pleme.io>"]
 description = "Tameshi (試し) - Deterministic integrity attestation library for infrastructure layers"
 license = "MIT"
@@ -17,21 +18,22 @@ path = "src/lib.rs"
 
 [dependencies]
 # Cryptographic hashing
-blake3 = "1.5"
+blake3 = "1.8"
 sha2 = "0.10"
-hex = "0.4"
+const-hex = "1"
+rs_merkle = "1.4"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
+serde_yaml_ng = "0.10"
 
 # Time and identifiers
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.10", features = ["v4", "serde"] }
+uuid = { version = "1.16", features = ["v4", "serde"] }
 
 # Async runtime
-tokio = { version = "1.41", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 
 # HTTP client (for OCI registry, remote endpoints)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
@@ -40,13 +42,19 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 figment = { version = "0.10", features = ["yaml", "env"] }
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging
 tracing = "0.1"
 
 # Temp files
-tempfile = "3.10"
+tempfile = "3.14"
+
+# Futures combinators (join_all for parallel collection)
+futures = "0.3"
+
+[lints.clippy]
+pedantic = "warn"
 
 [dev-dependencies]
 tokio-test = "0.4"

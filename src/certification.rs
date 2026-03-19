@@ -77,7 +77,7 @@ use crate::hash::Blake3Hash;
 use crate::signature::LayerType;
 
 /// A complete product certification across all lifecycle stages.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProductCertification {
     /// Product name (e.g., "myapp").
     pub product: String,
@@ -110,17 +110,19 @@ pub struct ProductCertification {
 }
 
 impl ProductCertification {
+    #[must_use]
     pub fn builder(product: &str, environment: &str, cluster: &str) -> CertificationBuilder {
         CertificationBuilder::new(product, environment, cluster)
     }
 
+    #[must_use]
     pub fn is_certified(&self) -> bool {
         self.certified
     }
 }
 
 /// Source code attestation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceAttestation {
     /// Git repository URL.
     pub repository: String,
@@ -141,7 +143,7 @@ pub struct SourceAttestation {
 }
 
 /// Build attestation for a single service.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BuildAttestation {
     /// Service name (e.g., "backend", "web").
     pub service: String,
@@ -170,7 +172,7 @@ pub struct BuildAttestation {
 }
 
 /// Image attestation for a single OCI image.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImageAttestation {
     /// Image reference (e.g., "ghcr.io/pleme-io/myapp-backend").
     pub image_ref: String,
@@ -198,7 +200,7 @@ pub struct ImageAttestation {
 }
 
 /// Chart attestation for a single Helm chart.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChartAttestation {
     /// Chart name (e.g., "myapp-backend").
     pub chart_name: String,
@@ -219,7 +221,7 @@ pub struct ChartAttestation {
 }
 
 /// Hash of a chart dependency.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DependencyHash {
     /// Dependency name (e.g., "pleme-lib").
     pub name: String,
@@ -230,7 +232,7 @@ pub struct DependencyHash {
 }
 
 /// Deployment attestation for K8s deployment state.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DeploymentAttestation {
     /// Namespace.
     pub namespace: String,
@@ -255,7 +257,7 @@ pub struct DeploymentAttestation {
 }
 
 /// Certification policy — what must be true for a product to be certified.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CertificationPolicy {
     /// Policy name.
     pub name: String,
@@ -303,7 +305,7 @@ impl Default for CertificationPolicy {
 }
 
 /// Result of evaluating a single certification stage.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StageResult {
     /// Stage name.
     pub stage: CertificationStage,
@@ -355,6 +357,7 @@ pub struct CertificationBuilder {
 }
 
 impl CertificationBuilder {
+    #[must_use]
     pub fn new(product: &str, environment: &str, cluster: &str) -> Self {
         Self {
             product: product.to_string(),
@@ -370,51 +373,61 @@ impl CertificationBuilder {
         }
     }
 
+    #[must_use]
     pub fn with_policy(mut self, policy: CertificationPolicy) -> Self {
         self.policy = policy;
         self
     }
 
+    #[must_use]
     pub fn with_source(mut self, source: SourceAttestation) -> Self {
         self.source = Some(source);
         self
     }
 
+    #[must_use]
     pub fn with_build(mut self, build: BuildAttestation) -> Self {
         self.builds.push(build);
         self
     }
 
+    #[must_use]
     pub fn with_builds(mut self, builds: Vec<BuildAttestation>) -> Self {
         self.builds = builds;
         self
     }
 
+    #[must_use]
     pub fn with_image(mut self, image: ImageAttestation) -> Self {
         self.images.push(image);
         self
     }
 
+    #[must_use]
     pub fn with_images(mut self, images: Vec<ImageAttestation>) -> Self {
         self.images = images;
         self
     }
 
+    #[must_use]
     pub fn with_chart(mut self, chart: ChartAttestation) -> Self {
         self.charts.push(chart);
         self
     }
 
+    #[must_use]
     pub fn with_charts(mut self, charts: Vec<ChartAttestation>) -> Self {
         self.charts = charts;
         self
     }
 
+    #[must_use]
     pub fn with_deployment(mut self, deployment: DeploymentAttestation) -> Self {
         self.deployment = Some(deployment);
         self
     }
 
+    #[must_use]
     pub fn with_compliance(mut self, compliance: ComplianceAttestation) -> Self {
         self.compliance = Some(compliance);
         self
@@ -667,6 +680,7 @@ fn compute_build_hash(build: &BuildAttestation) -> Blake3Hash {
 ///
 /// Requires signed commits, SLSA L3, reproducible builds, zero CVE tolerance,
 /// cosign image signatures, chart provenance, and 90% CIS pass rate.
+#[must_use]
 pub fn strict_production_policy() -> CertificationPolicy {
     CertificationPolicy {
         name: "strict-production".to_string(),
@@ -688,6 +702,7 @@ pub fn strict_production_policy() -> CertificationPolicy {
 ///
 /// Allows unsigned commits, SLSA L2, some CVEs, no cosign required,
 /// and 80% CIS pass rate. Suitable for pre-production environments.
+#[must_use]
 pub fn relaxed_staging_policy() -> CertificationPolicy {
     CertificationPolicy {
         name: "relaxed-staging".to_string(),

@@ -158,6 +158,45 @@ pub enum VulnSource {
     Other(String),
 }
 
+impl std::fmt::Display for ScanTargetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanTargetType::OciImage => write!(f, "OCI Image"),
+            ScanTargetType::NixClosure => write!(f, "Nix Closure"),
+            ScanTargetType::HelmChart => write!(f, "Helm Chart"),
+            ScanTargetType::Filesystem => write!(f, "Filesystem"),
+            ScanTargetType::Sbom => write!(f, "SBOM"),
+            ScanTargetType::GitRepository => write!(f, "Git Repository"),
+        }
+    }
+}
+
+impl std::fmt::Display for VulnSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VulnSeverity::Unknown => write!(f, "UNKNOWN"),
+            VulnSeverity::Low => write!(f, "LOW"),
+            VulnSeverity::Medium => write!(f, "MEDIUM"),
+            VulnSeverity::High => write!(f, "HIGH"),
+            VulnSeverity::Critical => write!(f, "CRITICAL"),
+        }
+    }
+}
+
+impl std::fmt::Display for VulnSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VulnSource::Nvd => write!(f, "NVD"),
+            VulnSource::GithubAdvisory => write!(f, "GitHub Advisory"),
+            VulnSource::Osv => write!(f, "OSV"),
+            VulnSource::RedHat => write!(f, "Red Hat"),
+            VulnSource::Debian => write!(f, "Debian"),
+            VulnSource::Alpine => write!(f, "Alpine"),
+            VulnSource::Other(s) => write!(f, "Other({s})"),
+        }
+    }
+}
+
 /// Summary statistics for a vulnerability scan.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct VulnSummary {
@@ -243,6 +282,7 @@ impl Default for VulnPolicy {
 /// ```text
 /// vuln_hash = BLAKE3(scanner_hash || db_hash || target_hash || results_hash)
 /// ```
+#[must_use]
 pub fn compute_vuln_hash(scan: &VulnerabilityScan) -> Blake3Hash {
     let mut data = Vec::new();
     data.extend_from_slice(&scan.scanner_hash.0);
@@ -258,6 +298,7 @@ pub fn compute_vuln_hash(scan: &VulnerabilityScan) -> Blake3Hash {
 }
 
 /// Combine multiple vulnerability scan hashes (e.g., Trivy + Grype + vulnix).
+#[must_use]
 pub fn combine_vuln_hashes(scans: &[VulnerabilityScan]) -> Blake3Hash {
     let mut hashes: Vec<Blake3Hash> = scans.iter().map(|s| compute_vuln_hash(s)).collect();
     hashes.sort_by(|a, b| a.to_hex().cmp(&b.to_hex()));

@@ -218,3 +218,109 @@ fn control(id: &str, title: &str) -> Control {
         enhancements: vec![],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn baseline_display() {
+        assert_eq!(Baseline::Low.to_string(), "low");
+        assert_eq!(Baseline::Moderate.to_string(), "moderate");
+        assert_eq!(Baseline::High.to_string(), "high");
+    }
+
+    #[test]
+    fn baseline_serde_roundtrip() {
+        for baseline in &[Baseline::Low, Baseline::Moderate, Baseline::High] {
+            let json = serde_json::to_string(baseline).unwrap();
+            let deserialized: Baseline = serde_json::from_str(&json).unwrap();
+            assert_eq!(*baseline, deserialized);
+        }
+    }
+
+    #[test]
+    fn control_family_display() {
+        assert_eq!(ControlFamily::AC.to_string(), "AC");
+        assert_eq!(ControlFamily::SI.to_string(), "SI");
+        assert_eq!(ControlFamily::SR.to_string(), "SR");
+    }
+
+    #[test]
+    fn catalog_has_all_families() {
+        let catalog = build_catalog();
+        let family_ids: Vec<&str> = catalog.groups.iter().map(|g| g.id.as_str()).collect();
+        assert!(family_ids.contains(&"AC"));
+        assert!(family_ids.contains(&"AU"));
+        assert!(family_ids.contains(&"CM"));
+        assert!(family_ids.contains(&"SC"));
+        assert!(family_ids.contains(&"SI"));
+        assert!(family_ids.contains(&"SR"));
+    }
+
+    #[test]
+    fn catalog_has_deterministic_structure() {
+        let c1 = build_catalog();
+        let c2 = build_catalog();
+        // Structure is the same (groups and controls)
+        assert_eq!(c1.groups.len(), c2.groups.len());
+        assert_eq!(c1.control_count(), c2.control_count());
+        // UUIDs differ per call, but that's expected — catalog_hash is
+        // based on baseline_controls, not the catalog UUID
+    }
+
+    #[test]
+    fn catalog_control_count() {
+        let catalog = build_catalog();
+        let count = catalog.control_count();
+        assert!(count > 20, "catalog should have >20 controls, got {}", count);
+    }
+
+    #[test]
+    fn baseline_controls_low_subset_of_moderate() {
+        let low = baseline_controls(&Baseline::Low);
+        let moderate = baseline_controls(&Baseline::Moderate);
+        for c in &low {
+            assert!(moderate.contains(c), "moderate should contain low control {}", c);
+        }
+        assert!(moderate.len() > low.len());
+    }
+
+    #[test]
+    fn baseline_controls_moderate_subset_of_high() {
+        let moderate = baseline_controls(&Baseline::Moderate);
+        let high = baseline_controls(&Baseline::High);
+        for c in &moderate {
+            assert!(high.contains(c), "high should contain moderate control {}", c);
+        }
+    }
+
+    #[test]
+    fn baseline_catalog_hash_differs_by_baseline() {
+        let low_hash = baseline_catalog_hash(&Baseline::Low);
+        let moderate_hash = baseline_catalog_hash(&Baseline::Moderate);
+        let high_hash = baseline_catalog_hash(&Baseline::High);
+        assert_ne!(low_hash, moderate_hash);
+        assert_ne!(moderate_hash, high_hash);
+    }
+
+    #[test]
+    fn baseline_catalog_hash_deterministic() {
+        let h1 = baseline_catalog_hash(&Baseline::Moderate);
+        let h2 = baseline_catalog_hash(&Baseline::Moderate);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn control_mapping_serde_roundtrip() {
+        let mapping = ControlMapping {
+            test_id: "nix-closure-integrity".to_string(),
+            control_ids: vec!["SI-7".to_string(), "CM-2".to_string()],
+            description: "Verifies Nix closure hash".to_string(),
+        };
+        let json = serde_json::to_string(&mapping).unwrap();
+        let deserialized: ControlMapping = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.test_id, "nix-closure-integrity");
+        assert_eq!(deserialized.control_ids.len(), 2);
+    }
+}

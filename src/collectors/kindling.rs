@@ -7,6 +7,8 @@ use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::{InputHash, LayerSignature, LayerType};
 
+use super::traits::LayerCollector;
+
 use tracing::debug;
 
 /// Hash a Kindling identity document.
@@ -138,4 +140,74 @@ pub async fn hash_identity_from_secret(
         &format!("secret:{}/{}", namespace, secret_name),
         inputs,
     ))
+}
+
+/// Source for Kindling collection.
+#[derive(Clone, Debug)]
+pub enum KindlingSource {
+    /// Hash a local identity document file.
+    IdentityFile(String),
+    /// Hash a compliance report file.
+    ReportFile(String),
+    /// Hash identity from a Kubernetes secret.
+    K8sSecret {
+        /// Kubernetes namespace.
+        namespace: String,
+        /// Secret name.
+        secret_name: String,
+    },
+}
+
+/// Kindling identity/report collector.
+///
+/// Wraps the standalone functions in a [`LayerCollector`] implementation.
+pub struct KindlingCollector {
+    /// Source to collect from.
+    pub source: KindlingSource,
+}
+
+impl KindlingCollector {
+    /// Create a collector for a local identity document.
+    #[must_use]
+    pub fn from_identity(identity_path: &str) -> Self {
+        Self {
+            source: KindlingSource::IdentityFile(identity_path.to_string()),
+        }
+    }
+
+    /// Create a collector for a compliance report.
+    #[must_use]
+    pub fn from_report(report_path: &str) -> Self {
+        Self {
+            source: KindlingSource::ReportFile(report_path.to_string()),
+        }
+    }
+
+    /// Create a collector for a Kubernetes secret.
+    #[must_use]
+    pub fn from_k8s_secret(namespace: &str, secret_name: &str) -> Self {
+        Self {
+            source: KindlingSource::K8sSecret {
+                namespace: namespace.to_string(),
+                secret_name: secret_name.to_string(),
+            },
+        }
+    }
+}
+
+impl LayerCollector for KindlingCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        match &self.source {
+            KindlingSource::IdentityFile(path) => hash_identity(path).await,
+            KindlingSource::ReportFile(path) => hash_report(path).await,
+            KindlingSource::K8sSecret {
+                namespace,
+                secret_name,
+            } => hash_identity_from_secret(namespace, secret_name).await,
+        }
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Kindling
+    }
 }

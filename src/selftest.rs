@@ -121,7 +121,7 @@ pub async fn attest_framework(binary_paths: &[(&str, &str)]) -> Result<Framework
 
 /// Compute composite hash from all framework component hashes.
 fn compute_framework_hash(components: &[FrameworkComponent]) -> Blake3Hash {
-    let mut data = Vec::new();
+    let mut data = Vec::with_capacity(components.len() * 32);
     for component in components {
         data.extend_from_slice(&component.binary_hash.0);
     }

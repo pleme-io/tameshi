@@ -1,0 +1,15 @@
+apiVersion: sekiban.pleme.io/v1alpha1
+kind: CompliancePolicy
+metadata:
+  name: nist-moderate
+  namespace: default
+spec:
+  framework: NIST_800_53
+  baseline: moderate
+  testRunner:
+    runnerType: kensa
+    image: ghcr.io/pleme-io/kensa:latest
+    profile: /profiles/nist-800-53-moderate
+    timeoutSecs: 300
+  excludedControls: []
+  controlMappings: []

@@ -8,6 +8,8 @@ use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::{InputHash, LayerSignature, LayerType};
 
+use super::traits::LayerCollector;
+
 use tracing::debug;
 
 /// Hash the current Tatara cluster state.
@@ -149,4 +151,63 @@ pub async fn hash_job_spec(spec_path: &str) -> Result<LayerSignature> {
         spec_path,
         inputs,
     ))
+}
+
+/// Source for Tatara state collection.
+#[derive(Clone, Debug)]
+pub enum TataraSource {
+    /// Hash cluster state from a local file.
+    StateFile(String),
+    /// Hash cluster state from the Tatara API.
+    Api(String),
+    /// Hash a job specification file.
+    JobSpec(String),
+}
+
+/// Tatara cluster state collector.
+///
+/// Wraps the standalone functions in a [`LayerCollector`] implementation.
+pub struct TataraCollector {
+    /// Source to collect from.
+    pub source: TataraSource,
+}
+
+impl TataraCollector {
+    /// Create a collector for a local cluster state file.
+    #[must_use]
+    pub fn from_state(state_path: &str) -> Self {
+        Self {
+            source: TataraSource::StateFile(state_path.to_string()),
+        }
+    }
+
+    /// Create a collector for the Tatara API.
+    #[must_use]
+    pub fn from_api(api_url: &str) -> Self {
+        Self {
+            source: TataraSource::Api(api_url.to_string()),
+        }
+    }
+
+    /// Create a collector for a job specification.
+    #[must_use]
+    pub fn from_job_spec(spec_path: &str) -> Self {
+        Self {
+            source: TataraSource::JobSpec(spec_path.to_string()),
+        }
+    }
+}
+
+impl LayerCollector for TataraCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        match &self.source {
+            TataraSource::StateFile(path) => hash_cluster_state(path).await,
+            TataraSource::Api(url) => hash_cluster_from_api(url).await,
+            TataraSource::JobSpec(path) => hash_job_spec(path).await,
+        }
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Tatara
+    }
 }

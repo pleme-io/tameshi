@@ -103,14 +103,17 @@ pub struct CertifiedChangeset {
 /// For UPDATE: hash the diff between old and new
 /// For PATCH: hash the patch body
 /// For DELETE: hash the object being deleted
+#[must_use]
 pub fn hash_changeset(
     operation: &Operation,
     resource: &ResourceId,
     content: &[u8],
 ) -> Blake3Hash {
-    let mut data = Vec::new();
-    data.extend_from_slice(operation.to_string().as_bytes());
-    data.extend_from_slice(resource.canonical().as_bytes());
+    let op_str = operation.to_string();
+    let canonical = resource.canonical();
+    let mut data = Vec::with_capacity(op_str.len() + canonical.len() + content.len());
+    data.extend_from_slice(op_str.as_bytes());
+    data.extend_from_slice(canonical.as_bytes());
     data.extend_from_slice(content);
     Blake3Hash::digest(&data)
 }
@@ -126,6 +129,7 @@ pub fn hash_changeset(
 ///
 /// The result proves this specific change was made to a certified environment
 /// by an identified actor while compliance was verified.
+#[must_use]
 pub fn compute_certification_hash(
     changeset_hash: &Blake3Hash,
     before_state: Option<&Blake3Hash>,
@@ -134,7 +138,7 @@ pub fn compute_certification_hash(
     compliance_sig: Option<&Blake3Hash>,
     initiated_by: &str,
 ) -> Blake3Hash {
-    let mut data = Vec::new();
+    let mut data = Vec::with_capacity(32 * 5 + initiated_by.len());
     data.extend_from_slice(&changeset_hash.0);
     if let Some(before) = before_state {
         data.extend_from_slice(&before.0);
@@ -187,6 +191,7 @@ pub fn certify_changeset(
 }
 
 /// Verify a certified changeset by recomputing its certification hash.
+#[must_use]
 pub fn verify_changeset(changeset: &CertifiedChangeset) -> bool {
     let recomputed = compute_certification_hash(
         &changeset.changeset_hash,
@@ -285,5 +290,90 @@ mod tests {
         // Tamper with the changeset
         changeset.initiated_by = "attacker".to_string();
         assert!(!verify_changeset(&changeset));
+    }
+
+    #[test]
+    fn operation_display() {
+        assert_eq!(Operation::Create.to_string(), "CREATE");
+        assert_eq!(Operation::Update.to_string(), "UPDATE");
+        assert_eq!(Operation::Patch.to_string(), "PATCH");
+        assert_eq!(Operation::Delete.to_string(), "DELETE");
+    }
+
+    #[test]
+    fn operation_serde_roundtrip() {
+        for op in &[Operation::Create, Operation::Update, Operation::Patch, Operation::Delete] {
+            let json = serde_json::to_string(op).unwrap();
+            let deserialized: Operation = serde_json::from_str(&json).unwrap();
+            assert_eq!(*op, deserialized);
+        }
+    }
+
+    #[test]
+    fn resource_id_canonical_format() {
+        let resource = ResourceId {
+            group: "apps".to_string(),
+            version: "v1".to_string(),
+            kind: "Deployment".to_string(),
+            namespace: "default".to_string(),
+            name: "api".to_string(),
+        };
+        assert_eq!(resource.canonical(), "apps/v1/Deployment/default/api");
+    }
+
+    #[test]
+    fn changeset_serde_roundtrip() {
+        let resource = ResourceId {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "Service".to_string(),
+            namespace: "prod".to_string(),
+            name: "web".to_string(),
+        };
+        let env_sig = Blake3Hash::digest(b"env");
+        let changeset = certify_changeset(
+            Operation::Create, resource, b"data",
+            None, None, &env_sig, None, "admin",
+        );
+        let json = serde_json::to_string(&changeset).unwrap();
+        let deserialized: CertifiedChangeset = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.operation, Operation::Create);
+        assert_eq!(deserialized.initiated_by, "admin");
+        assert!(verify_changeset(&deserialized));
+    }
+
+    #[test]
+    fn certification_hash_includes_compliance() {
+        let changeset_hash = Blake3Hash::digest(b"change");
+        let env_sig = Blake3Hash::digest(b"env");
+        let compliance = Blake3Hash::digest(b"compliance");
+
+        let h1 = compute_certification_hash(
+            &changeset_hash, None, None, &env_sig, None, "user",
+        );
+        let h2 = compute_certification_hash(
+            &changeset_hash, None, None, &env_sig, Some(&compliance), "user",
+        );
+        assert_ne!(h1, h2, "compliance signature should change certification hash");
+    }
+
+    #[test]
+    fn changeset_delete_operation() {
+        let resource = ResourceId {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "Pod".to_string(),
+            namespace: "default".to_string(),
+            name: "old-pod".to_string(),
+        };
+        let env_sig = Blake3Hash::digest(b"env");
+        let before = Blake3Hash::digest(b"before-state");
+        let changeset = certify_changeset(
+            Operation::Delete, resource, b"pod-manifest",
+            Some(&before), None, &env_sig, None, "kubectl",
+        );
+        assert!(verify_changeset(&changeset));
+        assert!(changeset.before_state_hash.is_some());
+        assert!(changeset.after_state_hash.is_none());
     }
 }

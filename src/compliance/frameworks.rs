@@ -87,6 +87,51 @@ pub enum ComplianceDomain {
     SupplyChainSecurity,
 }
 
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Json => write!(f, "JSON"),
+            OutputFormat::Xml => write!(f, "XML"),
+            OutputFormat::Sarif => write!(f, "SARIF"),
+            OutputFormat::JUnit => write!(f, "JUnit"),
+            OutputFormat::Text => write!(f, "Text"),
+        }
+    }
+}
+
+impl std::fmt::Display for ComplianceDomain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ComplianceDomain::InfrastructureCompliance => write!(f, "Infrastructure Compliance"),
+            ComplianceDomain::KubernetesPolicy => write!(f, "Kubernetes Policy"),
+            ComplianceDomain::CisBenchmark => write!(f, "CIS Benchmark"),
+            ComplianceDomain::VulnerabilityScanning => write!(f, "Vulnerability Scanning"),
+            ComplianceDomain::IacSecurity => write!(f, "IaC Security"),
+            ComplianceDomain::CloudSecurity => write!(f, "Cloud Security"),
+            ComplianceDomain::ScapCompliance => write!(f, "SCAP Compliance"),
+            ComplianceDomain::ContainerSecurity => write!(f, "Container Security"),
+            ComplianceDomain::NetworkPolicy => write!(f, "Network Policy"),
+            ComplianceDomain::SupplyChainSecurity => write!(f, "Supply Chain Security"),
+        }
+    }
+}
+
+impl std::fmt::Display for OutputParser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputParser::Inspec => write!(f, "InSpec"),
+            OutputParser::Opa => write!(f, "OPA"),
+            OutputParser::KubeBench => write!(f, "kube-bench"),
+            OutputParser::Trivy => write!(f, "Trivy"),
+            OutputParser::Checkov => write!(f, "Checkov"),
+            OutputParser::Sarif => write!(f, "SARIF"),
+            OutputParser::Junit => write!(f, "JUnit"),
+            OutputParser::GenericJson => write!(f, "Generic JSON"),
+            OutputParser::OpenscapArf => write!(f, "OpenSCAP ARF"),
+        }
+    }
+}
+
 /// How to parse framework output.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -300,11 +345,11 @@ pub async fn hash_framework_binary(nix_attr: &str) -> crate::error::Result<Blake
         let store_path = String::from_utf8_lossy(&output2.stdout)
             .trim()
             .to_string();
-        return crate::hash::blake3_file(&std::path::PathBuf::from(&store_path).join("bin").join(nix_attr)).await;
+        return crate::hash::blake3_file_async(&std::path::PathBuf::from(&store_path).join("bin").join(nix_attr)).await;
     }
 
     let store_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    crate::hash::blake3_file(&std::path::PathBuf::from(&store_path).join("bin").join(nix_attr)).await
+    crate::hash::blake3_file_async(&std::path::PathBuf::from(&store_path).join("bin").join(nix_attr)).await
 }
 
 /// Get frameworks relevant to a specific compliance domain.

@@ -49,8 +49,10 @@ pub struct ComplianceResult {
 /// This ensures that changing the testing framework, the control catalog,
 /// any test profile, OR the results will change the compliance hash,
 /// making it impossible to apply untested or improperly-tested infrastructure.
+#[must_use]
 pub fn compute_compliance_hash(assessment: &AssessmentResult) -> Blake3Hash {
-    let mut data = Vec::new();
+    let profile_count = assessment.assessment_metadata.profile_hashes.len();
+    let mut data = Vec::with_capacity(32 * (2 + profile_count + 1));
 
     // 1. Framework hash — attests the verification tool itself
     data.extend_from_slice(&assessment.assessment_metadata.framework_hash.0);
@@ -92,6 +94,7 @@ pub fn build_compliance_result(
 /// Verify a compliance hash against an assessment result.
 ///
 /// Recomputes the hash from the assessment and compares.
+#[must_use]
 pub fn verify_compliance_hash(result: &ComplianceResult) -> bool {
     let recomputed = compute_compliance_hash(&result.assessment);
     recomputed == result.compliance_hash

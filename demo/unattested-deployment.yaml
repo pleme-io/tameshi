@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-service
+  namespace: default
+  labels:
+    app: my-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-service
+  template:
+    metadata:
+      labels:
+        app: my-service
+    spec:
+      containers:
+        - name: my-service
+          image: ghcr.io/pleme-io/my-service:v1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AKEYLESS_GATEWAY_URL
+              value: "https://gw.akeyless.io"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: akeyless-db-password
+                  key: password
