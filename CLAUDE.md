@@ -6,7 +6,7 @@ Core library for cryptographic hash computation, Merkle tree composition, and si
 
 ```bash
 cargo check
-cargo test          # 123 tests
+cargo test          # 457 tests
 cargo build --release
 ```
 
@@ -26,13 +26,13 @@ src/
   collectors/
     traits.rs            -- LayerCollector trait
     mock.rs              -- MockCollector
-    nix.rs, oci.rs, helm.rs, kubernetes.rs, tofu.rs, kindling.rs, tatara.rs, akeyless.rs
+    nix.rs, oci.rs, helm.rs, kubernetes.rs, tofu.rs, kindling.rs, tatara.rs, akeyless.rs, akeyless_target.rs
   config.rs              -- load_config (figment: defaults -> YAML -> env)
   api_types.rs           -- GateDecision, CertificationStatus, AuditEntry
   reporting.rs           -- EnvironmentReport, ComplianceSummary, DriftReport
   selftest.rs            -- FrameworkAttestation, framework_nist_controls
   alerts.rs              -- alert types
-  ci.rs                  -- CI/CD helpers, sekiban_annotations, render_annotation_patch
+  ci.rs                  -- CI/CD helpers, sekiban_annotations, render_annotation_patch, target_attestation helpers
   error.rs               -- TameshiError
 ```
 
@@ -55,9 +55,13 @@ src/
 
 - **`Blake3Hash([u8; 32])`** -- primary hash type. `digest()`, `combine()`, `from_hex()`, `to_prefixed()`
 - **`Sha256Hash([u8; 32])`** -- compatibility hash for OCI/Nix
-- **`LayerType`** -- enum: Nix, Oci, Helm, Tofu, Kubernetes, Kindling, Tatara, FluxCD, ArgoCD, Akeyless
+- **`LayerType`** -- enum: Nix, Oci, Helm, Tofu, Kubernetes, Kindling, Tatara, FluxCD, ArgoCD, Akeyless, AkeylessTarget
+- **`AkeylessTargetType`** -- enum with 30 variants (Web, Ssh, SshCert, AwsAssociateTarget, GcpTarget, AzureTarget, RabbitMq, DynamicSecretTarget, RotatedSecretTarget, ClassicKey, DfcKey, TokenizationTarget, SalesforceTarget, LdapTarget, WindowsTarget, MongoDbTarget, EksTarget, GkeTarget, NativeK8sTarget, CustomTarget, PingTarget, GitHubTarget, GlobalSignTarget, HashiCorpVaultTarget, LinkedTarget, ZeroSslTarget, VenafiTarget, CertificateStoreTarget, SshCertIssuerTarget, Unknown)
+- **`ProducerAssociation`** -- target + producer_type + association metadata
+- **`AkeylessTargetCollector`** / **`LiveAkeylessTargetCollector`** -- collect target configuration hashes
 - **`LayerSignature`** -- layer + hash + metadata + inputs. `verify_inputs()`
 - **`MasterSignature`** -- untested + compliance + secure hashes. `verify_untested()`, `verify_secure()`, `gating_signature()`
+- **`AkeylessTargetVerification`** -- compliance dimension for target attestation state
 - **`GatingPolicy`** -- required_layers, require_compliance, max_signature_age_secs, fail_open
 - **`GateDecision`** -- allowed, reason, signature, expected. `allow()`, `deny()`
 - **`ProductCertification`** -- 7-stage certification (source, build, image, chart, deployment, compliance, product)
@@ -66,7 +70,7 @@ src/
 ## Testing
 
 ```bash
-cargo test                    # 123 tests
+cargo test                    # 457 tests
 cargo test hash               # hash module tests
 cargo test merkle             # merkle tree tests
 cargo test gating             # gate policy tests
