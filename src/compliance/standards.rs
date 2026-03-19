@@ -486,6 +486,264 @@ mod tests {
     }
 
     #[test]
+    fn all_standard_id_display_values() {
+        assert_eq!(StandardId::DisaStig.to_string(), "DISA STIG");
+        assert_eq!(StandardId::FedRamp.to_string(), "FedRAMP");
+        assert_eq!(StandardId::Soc2.to_string(), "SOC 2 Type II");
+        assert_eq!(StandardId::OwaspAsvs.to_string(), "OWASP ASVS v4.0");
+        assert_eq!(StandardId::Iso27001.to_string(), "ISO 27001:2022");
+        assert_eq!(StandardId::CsaStar.to_string(), "CSA STAR");
+        assert_eq!(StandardId::Hipaa.to_string(), "HIPAA");
+        assert_eq!(StandardId::Cis.to_string(), "CIS Benchmarks");
+        assert_eq!(StandardId::Slsa.to_string(), "SLSA");
+    }
+
+    #[test]
+    fn mapping_confidence_display() {
+        assert_eq!(MappingConfidence::Exact.to_string(), "exact");
+        assert_eq!(MappingConfidence::High.to_string(), "high");
+        assert_eq!(MappingConfidence::Moderate.to_string(), "moderate");
+        assert_eq!(MappingConfidence::Low.to_string(), "low");
+    }
+
+    #[test]
+    fn standard_control_status_display() {
+        assert_eq!(StandardControlStatus::Pass.to_string(), "pass");
+        assert_eq!(StandardControlStatus::Fail.to_string(), "fail");
+        assert_eq!(StandardControlStatus::NotApplicable.to_string(), "not_applicable");
+        assert_eq!(StandardControlStatus::Manual.to_string(), "manual");
+        assert_eq!(StandardControlStatus::NotAssessed.to_string(), "not_assessed");
+    }
+
+    #[test]
+    fn artifact_category_display() {
+        assert_eq!(ArtifactCategory::ContainerImage.to_string(), "Container Image");
+        assert_eq!(ArtifactCategory::KubernetesResource.to_string(), "Kubernetes Resource");
+        assert_eq!(ArtifactCategory::HelmChart.to_string(), "Helm Chart");
+        assert_eq!(ArtifactCategory::NixDerivation.to_string(), "Nix Derivation");
+        assert_eq!(ArtifactCategory::InfrastructureCode.to_string(), "Infrastructure Code");
+        assert_eq!(ArtifactCategory::Application.to_string(), "Application");
+        assert_eq!(ArtifactCategory::SupplyChain.to_string(), "Supply Chain");
+    }
+
+    #[test]
+    fn standard_id_serde_roundtrip() {
+        let ids = vec![
+            StandardId::Nist80053, StandardId::DisaStig, StandardId::FedRamp,
+            StandardId::Soc2, StandardId::PciDss, StandardId::OwaspAsvs,
+            StandardId::Iso27001, StandardId::CsaStar, StandardId::Hipaa,
+            StandardId::Cis, StandardId::Slsa,
+        ];
+        for id in &ids {
+            let json = serde_json::to_string(id).unwrap();
+            let deserialized: StandardId = serde_json::from_str(&json).unwrap();
+            assert_eq!(&deserialized, id);
+        }
+    }
+
+    #[test]
+    fn standard_control_status_serde_roundtrip() {
+        let statuses = vec![
+            StandardControlStatus::Pass,
+            StandardControlStatus::Fail,
+            StandardControlStatus::NotApplicable,
+            StandardControlStatus::Manual,
+            StandardControlStatus::NotAssessed,
+        ];
+        for s in &statuses {
+            let json = serde_json::to_string(s).unwrap();
+            let deserialized: StandardControlStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(&deserialized, s);
+        }
+    }
+
+    #[test]
+    fn artifact_category_serde_roundtrip() {
+        let categories = vec![
+            ArtifactCategory::ContainerImage,
+            ArtifactCategory::KubernetesResource,
+            ArtifactCategory::HelmChart,
+            ArtifactCategory::NixDerivation,
+            ArtifactCategory::InfrastructureCode,
+            ArtifactCategory::Application,
+            ArtifactCategory::SupplyChain,
+        ];
+        for cat in &categories {
+            let json = serde_json::to_string(cat).unwrap();
+            let deserialized: ArtifactCategory = serde_json::from_str(&json).unwrap();
+            assert_eq!(&deserialized, cat);
+        }
+    }
+
+    #[test]
+    fn summary_all_pass() {
+        let controls = vec![
+            StandardControlResult {
+                control_id: "A".to_string(),
+                title: "A".to_string(),
+                status: StandardControlStatus::Pass,
+                evidence: vec![],
+                nist_controls: vec![],
+            },
+            StandardControlResult {
+                control_id: "B".to_string(),
+                title: "B".to_string(),
+                status: StandardControlStatus::Pass,
+                evidence: vec![],
+                nist_controls: vec![],
+            },
+        ];
+        let summary = StandardSummary::from_controls(&controls);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.pass, 2);
+        assert_eq!(summary.fail, 0);
+        assert_eq!(summary.automated_pass_rate, 1.0);
+    }
+
+    #[test]
+    fn summary_all_not_assessed() {
+        let controls = vec![StandardControlResult {
+            control_id: "X".to_string(),
+            title: "X".to_string(),
+            status: StandardControlStatus::NotAssessed,
+            evidence: vec![],
+            nist_controls: vec![],
+        }];
+        let summary = StandardSummary::from_controls(&controls);
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.not_assessed, 1);
+        // no automated controls, so pass rate is 0
+        assert_eq!(summary.automated_pass_rate, 0.0);
+    }
+
+    #[test]
+    fn summary_empty_controls() {
+        let summary = StandardSummary::from_controls(&[]);
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.automated_pass_rate, 0.0);
+    }
+
+    #[test]
+    fn multi_standard_hash_deterministic() {
+        let a1 = StandardAssessment {
+            standard: StandardId::Soc2,
+            version: "2023".to_string(),
+            tool: "kensa".to_string(),
+            tool_hash: Blake3Hash::digest(b"tool-a"),
+            catalog_hash: Blake3Hash::digest(b"cat-a"),
+            controls: vec![],
+            summary: StandardSummary::default(),
+            assessed_at: Utc::now(),
+            target: "app".to_string(),
+        };
+        let a2 = StandardAssessment {
+            standard: StandardId::PciDss,
+            version: "4.0".to_string(),
+            tool: "kensa".to_string(),
+            tool_hash: Blake3Hash::digest(b"tool-b"),
+            catalog_hash: Blake3Hash::digest(b"cat-b"),
+            controls: vec![],
+            summary: StandardSummary::default(),
+            assessed_at: Utc::now(),
+            target: "app".to_string(),
+        };
+        let h1 = compute_multi_standard_hash(&[a1.clone(), a2.clone()]);
+        let h2 = compute_multi_standard_hash(&[a1, a2]);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn multi_standard_hash_order_independent() {
+        let a1 = StandardAssessment {
+            standard: StandardId::Soc2,
+            version: "v".to_string(),
+            tool: "t".to_string(),
+            tool_hash: Blake3Hash::digest(b"t1"),
+            catalog_hash: Blake3Hash::digest(b"c1"),
+            controls: vec![],
+            summary: StandardSummary::default(),
+            assessed_at: Utc::now(),
+            target: "x".to_string(),
+        };
+        let a2 = StandardAssessment {
+            standard: StandardId::PciDss,
+            version: "v".to_string(),
+            tool: "t".to_string(),
+            tool_hash: Blake3Hash::digest(b"t2"),
+            catalog_hash: Blake3Hash::digest(b"c2"),
+            controls: vec![],
+            summary: StandardSummary::default(),
+            assessed_at: Utc::now(),
+            target: "x".to_string(),
+        };
+        let h1 = compute_multi_standard_hash(&[a1.clone(), a2.clone()]);
+        let h2 = compute_multi_standard_hash(&[a2, a1]);
+        assert_eq!(h1, h2, "order of assessments must not affect hash");
+    }
+
+    #[test]
+    fn stig_container_controls_non_empty() {
+        let controls = stig_container_controls();
+        assert!(!controls.is_empty());
+        for (_, _, nist) in &controls {
+            assert!(!nist.is_empty());
+        }
+    }
+
+    #[test]
+    fn soc2_criteria_non_empty() {
+        let criteria = soc2_automatable_criteria();
+        assert!(!criteria.is_empty());
+    }
+
+    #[test]
+    fn pci_dss_non_empty() {
+        let reqs = pci_dss_automatable();
+        assert!(!reqs.is_empty());
+    }
+
+    #[test]
+    fn owasp_asvs_non_empty() {
+        let reqs = owasp_asvs_automatable();
+        assert!(!reqs.is_empty());
+        // All should have valid ASVS levels (1-3)
+        for (_, _, level, _) in &reqs {
+            assert!(*level >= 1 && *level <= 3);
+        }
+    }
+
+    #[test]
+    fn iso27001_non_empty() {
+        let controls = iso27001_automatable();
+        assert!(!controls.is_empty());
+    }
+
+    #[test]
+    fn all_artifact_categories_have_standards() {
+        let categories = vec![
+            ArtifactCategory::ContainerImage,
+            ArtifactCategory::KubernetesResource,
+            ArtifactCategory::HelmChart,
+            ArtifactCategory::NixDerivation,
+            ArtifactCategory::InfrastructureCode,
+            ArtifactCategory::Application,
+            ArtifactCategory::SupplyChain,
+        ];
+        for cat in &categories {
+            let standards = standards_for_artifact(cat);
+            assert!(
+                !standards.is_empty(),
+                "{cat:?} should map to at least one standard"
+            );
+            // All should include NIST as a base
+            assert!(
+                standards.contains(&StandardId::Nist80053),
+                "{cat:?} should always include NIST 800-53"
+            );
+        }
+    }
+
+    #[test]
     fn standard_hash_deterministic() {
         let assessment = StandardAssessment {
             standard: StandardId::Soc2,

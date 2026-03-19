@@ -385,4 +385,123 @@ mod tests {
             assert!(!fw.nix_attr.is_empty(), "{} needs nix_attr", fw.id);
         }
     }
+
+    #[test]
+    fn all_frameworks_have_domains() {
+        for fw in framework_registry() {
+            assert!(!fw.domains.is_empty(), "{} needs at least one domain", fw.id);
+        }
+    }
+
+    #[test]
+    fn all_frameworks_have_command_template() {
+        for fw in framework_registry() {
+            assert!(!fw.command_template.is_empty(), "{} needs a command template", fw.id);
+        }
+    }
+
+    #[test]
+    fn all_frameworks_unique_ids() {
+        let registry = framework_registry();
+        let mut ids: Vec<&str> = registry.iter().map(|f| f.id.as_str()).collect();
+        let len_before = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), len_before, "framework IDs must be unique");
+    }
+
+    #[test]
+    fn framework_serde_roundtrip() {
+        let registry = framework_registry();
+        let json = serde_json::to_string(&registry).unwrap();
+        let deserialized: Vec<TestFramework> = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.len(), registry.len());
+        assert_eq!(deserialized[0].id, registry[0].id);
+    }
+
+    #[test]
+    fn output_format_display() {
+        assert_eq!(OutputFormat::Json.to_string(), "JSON");
+        assert_eq!(OutputFormat::Xml.to_string(), "XML");
+        assert_eq!(OutputFormat::Sarif.to_string(), "SARIF");
+        assert_eq!(OutputFormat::JUnit.to_string(), "JUnit");
+        assert_eq!(OutputFormat::Text.to_string(), "Text");
+    }
+
+    #[test]
+    fn compliance_domain_display() {
+        assert_eq!(
+            ComplianceDomain::InfrastructureCompliance.to_string(),
+            "Infrastructure Compliance"
+        );
+        assert_eq!(
+            ComplianceDomain::KubernetesPolicy.to_string(),
+            "Kubernetes Policy"
+        );
+        assert_eq!(
+            ComplianceDomain::SupplyChainSecurity.to_string(),
+            "Supply Chain Security"
+        );
+    }
+
+    #[test]
+    fn output_parser_display() {
+        assert_eq!(OutputParser::Inspec.to_string(), "InSpec");
+        assert_eq!(OutputParser::Opa.to_string(), "OPA");
+        assert_eq!(OutputParser::KubeBench.to_string(), "kube-bench");
+        assert_eq!(OutputParser::Trivy.to_string(), "Trivy");
+        assert_eq!(OutputParser::Checkov.to_string(), "Checkov");
+        assert_eq!(OutputParser::Sarif.to_string(), "SARIF");
+        assert_eq!(OutputParser::Junit.to_string(), "JUnit");
+        assert_eq!(OutputParser::GenericJson.to_string(), "Generic JSON");
+        assert_eq!(OutputParser::OpenscapArf.to_string(), "OpenSCAP ARF");
+    }
+
+    #[test]
+    fn output_format_serde_roundtrip() {
+        let formats = vec![
+            OutputFormat::Json,
+            OutputFormat::Xml,
+            OutputFormat::Sarif,
+            OutputFormat::JUnit,
+            OutputFormat::Text,
+        ];
+        for fmt in formats {
+            let json = serde_json::to_string(&fmt).unwrap();
+            let deserialized: OutputFormat = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.to_string(), fmt.to_string());
+        }
+    }
+
+    #[test]
+    fn compliance_domain_serde_roundtrip() {
+        let domains = vec![
+            ComplianceDomain::InfrastructureCompliance,
+            ComplianceDomain::KubernetesPolicy,
+            ComplianceDomain::CisBenchmark,
+            ComplianceDomain::VulnerabilityScanning,
+            ComplianceDomain::IacSecurity,
+            ComplianceDomain::CloudSecurity,
+            ComplianceDomain::ScapCompliance,
+            ComplianceDomain::ContainerSecurity,
+            ComplianceDomain::NetworkPolicy,
+            ComplianceDomain::SupplyChainSecurity,
+        ];
+        for domain in domains {
+            let json = serde_json::to_string(&domain).unwrap();
+            let deserialized: ComplianceDomain = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.to_string(), domain.to_string());
+        }
+    }
+
+    #[test]
+    fn known_framework_ids_present() {
+        let registry = framework_registry();
+        let ids: Vec<&str> = registry.iter().map(|f| f.id.as_str()).collect();
+        assert!(ids.contains(&"inspec"));
+        assert!(ids.contains(&"trivy"));
+        assert!(ids.contains(&"opa"));
+        assert!(ids.contains(&"kube-bench"));
+        assert!(ids.contains(&"cosign"));
+    }
 }

@@ -394,6 +394,153 @@ mod tests {
         );
     }
 
+    #[test]
+    fn attestation_verify_fails_with_tampered_hash() {
+        let components = vec![FrameworkComponent {
+            name: "tameshi".to_string(),
+            version: "0.1.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"tameshi-binary"),
+            binary_path: "/nix/store/xxx-tameshi".to_string(),
+            satisfies_controls: controls_for_component("tameshi"),
+        }];
+        let framework_hash = compute_framework_hash(&components);
+        let mut attestation = FrameworkAttestation {
+            components,
+            framework_hash,
+            computed_at: Utc::now(),
+            schema_version: "1.0.0".to_string(),
+        };
+        // Tamper with the hash
+        attestation.framework_hash = Blake3Hash::digest(b"tampered");
+        assert!(!attestation.verify());
+    }
+
+    #[test]
+    fn satisfied_controls_deduplication() {
+        let components = vec![
+            FrameworkComponent {
+                name: "tameshi".to_string(),
+                version: "0.1.0".to_string(),
+                binary_hash: Blake3Hash::digest(b"tameshi"),
+                binary_path: "/bin/tameshi".to_string(),
+                satisfies_controls: vec!["SI-7".to_string(), "CM-2".to_string()],
+            },
+            FrameworkComponent {
+                name: "sekiban".to_string(),
+                version: "0.1.0".to_string(),
+                binary_hash: Blake3Hash::digest(b"sekiban"),
+                binary_path: "/bin/sekiban".to_string(),
+                satisfies_controls: vec!["CM-2".to_string(), "AU-2".to_string()],
+            },
+        ];
+        let framework_hash = compute_framework_hash(&components);
+        let attestation = FrameworkAttestation {
+            components,
+            framework_hash,
+            computed_at: Utc::now(),
+            schema_version: "1.0.0".to_string(),
+        };
+        let controls = attestation.satisfied_controls();
+        // CM-2 appears in both components but should be deduped
+        assert_eq!(
+            controls.iter().filter(|c| c.as_str() == "CM-2").count(),
+            1
+        );
+        // All unique controls should be present
+        assert!(controls.contains(&"SI-7".to_string()));
+        assert!(controls.contains(&"CM-2".to_string()));
+        assert!(controls.contains(&"AU-2".to_string()));
+    }
+
+    #[test]
+    fn satisfied_controls_sorted() {
+        let components = vec![FrameworkComponent {
+            name: "tameshi".to_string(),
+            version: "0.1.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"tameshi"),
+            binary_path: "/bin/tameshi".to_string(),
+            satisfies_controls: vec![
+                "SI-7".to_string(),
+                "CM-2".to_string(),
+                "AU-2".to_string(),
+            ],
+        }];
+        let framework_hash = compute_framework_hash(&components);
+        let attestation = FrameworkAttestation {
+            components,
+            framework_hash,
+            computed_at: Utc::now(),
+            schema_version: "1.0.0".to_string(),
+        };
+        let controls = attestation.satisfied_controls();
+        let mut sorted = controls.clone();
+        sorted.sort();
+        assert_eq!(controls, sorted, "satisfied_controls must be sorted");
+    }
+
+    #[test]
+    fn unknown_component_has_no_controls() {
+        assert!(controls_for_component("unknown-tool").is_empty());
+    }
+
+    #[test]
+    fn framework_hash_empty_components() {
+        let hash = compute_framework_hash(&[]);
+        // Should produce a valid hash (of empty data)
+        assert_ne!(hash.to_hex().len(), 0);
+    }
+
+    #[test]
+    fn framework_component_serde_roundtrip() {
+        let component = FrameworkComponent {
+            name: "tameshi".to_string(),
+            version: "0.1.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"binary-data"),
+            binary_path: "/nix/store/xyz".to_string(),
+            satisfies_controls: vec!["SI-7".to_string(), "CM-2".to_string()],
+        };
+        let json = serde_json::to_string(&component).unwrap();
+        let deserialized: FrameworkComponent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "tameshi");
+        assert_eq!(deserialized.binary_hash, component.binary_hash);
+        assert_eq!(deserialized.satisfies_controls.len(), 2);
+    }
+
+    #[test]
+    fn framework_attestation_serde_roundtrip() {
+        let components = vec![FrameworkComponent {
+            name: "a".to_string(),
+            version: "1.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"a"),
+            binary_path: "/bin/a".to_string(),
+            satisfies_controls: vec![],
+        }];
+        let framework_hash = compute_framework_hash(&components);
+        let attestation = FrameworkAttestation {
+            components,
+            framework_hash,
+            computed_at: Utc::now(),
+            schema_version: "1.0.0".to_string(),
+        };
+        let json = serde_json::to_string(&attestation).unwrap();
+        let deserialized: FrameworkAttestation = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.verify());
+    }
+
+    #[test]
+    fn framework_control_mapping_serde_roundtrip() {
+        let mapping = FrameworkControlMapping {
+            control_id: "SI-7".to_string(),
+            title: "Software Integrity".to_string(),
+            how_satisfied: "BLAKE3 hash of binaries".to_string(),
+            tested_by: vec!["test-1".to_string(), "test-2".to_string()],
+        };
+        let json = serde_json::to_string(&mapping).unwrap();
+        let deserialized: FrameworkControlMapping = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.control_id, "SI-7");
+        assert_eq!(deserialized.tested_by.len(), 2);
+    }
+
     #[tokio::test]
     async fn framework_attestation_hash_convenience() {
         // Create a temp binary file to hash

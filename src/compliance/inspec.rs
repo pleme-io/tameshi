@@ -287,4 +287,238 @@ mod tests {
         assert_eq!(result.results[0].findings.len(), 1);
         assert_eq!(result.results[0].findings[0].risk, RiskLevel::Critical);
     }
+
+    #[test]
+    fn parse_skipped_control_yields_other_status() {
+        let json = r#"{
+            "profiles": [{
+                "name": "skip-profile",
+                "controls": [{
+                    "id": "skip-1",
+                    "impact": 0.5,
+                    "results": [{
+                        "status": "skipped",
+                        "skip_message": "not applicable"
+                    }]
+                }]
+            }]
+        }"#;
+
+        let result = parse_inspec_output(
+            json.as_bytes(),
+            Blake3Hash::digest(b"f"),
+            Blake3Hash::digest(b"c"),
+        )
+        .unwrap();
+        assert_eq!(result.results[0].status, ControlStatus::Other);
+        assert!(result.results[0].findings.is_empty());
+    }
+
+    #[test]
+    fn parse_multiple_profiles() {
+        let json = r#"{
+            "profiles": [
+                {
+                    "name": "profile-a",
+                    "controls": [{
+                        "id": "a-1",
+                        "impact": 0.7,
+                        "results": [{"status": "passed"}]
+                    }]
+                },
+                {
+                    "name": "profile-b",
+                    "controls": [{
+                        "id": "b-1",
+                        "impact": 0.5,
+                        "results": [{"status": "passed"}]
+                    }]
+                }
+            ],
+            "version": "6.0.0"
+        }"#;
+
+        let result = parse_inspec_output(
+            json.as_bytes(),
+            Blake3Hash::digest(b"fw"),
+            Blake3Hash::digest(b"cat"),
+        )
+        .unwrap();
+        assert_eq!(result.results.len(), 2);
+        assert_eq!(result.activities.len(), 2);
+        assert!(result.description.contains("2 profiles"));
+        assert!(result.description.contains("6.0.0"));
+    }
+
+    #[test]
+    fn parse_empty_profiles() {
+        let json = r#"{"profiles": []}"#;
+        let result = parse_inspec_output(
+            json.as_bytes(),
+            Blake3Hash::digest(b"fw"),
+            Blake3Hash::digest(b"cat"),
+        )
+        .unwrap();
+        assert!(result.results.is_empty());
+        assert!(result.activities.is_empty());
+    }
+
+    #[test]
+    fn parse_invalid_json_returns_error() {
+        let result = parse_inspec_output(
+            b"not json",
+            Blake3Hash::digest(b"f"),
+            Blake3Hash::digest(b"c"),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn impact_to_risk_boundaries() {
+        assert_eq!(impact_to_risk(1.0), RiskLevel::Critical);
+        assert_eq!(impact_to_risk(0.9), RiskLevel::Critical);
+        assert_eq!(impact_to_risk(0.89), RiskLevel::High);
+        assert_eq!(impact_to_risk(0.7), RiskLevel::High);
+        assert_eq!(impact_to_risk(0.69), RiskLevel::Medium);
+        assert_eq!(impact_to_risk(0.4), RiskLevel::Medium);
+        assert_eq!(impact_to_risk(0.39), RiskLevel::Low);
+        assert_eq!(impact_to_risk(0.01), RiskLevel::Low);
+        assert_eq!(impact_to_risk(0.0), RiskLevel::Info);
+    }
+
+    #[test]
+    fn inspec_output_serde_roundtrip() {
+        let output = InSpecOutput {
+            platform: Some(InSpecPlatform {
+                name: Some("linux".to_string()),
+                release: Some("6.1".to_string()),
+                target: Some("ssh://host".to_string()),
+            }),
+            profiles: vec![InSpecProfile {
+                name: "test".to_string(),
+                version: Some("1.0".to_string()),
+                title: Some("Test Profile".to_string()),
+                controls: vec![InSpecControl {
+                    id: "ctrl-1".to_string(),
+                    title: Some("Control 1".to_string()),
+                    desc: Some("Description".to_string()),
+                    impact: 0.7,
+                    results: vec![InSpecResult {
+                        status: "passed".to_string(),
+                        code_desc: Some("check passed".to_string()),
+                        message: None,
+                        skip_message: None,
+                        run_time: Some(0.123),
+                    }],
+                    tags: serde_json::json!({"nist": ["AC-2"]}),
+                }],
+                sha256: Some("abc123".to_string()),
+            }],
+            statistics: Some(InSpecStatistics {
+                duration: Some(1.5),
+                controls: Some(InSpecControlStats {
+                    total: Some(1),
+                    passed: Some(InSpecPassedFailed { total: Some(1) }),
+                    skipped: None,
+                    failed: Some(InSpecPassedFailed { total: Some(0) }),
+                }),
+            }),
+            version: Some("5.0.0".to_string()),
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+        let deserialized: InSpecOutput = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.profiles[0].name, "test");
+        assert_eq!(deserialized.version, Some("5.0.0".to_string()));
+        assert_eq!(
+            deserialized.platform.as_ref().unwrap().name,
+            Some("linux".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_control_without_optional_fields() {
+        let json = r#"{
+            "profiles": [{
+                "name": "minimal",
+                "controls": [{
+                    "id": "min-1",
+                    "impact": 0.0,
+                    "results": [{"status": "passed"}]
+                }]
+            }]
+        }"#;
+
+        let result = parse_inspec_output(
+            json.as_bytes(),
+            Blake3Hash::digest(b"f"),
+            Blake3Hash::digest(b"c"),
+        )
+        .unwrap();
+        assert_eq!(result.results[0].control_id, "min-1");
+        // desc is None, so description should come from title (also None) -> empty string
+        assert!(result.results[0].description.is_empty());
+    }
+
+    #[test]
+    fn finding_uses_code_desc_as_title_and_message_as_description() {
+        let json = r#"{
+            "profiles": [{
+                "name": "finding-profile",
+                "controls": [{
+                    "id": "find-1",
+                    "impact": 0.7,
+                    "results": [{
+                        "status": "failed",
+                        "code_desc": "File /etc/passwd should exist",
+                        "message": "Expected file to exist but it does not"
+                    }]
+                }]
+            }]
+        }"#;
+
+        let result = parse_inspec_output(
+            json.as_bytes(),
+            Blake3Hash::digest(b"f"),
+            Blake3Hash::digest(b"c"),
+        )
+        .unwrap();
+        let finding = &result.results[0].findings[0];
+        assert_eq!(finding.title, "File /etc/passwd should exist");
+        assert_eq!(
+            finding.description,
+            "Expected file to exist but it does not"
+        );
+        assert_eq!(finding.risk, RiskLevel::High);
+    }
+
+    #[test]
+    fn assessment_metadata_preserved() {
+        let fw_hash = Blake3Hash::digest(b"inspec-5.0");
+        let cat_hash = Blake3Hash::digest(b"nist-catalog-v5");
+        let json = r#"{
+            "profiles": [{
+                "name": "meta-test",
+                "version": "2.0.0",
+                "controls": [{"id": "m-1", "impact": 0.5, "results": [{"status": "passed"}]}]
+            }],
+            "version": "5.22.3"
+        }"#;
+
+        let result =
+            parse_inspec_output(json.as_bytes(), fw_hash.clone(), cat_hash.clone()).unwrap();
+        assert_eq!(result.assessment_metadata.framework_hash, fw_hash);
+        assert_eq!(result.assessment_metadata.catalog_hash, cat_hash);
+        assert_eq!(result.assessment_metadata.framework_version, "5.22.3");
+        assert_eq!(result.assessment_metadata.framework_name, "inspec");
+        assert_eq!(result.assessment_metadata.profile_hashes.len(), 1);
+        assert_eq!(
+            result.assessment_metadata.profile_hashes[0].name,
+            "meta-test"
+        );
+        assert_eq!(
+            result.assessment_metadata.profile_hashes[0].version,
+            "2.0.0"
+        );
+    }
 }
