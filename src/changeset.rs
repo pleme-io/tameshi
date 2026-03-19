@@ -59,6 +59,7 @@ pub struct ResourceId {
 
 impl ResourceId {
     /// Canonical string representation for hashing.
+    #[must_use]
     pub fn canonical(&self) -> String {
         format!(
             "{}/{}/{}/{}/{}",
@@ -155,6 +156,7 @@ pub fn compute_certification_hash(
 }
 
 /// Build a certified changeset from components.
+#[must_use]
 pub fn certify_changeset(
     operation: Operation,
     resource: ResourceId,

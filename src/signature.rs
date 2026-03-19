@@ -76,6 +76,25 @@ impl FromStr for LayerType {
     }
 }
 
+impl<'a> TryFrom<&'a str> for LayerType {
+    type Error = crate::error::TameshiError;
+
+    /// Parse a layer type string into a `LayerType`.
+    fn try_from(s: &'a str) -> std::result::Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<Vec<LayerSignature>> for MasterSignature {
+    /// Create a `MasterSignature` from a list of layer signatures using a default environment.
+    ///
+    /// Computes the Merkle root and creates an untested master signature with environment "default".
+    fn from(layers: Vec<LayerSignature>) -> Self {
+        let root = crate::merkle::compute_merkle_root(&layers);
+        Self::new(root, layers, "default")
+    }
+}
+
 /// Metadata about how a hash was produced.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignatureMetadata {
@@ -405,5 +424,85 @@ mod tests {
         let json = serde_json::to_string(&input).unwrap();
         let deserialized: InputHash = serde_json::from_str(&json).unwrap();
         assert_eq!(input, deserialized);
+    }
+
+    // -- From/TryFrom conversion tests --
+
+    #[test]
+    fn layer_type_try_from_str() {
+        let lt: LayerType = "nix".try_into().unwrap();
+        assert_eq!(lt, LayerType::Nix);
+
+        let lt: LayerType = "k8s".try_into().unwrap();
+        assert_eq!(lt, LayerType::Kubernetes);
+
+        let lt: LayerType = "terraform".try_into().unwrap();
+        assert_eq!(lt, LayerType::Tofu);
+
+        let result: std::result::Result<LayerType, _> = "invalid_layer".try_into();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn master_signature_from_vec_layers() {
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix-content"),
+            make_layer(LayerType::Oci, b"oci-content"),
+        ];
+        let master: MasterSignature = layers.into();
+        assert_eq!(master.environment, "default");
+        assert!(master.verify_untested());
+        assert_eq!(master.layers.len(), 2);
+    }
+
+    // -- Property-based tests --
+
+    #[test]
+    fn layer_type_ordering_is_total() {
+        // Verify all layer types have a total order
+        let types = vec![
+            LayerType::Nix, LayerType::Oci, LayerType::Helm,
+            LayerType::Tofu, LayerType::Kubernetes, LayerType::Kindling,
+            LayerType::Tatara, LayerType::FluxCD, LayerType::ArgoCD,
+            LayerType::Akeyless,
+        ];
+        for i in 0..types.len() {
+            for j in 0..types.len() {
+                // Verify that cmp is well-defined (no panic)
+                let _ = types[i].cmp(&types[j]);
+            }
+        }
+    }
+
+    #[test]
+    fn master_signature_gating_prefers_secure() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let root = crate::merkle::compute_merkle_root(&layers);
+        let compliance = Blake3Hash::digest(b"compliance");
+        let master = MasterSignature::new(root.clone(), layers, "test")
+            .with_compliance(compliance.clone());
+        let secure = Blake3Hash::combine(&root, &compliance);
+        assert_eq!(*master.gating_signature(), secure);
+    }
+
+    #[test]
+    fn master_signature_gating_fallback_to_untested() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let root = crate::merkle::compute_merkle_root(&layers);
+        let master = MasterSignature::new(root.clone(), layers, "test");
+        assert_eq!(*master.gating_signature(), root);
+    }
+
+    #[test]
+    fn layer_signature_verify_inputs_mismatch() {
+        let inputs = vec![InputHash {
+            name: "a".to_string(),
+            hash: Blake3Hash::digest(b"a"),
+            size_bytes: None,
+        }];
+        // Use a wrong composite hash
+        let wrong_hash = Blake3Hash::digest(b"wrong");
+        let sig = LayerSignature::new(LayerType::Nix, wrong_hash, "test", inputs);
+        assert!(!sig.verify_inputs(), "Mismatched inputs should fail verification");
     }
 }

@@ -61,12 +61,14 @@ pub struct FrameworkAttestation {
 
 impl FrameworkAttestation {
     /// Verify the framework attestation by recomputing the composite hash.
+    #[must_use]
     pub fn verify(&self) -> bool {
         let recomputed = compute_framework_hash(&self.components);
         recomputed == self.framework_hash
     }
 
     /// Get all NIST controls satisfied by the framework.
+    #[must_use]
     pub fn satisfied_controls(&self) -> Vec<String> {
         let mut controls: Vec<String> = self
             .components
@@ -165,6 +167,7 @@ fn controls_for_component(name: &str) -> Vec<String> {
 ///
 /// These are the controls we claim our framework satisfies, and the kensa
 /// self-test profiles should verify each one.
+#[must_use]
 pub fn framework_nist_controls() -> Vec<FrameworkControlMapping> {
     vec![
         FrameworkControlMapping {

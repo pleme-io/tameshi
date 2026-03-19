@@ -106,6 +106,28 @@ impl From<&Blake3Hash> for String {
     }
 }
 
+impl From<Blake3Hash> for [u8; 32] {
+    fn from(hash: Blake3Hash) -> [u8; 32] {
+        hash.0
+    }
+}
+
+impl From<[u8; 32]> for Blake3Hash {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Blake3Hash {
+    type Error = const_hex::FromHexError;
+
+    /// Parse from a hex string or a `blake3:`-prefixed hex string.
+    fn try_from(s: &'a str) -> std::result::Result<Self, Self::Error> {
+        let hex_str = s.strip_prefix("blake3:").unwrap_or(s);
+        Self::from_hex(hex_str)
+    }
+}
+
 /// A SHA-256 hash value (32 bytes).
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sha256Hash(#[serde(with = "hex_bytes")] pub [u8; 32]);
@@ -555,5 +577,111 @@ mod tests {
         set.insert(h2);
         set.insert(h3);
         assert_eq!(set.len(), 2); // h1 and h3 are the same
+    }
+
+    // -- Property-based edge case tests --
+
+    #[test]
+    fn blake3_combine_not_commutative() {
+        // Verify for many pairs that combine(a,b) != combine(b,a)
+        for i in 0u8..50 {
+            let a = Blake3Hash::digest(&[i]);
+            let b = Blake3Hash::digest(&[i + 100]);
+            let ab = Blake3Hash::combine(&a, &b);
+            let ba = Blake3Hash::combine(&b, &a);
+            assert_ne!(ab, ba, "combine must not be commutative for input {i}");
+        }
+    }
+
+    #[test]
+    fn blake3_empty_input_produces_defined_sentinel() {
+        let h = Blake3Hash::digest(b"");
+        // Empty input should produce a well-defined, non-zero hash
+        assert_ne!(h, Blake3Hash([0u8; 32]));
+        // Should be deterministic
+        assert_eq!(h, Blake3Hash::digest(b""));
+    }
+
+    #[test]
+    fn blake3_single_byte_inputs_all_distinct() {
+        let mut hashes = std::collections::HashSet::new();
+        for byte in 0u8..=255 {
+            hashes.insert(Blake3Hash::digest(&[byte]));
+        }
+        assert_eq!(hashes.len(), 256, "Every single-byte input must produce a unique hash");
+    }
+
+    #[test]
+    fn blake3_large_input_1000_items_no_panic() {
+        let items: Vec<Vec<u8>> = (0..1000)
+            .map(|i| format!("item-{i}").into_bytes())
+            .collect();
+        let mut combined = Vec::new();
+        for item in &items {
+            let h = Blake3Hash::digest(item);
+            combined.extend_from_slice(&h.0);
+        }
+        let final_hash = Blake3Hash::digest(&combined);
+        let final_hash2 = Blake3Hash::digest(&combined);
+        assert_eq!(final_hash, final_hash2, "Large composite must be deterministic");
+    }
+
+    #[test]
+    fn blake3_from_into_u8_32_roundtrip() {
+        let h = Blake3Hash::digest(b"roundtrip-test");
+        let bytes: [u8; 32] = h.clone().into();
+        let h2: Blake3Hash = bytes.into();
+        assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn blake3_try_from_str_valid() {
+        let h = Blake3Hash::digest(b"try_from test");
+        let hex = h.to_hex();
+        let parsed: Blake3Hash = hex.as_str().try_into().unwrap();
+        assert_eq!(h, parsed);
+    }
+
+    #[test]
+    fn blake3_try_from_str_with_prefix() {
+        let h = Blake3Hash::digest(b"try_from prefix");
+        let prefixed = h.to_prefixed();
+        let parsed: Blake3Hash = prefixed.as_str().try_into().unwrap();
+        assert_eq!(h, parsed);
+    }
+
+    #[test]
+    fn blake3_try_from_str_invalid() {
+        let result: std::result::Result<Blake3Hash, _> = "zzz-invalid".try_into();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn blake3_combine_idempotent_with_self() {
+        let a = Blake3Hash::digest(b"self-combine");
+        let aa = Blake3Hash::combine(&a, &a);
+        // combine(a,a) should be a valid, deterministic hash but not equal to a
+        assert_ne!(aa, a, "combine(a,a) should differ from a");
+        let aa2 = Blake3Hash::combine(&a, &a);
+        assert_eq!(aa, aa2, "combine(a,a) should be deterministic");
+    }
+
+    #[test]
+    fn blake3_file_async_roundtrip() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let dir = tempfile::tempdir().unwrap();
+            let file_path = dir.path().join("async-test.bin");
+            tokio::fs::write(&file_path, b"async file content").await.unwrap();
+            let h1 = blake3_file_async(&file_path).await.unwrap();
+            let h2 = blake3_file(&file_path).unwrap();
+            assert_eq!(h1, h2, "Async and sync file hashing must agree");
+        });
+    }
+
+    #[test]
+    fn sha256_wrong_length_hex_errors() {
+        let result = Sha256Hash::from_hex("abcd");
+        assert!(result.is_err());
     }
 }

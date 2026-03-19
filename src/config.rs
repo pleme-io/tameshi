@@ -69,6 +69,7 @@ pub struct FigmentConfigLoader {
 
 impl FigmentConfigLoader {
     /// Create a new figment config loader.
+    #[must_use]
     pub fn new(env_prefix: &str, yaml_paths: &[&str]) -> Self {
         Self {
             env_prefix: env_prefix.to_string(),

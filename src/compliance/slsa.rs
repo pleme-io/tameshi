@@ -298,6 +298,7 @@ pub fn determine_slsa_level(
 }
 
 /// NIST controls satisfied by SLSA provenance and supply chain attestation.
+#[must_use]
 pub fn slsa_nist_controls() -> Vec<&'static str> {
     vec![
         "SA-10",  // Developer Configuration Management

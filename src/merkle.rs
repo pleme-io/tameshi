@@ -127,7 +127,7 @@ fn build_node_tree(mut nodes: Vec<MerkleNode>) -> MerkleNode {
     }
 
     while nodes.len() > 1 {
-        let mut next_level = Vec::new();
+        let mut next_level = Vec::with_capacity((nodes.len() + 1) / 2);
         let mut i = 0;
         while i < nodes.len() {
             if i + 1 < nodes.len() {
@@ -475,5 +475,99 @@ mod tests {
         let root = compute_merkle_root(&layers);
         let tree = build_merkle_tree(&layers);
         assert_eq!(root, tree.hash);
+    }
+
+    // -- Property-based edge case tests --
+
+    #[test]
+    fn merkle_root_idempotent_recomputation() {
+        // Merkle root should be a fixed point: computing it twice gives the same result
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix"),
+            make_layer(LayerType::Oci, b"oci"),
+            make_layer(LayerType::Helm, b"helm"),
+        ];
+        let root1 = compute_merkle_root(&layers);
+        let root2 = compute_merkle_root(&layers);
+        let root3 = compute_merkle_root(&layers);
+        assert_eq!(root1, root2);
+        assert_eq!(root2, root3);
+    }
+
+    #[test]
+    fn merkle_single_element_degeneracy() {
+        // Single-element tree: root should equal the leaf hash
+        for i in 0..10 {
+            let data = format!("single-{i}");
+            let layers = vec![make_layer(LayerType::Nix, data.as_bytes())];
+            let root = compute_merkle_root(&layers);
+            assert_eq!(root, Blake3Hash::digest(data.as_bytes()),
+                "Single-element tree root must equal leaf hash for input {i}");
+        }
+    }
+
+    #[test]
+    fn merkle_empty_input_sentinel() {
+        let root = compute_merkle_root(&[]);
+        let expected = Blake3Hash::digest(b"empty-tree");
+        assert_eq!(root, expected, "Empty tree must produce defined sentinel");
+    }
+
+    #[test]
+    fn merkle_very_large_tree_no_panic() {
+        // Build a tree with 1024 leaves
+        let layers: Vec<LayerSignature> = (0..1024)
+            .map(|i| {
+                let data = format!("large-tree-leaf-{i}");
+                LayerSignature::new(
+                    LayerType::Nix,
+                    Blake3Hash::digest(data.as_bytes()),
+                    "test",
+                    vec![],
+                )
+            })
+            .collect();
+
+        let root = compute_merkle_root(&layers);
+        let root2 = compute_merkle_root(&layers);
+        assert_eq!(root, root2, "Large tree must be deterministic");
+
+        // Build the tree structure too
+        let tree = build_merkle_tree(&layers);
+        assert_eq!(root, tree.hash, "build_merkle_tree must agree with compute_merkle_root for large trees");
+    }
+
+    #[test]
+    fn merkle_odd_leaf_counts_stable() {
+        // Verify trees with odd leaf counts (3, 5, 7, 9) are stable
+        for count in [3, 5, 7, 9, 11, 13] {
+            let layers: Vec<LayerSignature> = (0..count)
+                .map(|i| {
+                    let data = format!("odd-{count}-leaf-{i}");
+                    LayerSignature::new(
+                        LayerType::Nix,
+                        Blake3Hash::digest(data.as_bytes()),
+                        "test",
+                        vec![],
+                    )
+                })
+                .collect();
+
+            let root1 = compute_merkle_root(&layers);
+            let root2 = compute_merkle_root(&layers);
+            assert_eq!(root1, root2, "Odd-count tree with {count} leaves must be deterministic");
+        }
+    }
+
+    #[test]
+    fn merkle_node_serde_roundtrip() {
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix"),
+            make_layer(LayerType::Oci, b"oci"),
+        ];
+        let tree = build_merkle_tree(&layers);
+        let json = serde_json::to_string(&tree).unwrap();
+        let deserialized: MerkleNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(tree, deserialized);
     }
 }

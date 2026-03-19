@@ -201,6 +201,7 @@ pub struct GateDecision {
 
 impl GateDecision {
     /// Create an "allowed" gate decision.
+    #[must_use]
     pub fn allow(signature: &Blake3Hash, expected: &Blake3Hash, gate: &str) -> Self {
         Self {
             allowed: true,
@@ -213,6 +214,7 @@ impl GateDecision {
     }
 
     /// Create a "denied" gate decision.
+    #[must_use]
     pub fn deny(signature: &Blake3Hash, expected: &Blake3Hash, gate: &str, reason: &str) -> Self {
         Self {
             allowed: false,

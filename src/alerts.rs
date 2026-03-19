@@ -126,6 +126,7 @@ pub struct Alert {
 
 impl Alert {
     /// Create a new alert.
+    #[must_use]
     pub fn new(severity: AlertSeverity, event: AlertEvent, summary: &str, environment: &str, source: &str) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -139,6 +140,7 @@ impl Alert {
     }
 
     /// Create a gate denial alert.
+    #[must_use]
     pub fn gate_denied(
         resource_kind: &str,
         resource_name: &str,
@@ -168,6 +170,7 @@ impl Alert {
     }
 
     /// Create a changeset rejected alert.
+    #[must_use]
     pub fn changeset_rejected(
         operation: &str,
         resource_kind: &str,
@@ -197,6 +200,7 @@ impl Alert {
     }
 
     /// Create a compliance failure alert.
+    #[must_use]
     pub fn compliance_failed(
         environment: &str,
         failed_controls: Vec<String>,
@@ -279,6 +283,7 @@ pub struct AlertDispatcher {
 
 impl AlertDispatcher {
     /// Create a new dispatcher with the given channels.
+    #[must_use]
     pub fn new(channels: Vec<NotificationChannel>, min_severity: AlertSeverity) -> Self {
         Self {
             channels,
@@ -288,6 +293,7 @@ impl AlertDispatcher {
     }
 
     /// Create a log-only dispatcher (default fallback).
+    #[must_use]
     pub fn log_only() -> Self {
         Self::new(vec![NotificationChannel::Log], AlertSeverity::Info)
     }
@@ -447,6 +453,7 @@ impl MockAlertSender {
     }
 
     /// Get all dispatched alerts.
+    #[must_use]
     pub fn alerts(&self) -> Vec<Alert> {
         self.alerts.lock().unwrap().clone()
     }

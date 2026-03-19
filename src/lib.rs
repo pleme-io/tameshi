@@ -52,3 +52,24 @@ pub mod selftest;
 pub mod signature;
 pub mod traits;
 pub mod verify;
+
+/// Prelude module for convenient wildcard imports.
+///
+/// ```rust
+/// use tameshi::prelude::*;
+/// ```
+pub mod prelude {
+    pub use crate::collectors::traits::LayerCollector;
+    pub use crate::collectors::MockCollector;
+    pub use crate::config::ConfigLoader;
+    pub use crate::hash::{AttestationHasher, Blake3Hash, Blake3Hasher, Sha256Hash};
+    pub use crate::merkle::{compose_merkle, compute_merkle_root};
+    pub use crate::signature::{InputHash, LayerSignature, LayerType, MasterSignature};
+    pub use crate::traits::{
+        Clock, CommandRunner, DefaultGatingEngine, DefaultVerifier, FileSystem, FixedClock,
+        GatingEngine, HttpClient, MockCommandRunner, MockFileSystem, MockGatingEngine,
+        MockHttpClient, MockVerifier, ReqwestHttpClient, SignatureVerifier, SystemClock,
+        SystemCommandRunner,
+    };
+    pub use crate::verify::{verify_master, VerificationResult};
+}

@@ -50,6 +50,7 @@ pub const ANNOTATION_CHANGESET: &str = "sekiban.pleme.io/changeset-hash";
 /// Compute a source attestation from git metadata.
 ///
 /// Called early in CI after checkout.
+#[must_use]
 pub fn source_attestation(
     repository: &str,
     commit: &str,
@@ -75,6 +76,7 @@ pub fn source_attestation(
 /// Compute a build attestation from Nix build outputs.
 ///
 /// Called after `nix build` completes.
+#[must_use]
 pub fn build_attestation(
     service: &str,
     derivation: &str,
@@ -106,6 +108,7 @@ pub fn build_attestation(
 /// Compute an image attestation from OCI image metadata.
 ///
 /// Called after pushing the image to the registry.
+#[must_use]
 pub fn image_attestation(
     image_ref: &str,
     tag: &str,
@@ -136,6 +139,7 @@ pub fn image_attestation(
 /// Compute a chart attestation from Helm chart metadata.
 ///
 /// Called after packaging the chart.
+#[must_use]
 pub fn chart_attestation(
     chart_name: &str,
     chart_version: &str,
@@ -162,6 +166,7 @@ pub fn chart_attestation(
 ///
 /// These annotations are added to FluxCD Kustomizations and HelmReleases
 /// so that sekiban's admission webhook can verify them.
+#[must_use]
 pub fn sekiban_annotations(
     signature: &Blake3Hash,
     certification_hash: Option<&Blake3Hash>,
@@ -191,6 +196,7 @@ pub fn sekiban_annotations(
 ///
 /// Produces a strategic merge patch that can be applied to any resource
 /// to add the integrity annotations.
+#[must_use]
 pub fn render_annotation_patch(annotations: &BTreeMap<String, String>) -> String {
     let mut lines = vec![
         "metadata:".to_string(),
@@ -218,6 +224,7 @@ pub struct CiStageOutput {
 }
 
 /// Serialize an attestation to a CI stage output.
+#[must_use]
 pub fn stage_output<T: Serialize>(stage: &str, hash: &Blake3Hash, passed: bool, attestation: &T) -> CiStageOutput {
     CiStageOutput {
         stage: stage.to_string(),
