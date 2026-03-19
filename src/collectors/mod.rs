@@ -8,6 +8,8 @@
 //! uniform interface for collecting layer signatures.
 
 pub mod akeyless;
+pub mod argocd;
+pub mod fluxcd;
 pub mod generic;
 pub mod helm;
 pub mod kindling;

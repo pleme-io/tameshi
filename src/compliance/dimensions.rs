@@ -342,6 +342,22 @@ impl AttestationBuilder {
         self
     }
 
+    /// Add a framework self-attestation dimension.
+    ///
+    /// The hash should come from [`crate::selftest::compute_framework_hash`]
+    /// or [`crate::selftest::framework_attestation_hash`].
+    pub fn with_self_attestation(mut self, hash: Blake3Hash, summary: &str) -> Self {
+        self.dimensions.push(ComplianceDimension {
+            dimension_type: DimensionType::FrameworkSelfAttestation,
+            hash,
+            passed: true,
+            summary: summary.to_string(),
+            assessed_at: chrono::Utc::now(),
+            required: false,
+        });
+        self
+    }
+
     /// Build the final attestation, composing all dimension hashes.
     pub fn build(self) -> ComplianceAttestation {
         let all_passed = self.dimensions.iter().all(|d| !d.required || d.passed);
@@ -492,6 +508,24 @@ mod tests {
             .build();
 
         assert_eq!(a1.compliance_hash, a2.compliance_hash);
+    }
+
+    #[test]
+    fn builder_with_self_attestation() {
+        let hash = Blake3Hash::digest(b"framework-self-test");
+        let attestation = AttestationBuilder::new("production", "myapp", "default")
+            .with_self_attestation(hash.clone(), "tameshi 0.1.0 attested")
+            .build();
+
+        assert_eq!(attestation.dimensions.len(), 1);
+        let dim = &attestation.dimensions[0];
+        assert_eq!(dim.dimension_type, DimensionType::FrameworkSelfAttestation);
+        assert_eq!(dim.hash, hash);
+        assert!(dim.passed);
+        assert_eq!(dim.summary, "tameshi 0.1.0 attested");
+        assert!(!dim.required);
+        // Optional dimension that passes => all_passed should be true
+        assert!(attestation.all_passed);
     }
 
     #[test]

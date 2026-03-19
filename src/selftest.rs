@@ -122,12 +122,34 @@ pub async fn attest_framework(binary_paths: &[(&str, &str)]) -> Result<Framework
 }
 
 /// Compute composite hash from all framework component hashes.
-fn compute_framework_hash(components: &[FrameworkComponent]) -> Blake3Hash {
-    let mut data = Vec::with_capacity(components.len() * 32);
+///
+/// Includes component name, version string, and binary hash in the
+/// composite to ensure that version changes (even without binary changes)
+/// produce a different framework hash.
+pub fn compute_framework_hash(components: &[FrameworkComponent]) -> Blake3Hash {
+    let mut data = Vec::with_capacity(components.len() * 64);
     for component in components {
+        data.extend_from_slice(component.name.as_bytes());
+        data.extend_from_slice(component.version.as_bytes());
         data.extend_from_slice(&component.binary_hash.0);
     }
     Blake3Hash::digest(&data)
+}
+
+/// Compute the framework self-attestation hash from binary paths.
+///
+/// This is a convenience function that attests the framework and returns
+/// the composite hash. Call this at startup and include the hash in your
+/// master signature.
+///
+/// # Errors
+///
+/// Returns an error if any framework binary cannot be read.
+pub async fn framework_attestation_hash(
+    binary_paths: &[(&str, &str)],
+) -> Result<Blake3Hash> {
+    let attestation = attest_framework(binary_paths).await?;
+    Ok(attestation.framework_hash)
 }
 
 /// Map a component to the NIST 800-53 controls it satisfies.
@@ -322,5 +344,77 @@ mod tests {
             schema_version: "1.0.0".to_string(),
         };
         assert!(attestation.verify());
+    }
+
+    #[test]
+    fn framework_hash_includes_version() {
+        // Same binary hash but different version string should produce different hash
+        let c1 = vec![FrameworkComponent {
+            name: "tameshi".to_string(),
+            version: "1.0.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"same-binary"),
+            binary_path: "/bin/tameshi".to_string(),
+            satisfies_controls: vec![],
+        }];
+        let c2 = vec![FrameworkComponent {
+            name: "tameshi".to_string(),
+            version: "2.0.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"same-binary"),
+            binary_path: "/bin/tameshi".to_string(),
+            satisfies_controls: vec![],
+        }];
+        assert_ne!(
+            compute_framework_hash(&c1),
+            compute_framework_hash(&c2),
+            "Different version strings must produce different framework hashes"
+        );
+    }
+
+    #[test]
+    fn framework_hash_includes_name() {
+        // Same binary and version but different name should produce different hash
+        let c1 = vec![FrameworkComponent {
+            name: "tameshi".to_string(),
+            version: "1.0.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"binary"),
+            binary_path: "/bin/a".to_string(),
+            satisfies_controls: vec![],
+        }];
+        let c2 = vec![FrameworkComponent {
+            name: "sekiban".to_string(),
+            version: "1.0.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"binary"),
+            binary_path: "/bin/a".to_string(),
+            satisfies_controls: vec![],
+        }];
+        assert_ne!(
+            compute_framework_hash(&c1),
+            compute_framework_hash(&c2),
+            "Different component names must produce different framework hashes"
+        );
+    }
+
+    #[tokio::test]
+    async fn framework_attestation_hash_convenience() {
+        // Create a temp binary file to hash
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("tameshi-bin");
+        tokio::fs::write(&bin_path, b"test binary content").await.unwrap();
+
+        let hash = framework_attestation_hash(&[
+            ("tameshi", bin_path.to_str().unwrap()),
+        ])
+        .await
+        .unwrap();
+
+        // Hash should be non-zero and deterministic
+        assert_ne!(hash, Blake3Hash::digest(b""));
+
+        let hash2 = framework_attestation_hash(&[
+            ("tameshi", bin_path.to_str().unwrap()),
+        ])
+        .await
+        .unwrap();
+        assert_eq!(hash, hash2);
     }
 }

@@ -471,6 +471,173 @@ impl<F: FileSystem> LayerCollector for GenericHelmCollector<F> {
 }
 
 // ---------------------------------------------------------------------------
+// Generic FluxCD Collector
+// ---------------------------------------------------------------------------
+
+/// FluxCD reconciliation state collector parameterized over a [`CommandRunner`].
+///
+/// This collector can be tested without real `kubectl` by injecting a
+/// [`MockCommandRunner`](crate::traits::MockCommandRunner).
+pub struct GenericFluxCDCollector<C: CommandRunner = crate::traits::SystemCommandRunner> {
+    /// Namespace to query for FluxCD resources.
+    pub namespace: String,
+    /// Command runner for subprocess execution.
+    pub cmd: C,
+}
+
+impl<C: CommandRunner> GenericFluxCDCollector<C> {
+    /// Create a collector for a namespace.
+    pub fn new(namespace: &str, cmd: C) -> Self {
+        Self {
+            namespace: namespace.to_string(),
+            cmd,
+        }
+    }
+}
+
+impl<C: CommandRunner> LayerCollector for GenericFluxCDCollector<C> {
+    async fn collect(&self) -> Result<LayerSignature> {
+        let resource_types = [
+            "kustomizations.kustomize.toolkit.fluxcd.io",
+            "helmreleases.helm.toolkit.fluxcd.io",
+            "gitrepositories.source.toolkit.fluxcd.io",
+        ];
+
+        let mut inputs = Vec::new();
+
+        for resource_type in &resource_types {
+            match self
+                .cmd
+                .run(
+                    "kubectl",
+                    &["get", resource_type, "-n", &self.namespace, "-o", "json"],
+                )
+                .await
+            {
+                Ok(output) => {
+                    if let Ok(mut resources) =
+                        serde_json::from_str::<serde_json::Value>(&output)
+                    {
+                        super::fluxcd::strip_fluxcd_volatile_fields(&mut resources);
+                        let canonical = serde_json::to_vec(&resources)?;
+                        inputs.push(InputHash {
+                            name: format!("{}/{}", self.namespace, resource_type),
+                            hash: Blake3Hash::digest(&canonical),
+                            size_bytes: Some(canonical.len() as u64),
+                        });
+                    }
+                }
+                Err(_) => {
+                    // Resource type may not exist in this cluster
+                }
+            }
+        }
+
+        let composite = compute_composite_hash(&inputs);
+
+        debug!(
+            namespace = self.namespace.as_str(),
+            resource_types = inputs.len(),
+            "Hashed FluxCD reconciliation state (generic)"
+        );
+
+        Ok(LayerSignature::new(
+            LayerType::FluxCD,
+            composite,
+            &format!("fluxcd:{}", self.namespace),
+            inputs,
+        ))
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::FluxCD
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generic ArgoCD Collector
+// ---------------------------------------------------------------------------
+
+/// ArgoCD application state collector parameterized over a [`CommandRunner`].
+///
+/// This collector can be tested without real `kubectl` by injecting a
+/// [`MockCommandRunner`](crate::traits::MockCommandRunner).
+pub struct GenericArgoCDCollector<C: CommandRunner = crate::traits::SystemCommandRunner> {
+    /// Namespace to query for ArgoCD resources.
+    pub namespace: String,
+    /// Command runner for subprocess execution.
+    pub cmd: C,
+}
+
+impl<C: CommandRunner> GenericArgoCDCollector<C> {
+    /// Create a collector for a namespace.
+    pub fn new(namespace: &str, cmd: C) -> Self {
+        Self {
+            namespace: namespace.to_string(),
+            cmd,
+        }
+    }
+}
+
+impl<C: CommandRunner> LayerCollector for GenericArgoCDCollector<C> {
+    async fn collect(&self) -> Result<LayerSignature> {
+        let resource_types = [
+            "applications.argoproj.io",
+            "applicationsets.argoproj.io",
+        ];
+
+        let mut inputs = Vec::new();
+
+        for resource_type in &resource_types {
+            match self
+                .cmd
+                .run(
+                    "kubectl",
+                    &["get", resource_type, "-n", &self.namespace, "-o", "json"],
+                )
+                .await
+            {
+                Ok(output) => {
+                    if let Ok(mut resources) =
+                        serde_json::from_str::<serde_json::Value>(&output)
+                    {
+                        super::argocd::strip_argocd_volatile_fields(&mut resources);
+                        let canonical = serde_json::to_vec(&resources)?;
+                        inputs.push(InputHash {
+                            name: format!("{}/{}", self.namespace, resource_type),
+                            hash: Blake3Hash::digest(&canonical),
+                            size_bytes: Some(canonical.len() as u64),
+                        });
+                    }
+                }
+                Err(_) => {
+                    // Resource type may not exist in this cluster
+                }
+            }
+        }
+
+        let composite = compute_composite_hash(&inputs);
+
+        debug!(
+            namespace = self.namespace.as_str(),
+            resource_types = inputs.len(),
+            "Hashed ArgoCD application state (generic)"
+        );
+
+        Ok(LayerSignature::new(
+            LayerType::ArgoCD,
+            composite,
+            &format!("argocd:{}", self.namespace),
+            inputs,
+        ))
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::ArgoCD
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -721,6 +888,222 @@ mod tests {
         let collector = GenericHelmCollector::new("/nonexistent-chart", fs);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Helm);
+        assert!(sig.inputs.is_empty());
+    }
+
+    // -- GenericFluxCDCollector tests --
+
+    #[tokio::test]
+    async fn generic_fluxcd_collector_hashes_namespace() {
+        let runner = MockCommandRunner::new();
+
+        let kustomizations = serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "my-app",
+                    "namespace": "flux-system",
+                    "resourceVersion": "456",
+                    "uid": "flux-uid"
+                },
+                "spec": {"interval": "5m", "path": "./k8s"},
+                "status": {"conditions": [{"type": "Ready", "status": "True"}]}
+            }]
+        });
+        runner.add_response(
+            "kubectl",
+            &["get", "kustomizations.kustomize.toolkit.fluxcd.io", "-n", "flux-system", "-o", "json"],
+            &serde_json::to_string(&kustomizations).unwrap(),
+        );
+
+        // Other resource types return errors (not found)
+
+        let collector = GenericFluxCDCollector::new("flux-system", runner);
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::FluxCD);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(
+            sig.inputs[0].name,
+            "flux-system/kustomizations.kustomize.toolkit.fluxcd.io"
+        );
+    }
+
+    #[tokio::test]
+    async fn generic_fluxcd_collector_strips_volatile_fields() {
+        let runner = MockCommandRunner::new();
+
+        let resources = serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "app",
+                    "resourceVersion": "999",
+                    "uid": "test-uid",
+                    "creationTimestamp": "2026-01-01T00:00:00Z",
+                    "managedFields": [],
+                    "generation": 3
+                },
+                "spec": {"interval": "10m"},
+                "status": {"lastHandledReconcileAt": "2026-03-19T10:00:00Z"}
+            }]
+        });
+        runner.add_response(
+            "kubectl",
+            &["get", "kustomizations.kustomize.toolkit.fluxcd.io", "-n", "test-ns", "-o", "json"],
+            &serde_json::to_string(&resources).unwrap(),
+        );
+
+        let collector = GenericFluxCDCollector::new("test-ns", runner);
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.inputs.len(), 1);
+
+        // Verify the hash is deterministic (volatile fields stripped)
+        let collector2_runner = MockCommandRunner::new();
+        let resources2 = serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "app",
+                    "resourceVersion": "1000",  // different version
+                    "uid": "different-uid",
+                    "creationTimestamp": "2026-02-01T00:00:00Z",
+                    "managedFields": [{"manager": "flux"}],
+                    "generation": 5
+                },
+                "spec": {"interval": "10m"},
+                "status": {"lastHandledReconcileAt": "2026-03-19T12:00:00Z"}
+            }]
+        });
+        collector2_runner.add_response(
+            "kubectl",
+            &["get", "kustomizations.kustomize.toolkit.fluxcd.io", "-n", "test-ns", "-o", "json"],
+            &serde_json::to_string(&resources2).unwrap(),
+        );
+
+        let collector2 = GenericFluxCDCollector::new("test-ns", collector2_runner);
+        let sig2 = collector2.collect().await.unwrap();
+        // Same spec, different volatile fields => same hash
+        assert_eq!(sig.inputs[0].hash, sig2.inputs[0].hash);
+    }
+
+    #[tokio::test]
+    async fn generic_fluxcd_collector_empty_namespace() {
+        let runner = MockCommandRunner::new();
+        // All resource types return errors (nothing registered)
+        let collector = GenericFluxCDCollector::new("empty-ns", runner);
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::FluxCD);
+        assert!(sig.inputs.is_empty());
+    }
+
+    // -- GenericArgoCDCollector tests --
+
+    #[tokio::test]
+    async fn generic_argocd_collector_hashes_namespace() {
+        let runner = MockCommandRunner::new();
+
+        let applications = serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "my-app",
+                    "namespace": "argocd",
+                    "resourceVersion": "789",
+                    "uid": "argo-uid"
+                },
+                "spec": {
+                    "source": {
+                        "repoURL": "https://github.com/org/repo",
+                        "targetRevision": "main",
+                        "path": "k8s"
+                    },
+                    "destination": {
+                        "server": "https://kubernetes.default.svc",
+                        "namespace": "default"
+                    }
+                },
+                "status": {
+                    "sync": {"status": "Synced"},
+                    "health": {"status": "Healthy"}
+                }
+            }]
+        });
+        runner.add_response(
+            "kubectl",
+            &["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"],
+            &serde_json::to_string(&applications).unwrap(),
+        );
+
+        let collector = GenericArgoCDCollector::new("argocd", runner);
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::ArgoCD);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "argocd/applications.argoproj.io");
+    }
+
+    #[tokio::test]
+    async fn generic_argocd_collector_strips_volatile_fields() {
+        let runner = MockCommandRunner::new();
+
+        let resources = serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "app",
+                    "resourceVersion": "100",
+                    "uid": "uid-1",
+                    "creationTimestamp": "2026-01-01T00:00:00Z",
+                    "managedFields": [],
+                    "generation": 2
+                },
+                "spec": {
+                    "source": {"repoURL": "https://github.com/org/repo"}
+                },
+                "status": {"sync": {"status": "OutOfSync"}},
+                "operation": {"sync": {"revision": "abc"}}
+            }]
+        });
+        runner.add_response(
+            "kubectl",
+            &["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"],
+            &serde_json::to_string(&resources).unwrap(),
+        );
+
+        let collector = GenericArgoCDCollector::new("argocd", runner);
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.inputs.len(), 1);
+
+        // Verify same spec with different volatile fields produces same hash
+        let runner2 = MockCommandRunner::new();
+        let resources2 = serde_json::json!({
+            "items": [{
+                "metadata": {
+                    "name": "app",
+                    "resourceVersion": "200",
+                    "uid": "uid-2",
+                    "creationTimestamp": "2026-02-01T00:00:00Z",
+                    "managedFields": [{"manager": "argocd"}],
+                    "generation": 5
+                },
+                "spec": {
+                    "source": {"repoURL": "https://github.com/org/repo"}
+                },
+                "status": {"sync": {"status": "Synced"}},
+                "operation": {"sync": {"revision": "def"}}
+            }]
+        });
+        runner2.add_response(
+            "kubectl",
+            &["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"],
+            &serde_json::to_string(&resources2).unwrap(),
+        );
+
+        let collector2 = GenericArgoCDCollector::new("argocd", runner2);
+        let sig2 = collector2.collect().await.unwrap();
+        assert_eq!(sig.inputs[0].hash, sig2.inputs[0].hash);
+    }
+
+    #[tokio::test]
+    async fn generic_argocd_collector_empty_namespace() {
+        let runner = MockCommandRunner::new();
+        let collector = GenericArgoCDCollector::new("empty-ns", runner);
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::ArgoCD);
         assert!(sig.inputs.is_empty());
     }
 

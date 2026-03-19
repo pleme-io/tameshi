@@ -77,5 +77,8 @@ pub mod prelude {
         MockHttpClient, MockVerifier, ReqwestHttpClient, SignatureVerifier, SystemClock,
         SystemCommandRunner,
     };
+    pub use crate::selftest::{
+        attest_framework, compute_framework_hash, framework_attestation_hash,
+    };
     pub use crate::verify::{verify_master, VerificationResult};
 }
