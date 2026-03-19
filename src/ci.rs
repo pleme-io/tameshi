@@ -31,13 +31,17 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::akeyless_client::{AkeylessConfig, HttpAkeylessClient};
 use crate::certification::{
     BuildAttestation, ChartAttestation, DependencyHash, ImageAttestation,
     SourceAttestation,
 };
+use crate::compliance::akeyless::{AkeylessAuthMethod, AkeylessSecretAttestation};
 use crate::compliance::slsa::SlsaLevel;
+use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::LayerType;
+use crate::traits::ReqwestHttpClient;
 
 use chrono::Utc;
 
@@ -234,6 +238,84 @@ pub fn stage_output<T: Serialize>(stage: &str, hash: &Blake3Hash, passed: bool, 
     }
 }
 
+/// Build an Akeyless secret attestation for CI pipelines.
+///
+/// This convenience function wraps the `AkeylessClient` workflow:
+/// 1. Authenticate to the gateway
+/// 2. Hash each specified secret (values are NEVER stored)
+/// 3. Return an attestation suitable for inclusion in the Merkle tree
+///
+/// # Example
+/// ```ignore
+/// let attestation = akeyless_attestation(
+///     "https://gw.akeyless.io",
+///     AkeylessAuthMethod::ApiKey,
+///     Some("p-abc123"),
+///     Some("my-secret-key"),
+///     &["/prod/db-password", "/prod/api-key"],
+/// ).await?;
+/// ```
+pub async fn akeyless_attestation(
+    gateway_url: &str,
+    auth_method: AkeylessAuthMethod,
+    access_id: Option<&str>,
+    access_key: Option<&str>,
+    secret_paths: &[&str],
+) -> Result<AkeylessSecretAttestation> {
+    use crate::akeyless_client::AkeylessClient;
+
+    let config = AkeylessConfig {
+        gateway_url: gateway_url.to_string(),
+        auth_method,
+        access_id: access_id.map(String::from),
+        access_key: access_key.map(String::from),
+        k8s_token_path: None,
+        k8s_auth_config_name: None,
+    };
+    let client = HttpAkeylessClient::new(config, ReqwestHttpClient::new());
+    let paths: Vec<String> = secret_paths.iter().map(|s| s.to_string()).collect();
+    client
+        .build_attestation(&paths)
+        .await
+        .map_err(|e| TameshiError::CollectorError {
+            layer: "akeyless".to_string(),
+            message: format!("Akeyless CI attestation: {e}"),
+        })
+}
+
+/// Build an Akeyless secret attestation using a custom HTTP client.
+///
+/// Like [`akeyless_attestation`], but accepts any [`HttpClient`](crate::traits::HttpClient)
+/// implementation, making it testable with [`MockHttpClient`](crate::traits::MockHttpClient).
+pub async fn akeyless_attestation_with_client<H: crate::traits::HttpClient>(
+    gateway_url: &str,
+    auth_method: AkeylessAuthMethod,
+    access_id: Option<&str>,
+    access_key: Option<&str>,
+    secret_paths: &[&str],
+    http_client: H,
+) -> Result<AkeylessSecretAttestation> {
+    use crate::akeyless_client::AkeylessClient;
+
+    let config = AkeylessConfig {
+        gateway_url: gateway_url.to_string(),
+        auth_method,
+        access_id: access_id.map(String::from),
+        access_key: access_key.map(String::from),
+        k8s_token_path: None,
+        k8s_auth_config_name: None,
+    };
+    let client = HttpAkeylessClient::new(config, http_client);
+    let paths: Vec<String> = secret_paths.iter().map(|s| s.to_string()).collect();
+    client
+        .build_attestation(&paths)
+        .await
+        .map_err(|e| TameshiError::CollectorError {
+            layer: "akeyless".to_string(),
+            message: format!("Akeyless CI attestation: {e}"),
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,5 +465,67 @@ mod tests {
         assert!(ANNOTATION_CERTIFICATION.starts_with("sekiban.pleme.io/"));
         assert!(ANNOTATION_COMPLIANCE.starts_with("sekiban.pleme.io/"));
         assert!(ANNOTATION_CHANGESET.starts_with("sekiban.pleme.io/"));
+    }
+
+    #[tokio::test]
+    async fn akeyless_attestation_with_mock_client() {
+        use crate::traits::MockHttpClient;
+
+        let http = MockHttpClient::new();
+
+        // Auth endpoint
+        http.add_json_response(
+            "https://gw.test.com/api/v1/auth",
+            &serde_json::json!({"token": "t-ci-token"}),
+        );
+
+        // Secret endpoint
+        http.add_json_response(
+            "https://gw.test.com/api/v1/get-secret-value",
+            &serde_json::json!({"/prod/db-password": "my-db-password"}),
+        );
+
+        let att = akeyless_attestation_with_client(
+            "https://gw.test.com",
+            AkeylessAuthMethod::ApiKey,
+            Some("p-test-id"),
+            Some("test-key"),
+            &["/prod/db-password"],
+            http,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(att.gateway_url, "https://gw.test.com");
+        assert_eq!(att.auth_method, AkeylessAuthMethod::ApiKey);
+        assert_eq!(att.secrets_accessed.len(), 1);
+        assert_eq!(att.secrets_accessed[0].path, "/prod/db-password");
+        // Value hash should be of the secret value, not the path
+        assert_eq!(
+            att.secrets_accessed[0].value_hash,
+            Blake3Hash::digest(b"my-db-password")
+        );
+    }
+
+    #[tokio::test]
+    async fn akeyless_attestation_with_mock_auth_failure() {
+        use crate::traits::MockHttpClient;
+
+        let http = MockHttpClient::new();
+        // No auth response registered -> will fail
+
+        let result = akeyless_attestation_with_client(
+            "https://gw.test.com",
+            AkeylessAuthMethod::ApiKey,
+            Some("p-test-id"),
+            Some("test-key"),
+            &["/prod/secret"],
+            http,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Akeyless CI attestation"));
     }
 }

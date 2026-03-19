@@ -638,6 +638,214 @@ impl<C: CommandRunner> LayerCollector for GenericArgoCDCollector<C> {
 }
 
 // ---------------------------------------------------------------------------
+// Generic Kindling Collector
+// ---------------------------------------------------------------------------
+
+/// Kindling identity/report collector parameterized over a [`CommandRunner`]
+/// and [`FileSystem`].
+///
+/// This collector can be tested without real `kubectl` or filesystem access
+/// by injecting [`MockCommandRunner`](crate::traits::MockCommandRunner) and
+/// [`MockFileSystem`](crate::traits::MockFileSystem).
+pub struct GenericKindlingCollector<
+    C: CommandRunner = crate::traits::SystemCommandRunner,
+    F: FileSystem = crate::traits::RealFileSystem,
+> {
+    /// Source to collect from.
+    pub source: GenericKindlingSource,
+    /// Command runner for subprocess execution.
+    pub cmd: C,
+    /// Filesystem implementation.
+    pub fs: F,
+}
+
+/// Source for generic Kindling collection.
+pub enum GenericKindlingSource {
+    /// Hash a local identity document file.
+    IdentityFile(String),
+    /// Hash a compliance report file.
+    ReportFile(String),
+    /// Hash identity from a Kubernetes secret.
+    K8sSecret {
+        /// Kubernetes namespace.
+        namespace: String,
+        /// Secret name.
+        secret_name: String,
+    },
+}
+
+impl<C: CommandRunner, F: FileSystem> GenericKindlingCollector<C, F> {
+    /// Create a collector for a local identity document.
+    pub fn from_identity(identity_path: &str, cmd: C, fs: F) -> Self {
+        Self {
+            source: GenericKindlingSource::IdentityFile(identity_path.to_string()),
+            cmd,
+            fs,
+        }
+    }
+
+    /// Create a collector for a compliance report.
+    pub fn from_report(report_path: &str, cmd: C, fs: F) -> Self {
+        Self {
+            source: GenericKindlingSource::ReportFile(report_path.to_string()),
+            cmd,
+            fs,
+        }
+    }
+
+    /// Create a collector for a Kubernetes secret.
+    pub fn from_k8s_secret(namespace: &str, secret_name: &str, cmd: C, fs: F) -> Self {
+        Self {
+            source: GenericKindlingSource::K8sSecret {
+                namespace: namespace.to_string(),
+                secret_name: secret_name.to_string(),
+            },
+            cmd,
+            fs,
+        }
+    }
+
+    /// Hash a local identity document via the injected filesystem.
+    async fn hash_identity_file(&self, path: &str) -> Result<LayerSignature> {
+        let data = self
+            .fs
+            .read_file(std::path::Path::new(path))
+            .await
+            .map_err(|e| TameshiError::CollectorError {
+                layer: "kindling".to_string(),
+                message: format!("failed to read identity document {path}: {e}"),
+            })?;
+
+        // Parse and re-serialize for canonical form
+        let identity: serde_json::Value =
+            serde_json::from_slice(&data).map_err(|e| TameshiError::CollectorError {
+                layer: "kindling".to_string(),
+                message: format!("failed to parse identity document: {e}"),
+            })?;
+
+        let canonical = serde_json::to_vec(&identity)?;
+        let hash = Blake3Hash::digest(&canonical);
+
+        let mut inputs = vec![InputHash {
+            name: "identity-document".to_string(),
+            hash: hash.clone(),
+            size_bytes: Some(canonical.len() as u64),
+        }];
+
+        // Extract certificate hashes if present
+        if let Some(certs) = identity.get("certificates").and_then(|c| c.as_array()) {
+            for (i, cert) in certs.iter().enumerate() {
+                let cert_json = serde_json::to_vec(cert)?;
+                inputs.push(InputHash {
+                    name: format!("certificate-{i}"),
+                    hash: Blake3Hash::digest(&cert_json),
+                    size_bytes: Some(cert_json.len() as u64),
+                });
+            }
+        }
+
+        debug!(path = path, inputs = inputs.len(), "Hashed Kindling identity (generic)");
+
+        Ok(LayerSignature::new(LayerType::Kindling, hash, path, inputs))
+    }
+
+    /// Hash a local compliance report via the injected filesystem.
+    async fn hash_report_file(&self, path: &str) -> Result<LayerSignature> {
+        let data = self
+            .fs
+            .read_file(std::path::Path::new(path))
+            .await
+            .map_err(|e| TameshiError::CollectorError {
+                layer: "kindling".to_string(),
+                message: format!("failed to read report {path}: {e}"),
+            })?;
+
+        let report: serde_json::Value =
+            serde_json::from_slice(&data).map_err(|e| TameshiError::CollectorError {
+                layer: "kindling".to_string(),
+                message: format!("failed to parse report: {e}"),
+            })?;
+
+        let canonical = serde_json::to_vec(&report)?;
+        let hash = Blake3Hash::digest(&canonical);
+
+        let inputs = vec![InputHash {
+            name: "compliance-report".to_string(),
+            hash: hash.clone(),
+            size_bytes: Some(canonical.len() as u64),
+        }];
+
+        Ok(LayerSignature::new(LayerType::Kindling, hash, path, inputs))
+    }
+
+    /// Hash identity from a Kubernetes secret via the injected command runner.
+    async fn hash_k8s_secret(
+        &self,
+        namespace: &str,
+        secret_name: &str,
+    ) -> Result<LayerSignature> {
+        let output = self
+            .cmd
+            .run(
+                "kubectl",
+                &[
+                    "get",
+                    "secret",
+                    secret_name,
+                    "-n",
+                    namespace,
+                    "-o",
+                    "jsonpath={.data}",
+                ],
+            )
+            .await
+            .map_err(|e| TameshiError::CollectorError {
+                layer: "kindling".to_string(),
+                message: format!(
+                    "failed to get secret {namespace}/{secret_name}: {e}"
+                ),
+            })?;
+
+        let hash = Blake3Hash::digest(output.as_bytes());
+        let inputs = vec![InputHash {
+            name: format!("{namespace}/{secret_name}"),
+            hash: hash.clone(),
+            size_bytes: Some(output.len() as u64),
+        }];
+
+        debug!(
+            namespace = namespace,
+            secret_name = secret_name,
+            "Hashed Kindling identity from K8s secret (generic)"
+        );
+
+        Ok(LayerSignature::new(
+            LayerType::Kindling,
+            hash,
+            &format!("secret:{namespace}/{secret_name}"),
+            inputs,
+        ))
+    }
+}
+
+impl<C: CommandRunner, F: FileSystem> LayerCollector for GenericKindlingCollector<C, F> {
+    async fn collect(&self) -> Result<LayerSignature> {
+        match &self.source {
+            GenericKindlingSource::IdentityFile(path) => self.hash_identity_file(path).await,
+            GenericKindlingSource::ReportFile(path) => self.hash_report_file(path).await,
+            GenericKindlingSource::K8sSecret {
+                namespace,
+                secret_name,
+            } => self.hash_k8s_secret(namespace, secret_name).await,
+        }
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Kindling
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -1154,5 +1362,188 @@ mod tests {
         let sig1 = make_sig().await;
         let sig2 = make_sig().await;
         assert_eq!(sig1.hash, sig2.hash);
+    }
+
+    // -- GenericKindlingCollector tests --
+
+    #[tokio::test]
+    async fn generic_kindling_identity_file() {
+        let runner = MockCommandRunner::new();
+        let fs = MockFileSystem::new();
+
+        let identity = serde_json::json!({
+            "cluster_id": "test-cluster",
+            "certificates": [
+                {"cn": "cluster-ca", "pem": "-----BEGIN CERTIFICATE-----"},
+                {"cn": "apiserver", "pem": "-----BEGIN CERTIFICATE-----"}
+            ]
+        });
+        fs.add_file(
+            "/etc/kindling/identity.json",
+            serde_json::to_vec(&identity).unwrap(),
+        );
+
+        let collector = GenericKindlingCollector::from_identity(
+            "/etc/kindling/identity.json",
+            runner,
+            fs,
+        );
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::Kindling);
+        // identity-document + 2 certificates = 3 inputs
+        assert_eq!(sig.inputs.len(), 3);
+        assert_eq!(sig.inputs[0].name, "identity-document");
+        assert_eq!(sig.inputs[1].name, "certificate-0");
+        assert_eq!(sig.inputs[2].name, "certificate-1");
+    }
+
+    #[tokio::test]
+    async fn generic_kindling_identity_no_certificates() {
+        let runner = MockCommandRunner::new();
+        let fs = MockFileSystem::new();
+
+        let identity = serde_json::json!({
+            "cluster_id": "minimal-cluster"
+        });
+        fs.add_file(
+            "/etc/kindling/identity.json",
+            serde_json::to_vec(&identity).unwrap(),
+        );
+
+        let collector = GenericKindlingCollector::from_identity(
+            "/etc/kindling/identity.json",
+            runner,
+            fs,
+        );
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::Kindling);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "identity-document");
+    }
+
+    #[tokio::test]
+    async fn generic_kindling_report_file() {
+        let runner = MockCommandRunner::new();
+        let fs = MockFileSystem::new();
+
+        let report = serde_json::json!({
+            "status": "compliant",
+            "checks": [
+                {"name": "cis-1.1", "passed": true},
+                {"name": "cis-1.2", "passed": true}
+            ]
+        });
+        fs.add_file(
+            "/var/kindling/report.json",
+            serde_json::to_vec(&report).unwrap(),
+        );
+
+        let collector = GenericKindlingCollector::from_report(
+            "/var/kindling/report.json",
+            runner,
+            fs,
+        );
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::Kindling);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "compliance-report");
+    }
+
+    #[tokio::test]
+    async fn generic_kindling_k8s_secret() {
+        let runner = MockCommandRunner::new();
+        let fs = MockFileSystem::new();
+
+        runner.add_response(
+            "kubectl",
+            &[
+                "get", "secret", "kindling-identity",
+                "-n", "kindling-system",
+                "-o", "jsonpath={.data}",
+            ],
+            r#"{"identity.json":"base64encodeddata"}"#,
+        );
+
+        let collector = GenericKindlingCollector::from_k8s_secret(
+            "kindling-system",
+            "kindling-identity",
+            runner,
+            fs,
+        );
+        let sig = collector.collect().await.unwrap();
+        assert_eq!(sig.layer, LayerType::Kindling);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "kindling-system/kindling-identity");
+        assert_eq!(
+            sig.metadata.source,
+            "secret:kindling-system/kindling-identity"
+        );
+    }
+
+    #[tokio::test]
+    async fn generic_kindling_k8s_secret_failure() {
+        let runner = MockCommandRunner::new();
+        let fs = MockFileSystem::new();
+        // No response registered -> command fails
+
+        let collector = GenericKindlingCollector::from_k8s_secret(
+            "kindling-system",
+            "nonexistent-secret",
+            runner,
+            fs,
+        );
+        let result = collector.collect().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn generic_kindling_identity_missing_file() {
+        let runner = MockCommandRunner::new();
+        let fs = MockFileSystem::new();
+        // No file registered -> read fails
+
+        let collector = GenericKindlingCollector::from_identity(
+            "/nonexistent/identity.json",
+            runner,
+            fs,
+        );
+        let result = collector.collect().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn generic_kindling_identity_deterministic() {
+        async fn make_sig() -> LayerSignature {
+            let runner = MockCommandRunner::new();
+            let fs = MockFileSystem::new();
+            let identity = serde_json::json!({"cluster_id": "stable"});
+            fs.add_file(
+                "/identity.json",
+                serde_json::to_vec(&identity).unwrap(),
+            );
+            let collector = GenericKindlingCollector::from_identity(
+                "/identity.json",
+                runner,
+                fs,
+            );
+            collector.collect().await.unwrap()
+        }
+
+        let sig1 = make_sig().await;
+        let sig2 = make_sig().await;
+        assert_eq!(sig1.hash, sig2.hash);
+        assert_eq!(sig1.inputs.len(), sig2.inputs.len());
+    }
+
+    #[tokio::test]
+    async fn generic_kindling_layer_type() {
+        let runner = MockCommandRunner::new();
+        let fs = MockFileSystem::new();
+        let collector = GenericKindlingCollector::from_identity(
+            "/identity.json",
+            runner,
+            fs,
+        );
+        assert_eq!(collector.layer_type(), LayerType::Kindling);
     }
 }
