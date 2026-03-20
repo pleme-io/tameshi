@@ -145,10 +145,10 @@ impl MerkleRootSigner for LocalSigner {
     }
 }
 
-/// Placeholder for Akeyless DFC signing.
+/// Akeyless DFC (Distributed Fragment Cryptography) signer.
 ///
-/// In production, this calls the Akeyless DFC API for threshold signing.
-/// The key never exists in one piece — fragments are distributed across
+/// Calls the Akeyless gateway REST API for threshold signing. The key
+/// never exists in one piece -- fragments are distributed across
 /// Akeyless infrastructure.
 pub struct AkeylessDfcSigner {
     /// The DFC key name.
@@ -159,10 +159,14 @@ pub struct AkeylessDfcSigner {
     client: reqwest::Client,
     /// Akeyless gateway endpoint.
     pub endpoint: String,
+    /// Access ID for API key authentication.
+    pub access_id: String,
+    /// Access key for API key authentication.
+    pub access_key: String,
 }
 
 impl AkeylessDfcSigner {
-    /// Create a new DFC signer.
+    /// Create a new DFC signer (credentials must be provided via [`with_credentials`]).
     #[must_use]
     pub fn new(key_name: &str, signer_id: &str, endpoint: &str) -> Self {
         Self {
@@ -170,27 +174,104 @@ impl AkeylessDfcSigner {
             signer_id: signer_id.to_string(),
             client: reqwest::Client::new(),
             endpoint: endpoint.to_string(),
+            access_id: String::new(),
+            access_key: String::new(),
         }
     }
+
+    /// Create a new DFC signer with Akeyless API key credentials.
+    #[must_use]
+    pub fn with_credentials(
+        key_name: &str,
+        signer_id: &str,
+        endpoint: &str,
+        access_id: &str,
+        access_key: &str,
+    ) -> Self {
+        Self {
+            key_name: key_name.to_string(),
+            signer_id: signer_id.to_string(),
+            client: reqwest::Client::new(),
+            endpoint: endpoint.to_string(),
+            access_id: access_id.to_string(),
+            access_key: access_key.to_string(),
+        }
+    }
+
+    /// Authenticate to Akeyless and return an access token.
+    async fn authenticate(&self) -> crate::error::Result<String> {
+        let body = serde_json::json!({
+            "access-id": self.access_id,
+            "access-key": self.access_key,
+            "access-type": "api_key"
+        });
+        let resp = self
+            .client
+            .post(format!("{}/auth", self.endpoint))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                crate::error::TameshiError::HashError(format!("DFC auth request failed: {e}"))
+            })?;
+        let result: serde_json::Value = resp.json().await.map_err(|e| {
+            crate::error::TameshiError::HashError(format!("DFC auth response parse failed: {e}"))
+        })?;
+        result["token"]
+            .as_str()
+            .map(String::from)
+            .ok_or_else(|| {
+                crate::error::TameshiError::HashError(
+                    "missing 'token' in DFC auth response".to_string(),
+                )
+            })
+    }
+}
+
+/// Encode bytes as hex string (used for DFC API data field).
+fn hex_encode(bytes: &[u8]) -> String {
+    const_hex::encode(bytes)
+}
+
+/// Decode hex string to bytes (used for DFC API response parsing).
+fn hex_decode(hex: &str) -> crate::error::Result<Vec<u8>> {
+    const_hex::decode(hex).map_err(|e| {
+        crate::error::TameshiError::HashError(format!("hex decode failed: {e}"))
+    })
 }
 
 impl MerkleRootSigner for AkeylessDfcSigner {
     async fn sign(&self, root: &Blake3Hash) -> crate::error::Result<SignedRoot> {
-        // In production: POST to Akeyless signing endpoint
-        // For now: placeholder that returns a deterministic signature
-        let _ = &self.client; // will be used for actual API calls
-        let _ = &self.endpoint;
-
-        // Placeholder: hash key_name + root as "signature"
-        let mut data = Vec::new();
-        data.extend_from_slice(self.key_name.as_bytes());
-        data.push(0);
-        data.extend_from_slice(&root.0);
-        let sig_hash = Blake3Hash::digest(&data);
-
+        let token = self.authenticate().await?;
+        let data_hex = hex_encode(&root.0);
+        let body = serde_json::json!({
+            "key-name": self.key_name,
+            "data": data_hex,
+            "token": token,
+        });
+        let resp = self
+            .client
+            .post(format!("{}/sign-data-with-classic-key", self.endpoint))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                crate::error::TameshiError::HashError(format!("DFC sign failed: {e}"))
+            })?;
+        let result: serde_json::Value = resp.json().await.map_err(|e| {
+            crate::error::TameshiError::HashError(format!(
+                "DFC sign response parse failed: {e}"
+            ))
+        })?;
+        let sig_hex = result["result"].as_str().ok_or_else(|| {
+            crate::error::TameshiError::HashError(
+                "missing 'result' in DFC sign response".to_string(),
+            )
+        })?;
+        let signature = hex_decode(sig_hex)?;
         Ok(SignedRoot {
             root: root.clone(),
-            signature: sig_hash.0.to_vec(),
+            signature,
             algorithm: SigningAlgorithm::AkeylessDfc {
                 key_name: self.key_name.clone(),
             },
@@ -200,10 +281,33 @@ impl MerkleRootSigner for AkeylessDfcSigner {
     }
 
     async fn verify(&self, signed: &SignedRoot) -> crate::error::Result<bool> {
-        // In production: POST to Akeyless verify endpoint
-        // For now: re-sign and compare
-        let expected = self.sign(&signed.root).await?;
-        Ok(expected.signature == signed.signature)
+        let token = self.authenticate().await?;
+        let data_hex = hex_encode(&signed.root.0);
+        let sig_hex = hex_encode(&signed.signature);
+        let body = serde_json::json!({
+            "key-name": self.key_name,
+            "data": data_hex,
+            "signature": sig_hex,
+            "token": token,
+        });
+        let resp = self
+            .client
+            .post(format!(
+                "{}/verify-data-with-classic-key",
+                self.endpoint
+            ))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                crate::error::TameshiError::HashError(format!("DFC verify failed: {e}"))
+            })?;
+        let result: serde_json::Value = resp.json().await.map_err(|e| {
+            crate::error::TameshiError::HashError(format!(
+                "DFC verify response parse failed: {e}"
+            ))
+        })?;
+        Ok(result["result"].as_bool().unwrap_or(false))
     }
 }
 
@@ -438,31 +542,57 @@ mod tests {
     // AkeylessDfcSigner tests
     // =========================================================================
 
-    #[tokio::test]
-    async fn dfc_signer_sign_verify() {
+    #[test]
+    fn dfc_signer_requires_credentials() {
         let signer = AkeylessDfcSigner::new(
             "test-dfc-key",
             "ci-pipeline",
             "https://akeyless.example.com",
         );
-        let root = Blake3Hash::digest(b"dfc-test");
-        let signed = signer.sign(&root).await.unwrap();
-
-        assert_eq!(signed.root, root);
-        assert!(matches!(signed.algorithm, SigningAlgorithm::AkeylessDfc { .. }));
-
-        let verified = signer.verify(&signed).await.unwrap();
-        assert!(verified);
+        // Default constructor leaves credentials empty.
+        assert!(signer.access_id.is_empty());
+        assert!(signer.access_key.is_empty());
+        assert_eq!(signer.key_name, "test-dfc-key");
+        assert_eq!(signer.signer_id, "ci-pipeline");
+        assert_eq!(signer.endpoint, "https://akeyless.example.com");
     }
 
-    #[tokio::test]
-    async fn dfc_signer_deterministic() {
-        let signer = AkeylessDfcSigner::new("key", "id", "https://example.com");
-        let root = Blake3Hash::digest(b"deterministic");
+    #[test]
+    fn dfc_signer_with_credentials() {
+        let signer = AkeylessDfcSigner::with_credentials(
+            "prod-dfc-key",
+            "ci-pipeline",
+            "https://gw.akeyless.io",
+            "p-abc123",
+            "my-secret-key",
+        );
+        assert_eq!(signer.access_id, "p-abc123");
+        assert_eq!(signer.access_key, "my-secret-key");
+        assert_eq!(signer.key_name, "prod-dfc-key");
+        assert_eq!(signer.signer_id, "ci-pipeline");
+        assert_eq!(signer.endpoint, "https://gw.akeyless.io");
+    }
 
-        let s1 = signer.sign(&root).await.unwrap();
-        let s2 = signer.sign(&root).await.unwrap();
-        assert_eq!(s1.signature, s2.signature);
+    #[test]
+    fn dfc_signer_algorithm_display() {
+        let algo = SigningAlgorithm::AkeylessDfc {
+            key_name: "my-dfc-key".to_string(),
+        };
+        assert_eq!(algo.to_string(), "akeyless_dfc:my-dfc-key");
+    }
+
+    #[test]
+    fn hex_encode_decode_roundtrip() {
+        let data = b"hello world";
+        let encoded = super::hex_encode(data);
+        let decoded = super::hex_decode(&encoded).unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn hex_decode_invalid_returns_error() {
+        let result = super::hex_decode("not-valid-hex!!!");
+        assert!(result.is_err());
     }
 
     // =========================================================================

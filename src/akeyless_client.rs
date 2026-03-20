@@ -28,6 +28,7 @@
 //!     access_key: Some("my-access-key".to_string()),
 //!     k8s_token_path: None,
 //!     k8s_auth_config_name: None,
+//!     tls: TlsConfig::default(),
 //! };
 //!
 //! let client = HttpAkeylessClient::new(config, ReqwestHttpClient::new());
@@ -94,6 +95,39 @@ pub enum AkeylessClientError {
 // Config
 // ---------------------------------------------------------------------------
 
+/// TLS configuration for Akeyless client connections.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsConfig {
+    /// Path to a PEM-encoded CA certificate to pin.
+    /// When set, the system CA store is NOT trusted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned_ca_path: Option<String>,
+    /// Path to client certificate for mTLS.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_cert_path: Option<String>,
+    /// Path to client private key for mTLS.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_key_path: Option<String>,
+    /// Whether to verify the server certificate (default: true).
+    #[serde(default = "default_true")]
+    pub verify_server: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for TlsConfig {
+    fn default() -> Self {
+        Self {
+            pinned_ca_path: None,
+            client_cert_path: None,
+            client_key_path: None,
+            verify_server: true,
+        }
+    }
+}
+
 /// Configuration for the Akeyless client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AkeylessConfig {
@@ -110,6 +144,9 @@ pub struct AkeylessConfig {
     pub k8s_token_path: Option<String>,
     /// Kubernetes auth config name registered in Akeyless (for `K8s` auth).
     pub k8s_auth_config_name: Option<String>,
+    /// TLS configuration for gateway connections.
+    #[serde(default)]
+    pub tls: TlsConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +363,19 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             })?;
 
         // CRITICAL: Hash the value, NEVER store it.
-        let value_hash = Blake3Hash::digest(value.as_bytes());
+        // Salt with path + gateway URL to defeat rainbow table attacks
+        // on low-entropy secrets. The salt is deterministic so the hash
+        // is reproducible for verification.
+        let value_hash = Blake3Hash::digest(
+            &[
+                self.config.gateway_url.as_bytes(),
+                b":",
+                path.as_bytes(),
+                b":",
+                value.as_bytes(),
+            ]
+            .concat(),
+        );
 
         Ok(AkeylessSecretAccess {
             path: path.to_string(),
@@ -964,6 +1013,7 @@ mod tests {
             access_key: Some("test-access-key".to_string()),
             k8s_token_path: None,
             k8s_auth_config_name: None,
+            tls: TlsConfig::default(),
         }
     }
 
@@ -1035,14 +1085,15 @@ mod tests {
 
         assert_eq!(access.path, "/prod/db/password");
         assert_eq!(access.secret_type, AkeylessSecretType::Static);
-        // The hash should be of the value, not the path.
-        assert_eq!(
-            access.value_hash,
-            Blake3Hash::digest(b"super-secret-123")
+        // The hash should be salted: BLAKE3(gateway_url:path:value)
+        let expected_salted = Blake3Hash::digest(
+            b"https://gw.test.com:/prod/db/password:super-secret-123",
         );
+        assert_eq!(access.value_hash, expected_salted);
+        // Should NOT equal unsalted hash of just the value
         assert_ne!(
             access.value_hash,
-            Blake3Hash::digest(b"/prod/db/password")
+            Blake3Hash::digest(b"super-secret-123")
         );
     }
 
@@ -1161,9 +1212,10 @@ mod tests {
         assert_eq!(att.auth_method, AkeylessAuthMethod::ApiKey);
         assert_eq!(att.secrets_accessed.len(), 1);
         assert_eq!(att.secrets_accessed[0].path, "/db/pass");
+        // value_hash is now salted: BLAKE3(gateway_url:path:value)
         assert_eq!(
             att.secrets_accessed[0].value_hash,
-            Blake3Hash::digest(b"db-password-value")
+            Blake3Hash::digest(b"https://gw.test.com:/db/pass:db-password-value")
         );
         assert_eq!(
             att.session_hash,
@@ -1194,6 +1246,7 @@ mod tests {
             access_key: None,
             k8s_token_path: None,
             k8s_auth_config_name: None,
+            tls: TlsConfig::default(),
         };
 
         let client = HttpAkeylessClient::new(config, http);
@@ -1375,5 +1428,158 @@ mod tests {
         assert_eq!(targets.len(), 2);
         assert_eq!(targets[0], "/targets/prod/db");
         assert_eq!(targets[1], "/targets/prod/api");
+    }
+
+    // -----------------------------------------------------------------------
+    // K8s auth tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn k8s_auth_config_defaults() {
+        let config = AkeylessConfig {
+            gateway_url: "https://gw.example.com".to_string(),
+            auth_method: AkeylessAuthMethod::K8s,
+            access_id: Some("p-k8s-id".to_string()),
+            access_key: None,
+            k8s_token_path: None,
+            k8s_auth_config_name: Some("k8s-auth-config".to_string()),
+            tls: TlsConfig::default(),
+        };
+        // When k8s_token_path is None, the default path should be used.
+        assert!(config.k8s_token_path.is_none());
+        let default_path = config
+            .k8s_token_path
+            .as_deref()
+            .unwrap_or("/var/run/secrets/kubernetes.io/serviceaccount/token");
+        assert_eq!(
+            default_path,
+            "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        );
+    }
+
+    #[test]
+    fn k8s_auth_config_serde() {
+        let config = AkeylessConfig {
+            gateway_url: "https://gw.k8s.example.com".to_string(),
+            auth_method: AkeylessAuthMethod::K8s,
+            access_id: Some("p-k8s-access".to_string()),
+            access_key: None,
+            k8s_token_path: Some("/custom/token/path".to_string()),
+            k8s_auth_config_name: Some("my-k8s-auth".to_string()),
+            tls: TlsConfig::default(),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AkeylessConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.gateway_url, "https://gw.k8s.example.com");
+        assert_eq!(deserialized.auth_method, AkeylessAuthMethod::K8s);
+        assert_eq!(deserialized.access_id, Some("p-k8s-access".to_string()));
+        assert!(deserialized.access_key.is_none());
+        assert_eq!(
+            deserialized.k8s_token_path,
+            Some("/custom/token/path".to_string())
+        );
+        assert_eq!(
+            deserialized.k8s_auth_config_name,
+            Some("my-k8s-auth".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn http_k8s_auth_reads_token_from_file() {
+        // Create a temp file to simulate the K8s service account token.
+        let dir = tempfile::tempdir().unwrap();
+        let token_path = dir.path().join("token");
+        std::fs::write(&token_path, "eyJ0eXAiOiJKV1QifQ.test-payload.sig\n").unwrap();
+
+        let http = MockHttpClient::new();
+        let config = AkeylessConfig {
+            gateway_url: "https://gw.test.com".to_string(),
+            auth_method: AkeylessAuthMethod::K8s,
+            access_id: Some("p-k8s-id".to_string()),
+            access_key: None,
+            k8s_token_path: Some(token_path.to_str().unwrap().to_string()),
+            k8s_auth_config_name: Some("k8s-auth-cfg".to_string()),
+            tls: TlsConfig::default(),
+        };
+
+        http.add_json_response(
+            "https://gw.test.com/api/v1/auth",
+            &serde_json::json!({"token": "t-k8s-token-123"}),
+        );
+
+        let client = HttpAkeylessClient::new(config, http);
+        let token = client.authenticate().await.unwrap();
+        assert_eq!(token, "t-k8s-token-123");
+    }
+
+    #[tokio::test]
+    async fn http_k8s_auth_fails_when_token_file_missing() {
+        let http = MockHttpClient::new();
+        let config = AkeylessConfig {
+            gateway_url: "https://gw.test.com".to_string(),
+            auth_method: AkeylessAuthMethod::K8s,
+            access_id: Some("p-k8s-id".to_string()),
+            access_key: None,
+            k8s_token_path: Some("/nonexistent/path/token".to_string()),
+            k8s_auth_config_name: Some("k8s-auth-cfg".to_string()),
+            tls: TlsConfig::default(),
+        };
+
+        let client = HttpAkeylessClient::new(config, http);
+        let result = client.authenticate().await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            AkeylessClientError::AuthFailed(_)
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // TLS config tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tls_config_defaults() {
+        let tls = TlsConfig::default();
+        assert!(tls.pinned_ca_path.is_none());
+        assert!(tls.client_cert_path.is_none());
+        assert!(tls.client_key_path.is_none());
+        assert!(tls.verify_server);
+    }
+
+    #[test]
+    fn tls_config_serde_roundtrip() {
+        let tls = TlsConfig {
+            pinned_ca_path: Some("/etc/tameshi/ca.pem".to_string()),
+            client_cert_path: Some("/etc/tameshi/client.pem".to_string()),
+            client_key_path: Some("/etc/tameshi/client-key.pem".to_string()),
+            verify_server: true,
+        };
+        let json = serde_json::to_string(&tls).unwrap();
+        let deserialized: TlsConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.pinned_ca_path, tls.pinned_ca_path);
+        assert_eq!(deserialized.client_cert_path, tls.client_cert_path);
+        assert_eq!(deserialized.client_key_path, tls.client_key_path);
+        assert_eq!(deserialized.verify_server, tls.verify_server);
+    }
+
+    #[test]
+    fn akeyless_config_with_tls() {
+        let config = AkeylessConfig {
+            gateway_url: "https://gw.example.com".to_string(),
+            auth_method: AkeylessAuthMethod::ApiKey,
+            access_id: Some("p-123".to_string()),
+            access_key: Some("key".to_string()),
+            k8s_token_path: None,
+            k8s_auth_config_name: None,
+            tls: TlsConfig {
+                pinned_ca_path: Some("/ca.pem".to_string()),
+                ..TlsConfig::default()
+            },
+        };
+        assert!(config.tls.pinned_ca_path.is_some());
+        assert!(config.tls.verify_server);
     }
 }

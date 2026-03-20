@@ -38,6 +38,7 @@
 pub mod akeyless_client;
 pub mod alerts;
 pub mod api_types;
+pub mod cache;
 pub mod canonicalize;
 pub mod certification;
 pub mod changeset;
@@ -69,7 +70,7 @@ pub mod prelude {
     };
     pub use crate::akeyless_client::{
         AkeylessClient, AkeylessClientError, AkeylessConfig, DynamicSecretInfo,
-        HttpAkeylessClient, ItemAssociation, MockAkeylessClient, TargetInfo,
+        HttpAkeylessClient, ItemAssociation, MockAkeylessClient, TargetInfo, TlsConfig,
     };
     pub use crate::collectors::akeyless::LiveAkeylessCollector;
     pub use crate::collectors::akeyless_target::{
