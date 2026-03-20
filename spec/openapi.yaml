@@ -2231,7 +2231,7 @@ components:
 
     SigningAlgorithm:
       type: string
-      enum: [ed25519_local, akeyless_dfc]
+      enum: [ed25519_local, akeyless_dfc, mock_dfc, break_glass]
       description: Algorithm used to sign a Merkle root
 
     # =========================================================================

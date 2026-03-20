@@ -41,6 +41,7 @@ pub mod api_types;
 pub mod cache;
 pub mod canonicalize;
 pub mod certification;
+pub mod certification_artifact;
 pub mod changeset;
 pub mod ci;
 pub mod collectors;
@@ -66,6 +67,10 @@ pub mod verify;
 /// use tameshi::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::certification_artifact::{
+        ArtifactProofPaths, CertificationArtifact, CertificationArtifactBuilder,
+        compose_certification_artifact, verify_certification_artifact,
+    };
     pub use crate::canonicalize::{
         CanonicalMode, Canonicalizer, JsonCanonicalizer, RawCanonicalizer, YamlCanonicalizer,
         canonical_hash, canonicalizer_for,

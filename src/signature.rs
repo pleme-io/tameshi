@@ -203,6 +203,9 @@ pub struct MasterSignature {
     pub computed_at: DateTime<Utc>,
     /// Environment identifier (e.g., "production", "staging").
     pub environment: String,
+    /// Optional certification artifacts for per-binary provenance.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub certification_artifacts: Vec<crate::certification_artifact::CertificationArtifact>,
 }
 
 impl MasterSignature {
@@ -216,6 +219,7 @@ impl MasterSignature {
             layers,
             computed_at: Utc::now(),
             environment: environment.to_string(),
+            certification_artifacts: Vec::new(),
         }
     }
 
@@ -225,6 +229,16 @@ impl MasterSignature {
         let secure = Blake3Hash::combine(&self.untested, &compliance_hash);
         self.compliance = Some(compliance_hash);
         self.secure = Some(secure);
+        self
+    }
+
+    /// Attach per-binary certification artifacts.
+    #[must_use]
+    pub fn with_certification_artifacts(
+        mut self,
+        artifacts: Vec<crate::certification_artifact::CertificationArtifact>,
+    ) -> Self {
+        self.certification_artifacts = artifacts;
         self
     }
 
