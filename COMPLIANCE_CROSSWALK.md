@@ -94,48 +94,141 @@
 
 ---
 
-## 4. 2026 Regulatory "Big Three"
+## 4. 2026 Regulatory Landscape (Researched & Verified)
 
 ### CIRCIA (Cyber Incident Reporting for Critical Infrastructure Act)
 
-**Requirement:** Report substantial cyber incidents within 72 hours.
+**Status:** NPRM published April 2024. Final rule extended to **May 2026** per CISA.
+Town hall meetings scheduled March-April 2026 (postponed due to DHS appropriations lapse).
+
+**Reporting timelines:**
+- **72 hours** after entity reasonably believes a covered cyber incident occurred
+- **24 hours** after making a ransomware payment
+- **Supplemental reports** when new information becomes available
+
+**"Substantial cyber incident" includes:**
+- Substantial loss of confidentiality, integrity, or availability
+- Serious impact on safety/resilience of operational systems
+- Disruption of business operations or service delivery
+- Unauthorized access via compromised cloud/managed service provider or supply chain
+
+**Required technical evidence:**
+- Impacted systems/networks/devices (technical specs + physical locations)
+- Categories of information accessed or acquired
+- Vulnerabilities exploited and security controls that failed
+- TTPs (tactics, techniques, procedures) used
+- Attack vectors and incident type descriptions
+- Indicators of compromise
+- Identity of suspected threat actors (with attribution confidence)
+
+**Penalties:** CISA may issue RFI (72h response), subpoena, civil action referral,
+suspension/debarment from federal acquisition.
 
 **Tameshi Solution:** The heartbeat chain provides "T+0" forensics:
-- Every verification event includes: who verified, what was checked, when, result, chain hash
+- Every verification event includes: verifier, event type, result, resource, signature, timestamp, chain hash
 - Streaming to immutable log vault — cannot be erased by attacker
 - Break-glass events are Level 1 audit alerts with full provenance
-- Heartbeat chain integrity verification proves continuous monitoring
-
-**Evidence Artifacts:**
-- `heartbeat.jsonl` — append-only JSONL with BLAKE3 chain linkage
 - `HeartbeatChain::verify_integrity()` — cryptographic proof of completeness
-- Break-glass token audit trail — signed, timestamped, scoped
+- Covers ALL required evidence: impacted systems (BPF map), TTPs (heartbeat events),
+  IoCs (revoked hashes), timeline (monotonic timestamps)
 
-### OMB M-26-05 (Risk-Based Assurances)
+### OMB M-26-05 (January 2026 — Risk-Based Assurances)
 
-**Requirement:** Runtime SBOMs for cloud providers. Shift from standardized forms to risk-based assurances.
+**Status:** Published January 23, 2026. **Rescinds** mandatory SBOM/attestation from M-22-18/M-23-16.
+
+**What changed:**
+- Mandatory self-attestation via CISA Common Form: **ELIMINATED**
+- Uniform SBOM submission: **ELIMINATED** (now voluntary)
+- Agencies must maintain software/hardware inventories: **RETAINED**
+- Agencies must develop risk-based assurance policies: **NEW**
+- For cloud service providers: must provide "runtime SBOM upon request": **RETAINED**
+
+**What this means for tameshi:**
+- Mandatory SBOM is gone, but **runtime SBOM for cloud** is still contractually expected
+- kanshi's BPF allow map IS a live runtime SBOM — this is exactly what M-26-05 envisions
+- Risk-based approach means agencies choose their own tools → tameshi is a competitive advantage
 
 **Tameshi Solution:** kanshi's BPF allow map IS a live runtime SBOM:
 - `tameshi_allow_map` contains every binary hash authorized to run
 - Real-time — updated as pods start/stop
 - Cryptographically verified — every entry is a BLAKE3 hash
 - Exportable as JSON/SPDX/CycloneDX via kanshi admin API
+- Satisfies "upon request" requirement — dump the BPF map at any time
 
-**Evidence Artifacts:**
-- BPF map dump → runtime SBOM export
-- Prometheus metrics: `tameshi_verification_total` per binary
-- Grafana dashboard: "Cluster Integrity Score"
+### EU Cyber Resilience Act (CRA) — Regulation 2024/2847
 
-### EU Cyber Resilience Act (CRA)
+**Status:** Entered into force December 10, 2024. Key deadlines:
+- **September 11, 2026:** Mandatory vulnerability reporting begins (24h/72h/14d/1mo tiered)
+- **December 11, 2027:** Full applicability of ALL requirements including SBOM
 
-**Requirement:** Prove "Secure-by-Design" for products sold in the EU.
+**Vulnerability reporting timelines (starting Sept 2026):**
+- **24 hours:** Early warning of actively exploited vulnerabilities
+- **72 hours:** Main notification with full details
+- **14 days:** Final report for exploited vulnerabilities
+- **1 month:** Final report for severe incidents
+
+**SBOM requirement (Article 13 + Annex I Part II):**
+- Manufacturers must provide SBOM in "commonly used, machine-readable format"
+- Minimum scope: top-level dependencies
+- Must be kept up to date and supplied to authorities on request
+- Acceptable formats: SPDX (ISO/IEC 5962), CycloneDX (ECMA-424)
+
+**Penalties:**
+- Essential cybersecurity violations: EUR 15M or 2.5% worldwide turnover
+- Other obligations: EUR 10M or 2% worldwide turnover
+- Misleading information: EUR 5M or 1% worldwide turnover
 
 **Tameshi Solution:**
-- **Language safety:** Entire stack is Rust (memory-safe by design)
+- **Language safety:** Entire stack is Rust (memory-safe by design) — satisfies "secure-by-design"
 - **Build reproducibility:** Nix derivations are content-addressed
 - **Supply chain security:** BLAKE3 Merkle tree covers all dependencies
-- **Vulnerability management:** Global revocation map for zero-day response
+- **Vulnerability management:** Global revocation map (<100ms) for zero-day response
+- **SBOM:** kanshi BPF map exportable as SPDX/CycloneDX
+- **Vulnerability reporting:** Heartbeat chain provides 24h/72h evidence automatically
 - **Update mechanism:** Self-healing rollback on integrity violation
+
+**Critical note:** EU CRA September 2026 deadline affects ALL products with digital
+elements sold in the EU. This is the nearest hard enforcement date with EUR 15M penalties.
+
+### FedRAMP Rev 5 (Updated 2023, Enforcement 2026)
+
+**Key changes from Rev 4:**
+- **New control family:** Supply Chain Risk Management (SR) — entirely new
+- **Red Team mandate:** Annual Red Team exercise required (in addition to pen testing)
+- **Password overhaul:** Removed age/reuse rules, added compromised password checks
+- **Privacy integration:** Throughout all control families
+
+**2026 deadlines:**
+- **January 5, 2026:** Security Inbox Requirements for all CSPs
+- **February 2 - May 22, 2026:** Collaborative Continuous Monitoring (CCM) open beta
+- **September 30, 2026:** Machine-readable authorization packages required
+- **December 31, 2026:** Consolidated Rules for 2026 apply to all CSPs
+
+**New SR family controls (critical for tameshi):**
+- **SR-1:** Supply chain risk management policy
+- **SR-2:** Supply chain risk assessment
+- **SR-3:** Supply chain controls and processes
+- **SR-4:** Provenance ← **tameshi core capability**
+- **SR-5:** Acquisition strategies, tools, and methods
+- **SR-6:** Supplier assessments and reviews
+- **SR-11:** Component authenticity ← **tameshi DFC signing**
+
+**Tameshi Solution:** tameshi + Akeyless directly satisfies the new SR family,
+which is the hardest part of FedRAMP Rev 5 for most organizations to implement.
+
+### EO 14028 / EO 14306 (Software Supply Chain)
+
+**Status:** EO 14028 (May 2021) not revoked but enforcement mechanisms stripped
+by EO 14306 (June 2025) and OMB M-26-05 (January 2026).
+
+**What remains:**
+- NIST frameworks (SSDF, SP 800-53) as **voluntary** guidance
+- NIST directed to update SSDF by **March 31, 2026**
+- NIST directed to update SP 800-53 with patch guidance by **September 2, 2025**
+
+**Key insight for US vs EU divergence:** The US has made SBOMs voluntary;
+the EU has made them mandatory. Companies selling into both markets must comply
+with the EU CRA's stricter requirements regardless of US policy changes.
 
 ---
 

@@ -1386,6 +1386,95 @@ pairs, keeping the eBPF program minimal.
 
 ---
 
+---
+
+## Phase 10: Edge, IoT & Robotics (Cyber-Physical Systems)
+
+> In the cloud, an "infection" means a data leak. In robotics, an infection means
+> a 500lb industrial arm moving in a direction it wasn't supposed to. Tameshi's
+> architecture extends naturally to cyber-physical systems.
+
+### ROS2/DDS Node Attestation — Phase 10
+
+**The Problem:** Robots run ROS2 with DDS (Data Distribution Service) for inter-node
+communication. An attacker can inject "Ghost Nodes" that publish to sensitive topics
+like `/cmd_vel` (motor commands), `/joint_states`, or `/localization`.
+
+**The Fix:** kanshi watches DDS sockets. Only nodes whose binary hashes are in the
+Merkle tree can publish to safety-critical topics.
+
+**Implementation:**
+- kanshi eBPF `socket_sendmsg` hook — intercept DDS UDP multicast traffic
+- BPF map: `publisher_hash(inode) → allowed_topics(bitmap)`
+- If a process publishes to `/cmd_vel` without being in the allow map → drop packet
+- Heartbeat records all DDS publish attempts (attested or not)
+
+**NIST IR 8259 compliance:** Device Integrity + Authenticated Updates
+
+### Deterministic Edge Devices (Nix + Immutable Rootfs) — Phase 10
+
+**The Problem:** Field robots suffer "Configuration Drift" — a technician tweaks
+a PID controller value, and the robot becomes unstable. Or an attacker replaces
+`motor_params.yaml` with poisoned values.
+
+**The Fix:** The entire robot filesystem — drivers, configs, ROS graph — is a
+single immutable Nix derivation hash. If ANY file changes, the Merkle root breaks,
+and the device enters **Safety-Lock mode** before actuators engage.
+
+**Implementation:**
+- inshou runs on the robot's boot sequence (NixOS on ARM64)
+- Verifies the system profile hash against the fleet's Merkle tree
+- If mismatch → refuse to start actuator control loops
+- Over-the-air updates are Nix profile switches (atomic, rollback-safe)
+
+### Hardware-Bound Identity (TPM for Edge/IoT) — Phase 10
+
+**The Problem:** Robots are physically "out there." An attacker can steal the device,
+open it, and extract keys from the filesystem.
+
+**The Fix:** Bind the Tameshi Merkle tree to the TPM 2.0 chip on the device.
+
+**Implementation:**
+- TPM PCR[14] extended with kanshi eBPF program hash at boot
+- Akeyless releases fleet credentials ONLY after TPM remote attestation
+- Device won't decrypt mission parameters unless hardware integrity is verified
+- Physical tamper evidence: opening the chassis triggers TPM PCR change
+
+### Fleet-Scale Attestation — Phase 10
+
+**The Problem:** A fleet of 10,000 edge devices needs centralized attestation
+management with disconnected operation support.
+
+**The Fix:** Hierarchical Merkle trees.
+
+```
+Fleet Root
+├── Region A Root
+│   ├── Device 001 Merkle
+│   ├── Device 002 Merkle
+│   └── ...
+├── Region B Root
+│   └── ...
+└── Fleet Compliance Hash
+```
+
+- Each device carries its own Merkle tree + the region root hash
+- Offline devices verify against cached region root
+- When reconnected, sync against fleet root via Akeyless
+
+### Regulatory Hooks
+
+| Regulation | Requirement | Tameshi Coverage |
+|-----------|------------|-----------------|
+| **NIST IR 8259** | Device Integrity | kanshi eBPF + TPM binding |
+| **NIST IR 8259** | Authenticated Updates | Nix atomic profile switches + Merkle verification |
+| **EU CRA** (Article 13) | Vulnerability handling for IoT | Global revocation map (<100ms) |
+| **EU CRA** (Annex I) | Secure-by-default for products with digital elements | Immutable Nix rootfs + Safety-Lock mode |
+| **IEC 62443** | Industrial cybersecurity | kanshi DDS attestation for OT networks |
+| **ISO/SAE 21434** | Automotive cybersecurity | Fleet-scale attestation for connected vehicles |
+
+---
+
 ## Summary Timeline (Updated)
 
 | Week | Phase | Key Deliverables | Status |
@@ -1421,6 +1510,7 @@ pairs, keeping the eBPF program minimal.
 | Future | 8b | Sidecar injection, procfs masking, Akeyless cert pinning | RESEARCH |
 | Future | 9 | Constant-time comparison, confused deputy, IPC isolation | RESEARCH |
 | Future | 9 | eBPF verifier limits (map-driven architecture) | RESEARCH |
+| Future | 10 | Edge/IoT/Robotics: DDS attestation, TPM binding, NIST IR 8259 | RESEARCH |
 
 ## Test Count (All Sprints Complete)
 
