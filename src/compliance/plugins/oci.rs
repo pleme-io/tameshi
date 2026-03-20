@@ -95,6 +95,25 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
             },
         ];
 
+        controls.push(ComplianceControl {
+            id: "OCI-006".to_string(),
+            title: "Container has healthcheck".to_string(),
+            description: "Container image must define a HEALTHCHECK instruction".to_string(),
+            severity: ControlSeverity::Medium,
+            nist_control_ids: vec!["CM-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "OCI-007".to_string(),
+            title: "Image tag is not :latest".to_string(),
+            description: "Image tag must be a pinned version or digest, not :latest".to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["CM-2".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+
         if config.include_advisory {
             controls.push(ComplianceControl {
                 id: "OCI-005".to_string(),
@@ -103,6 +122,17 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
                     .to_string(),
                 severity: ControlSeverity::Info,
                 nist_control_ids: vec!["CM-2".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "OCI-008".to_string(),
+                title: "Required OCI labels present".to_string(),
+                description:
+                    "Image should have org.opencontainers.image.source and version labels"
+                        .to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["CM-8".to_string()],
                 domain: DOMAIN.to_string(),
                 required: false,
             });
@@ -140,6 +170,9 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
                     "OCI-003" => check_dropped_capabilities(&inspect_result),
                     "OCI-004" => check_readonly_rootfs(&inspect_result),
                     "OCI-005" => check_image_labels(&inspect_result),
+                    "OCI-006" => check_healthcheck(&inspect_result),
+                    "OCI-007" => check_no_latest_tag(&image_ref),
+                    "OCI-008" => check_required_oci_labels(&inspect_result),
                     _ => (false, format!("Unknown control: {}", control.id)),
                 };
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -305,6 +338,86 @@ fn check_image_labels(inspect_result: &crate::error::Result<String>) -> (bool, S
     }
 }
 
+fn check_healthcheck(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let healthcheck = config
+                    .get("config")
+                    .and_then(|c| c.get("Healthcheck"));
+                match healthcheck {
+                    Some(hc) if !hc.is_null() => {
+                        (true, "Container has HEALTHCHECK defined".to_string())
+                    }
+                    _ => (false, "No HEALTHCHECK defined in container image".to_string()),
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
+fn check_no_latest_tag(image_ref: &str) -> (bool, String) {
+    if image_ref.ends_with(":latest") {
+        (
+            false,
+            format!("Image uses :latest tag: {image_ref}"),
+        )
+    } else if image_ref.contains('@') {
+        (true, "Image pinned by digest".to_string())
+    } else if image_ref.contains(':') {
+        (true, "Image uses pinned tag".to_string())
+    } else {
+        // No tag specified means implicit :latest
+        (
+            false,
+            format!("Image has no tag (implicit :latest): {image_ref}"),
+        )
+    }
+}
+
+fn check_required_oci_labels(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let labels = config
+                    .get("config")
+                    .and_then(|c| c.get("Labels"))
+                    .and_then(|l| l.as_object());
+                match labels {
+                    Some(l) => {
+                        let has_source = l
+                            .keys()
+                            .any(|k| k == "org.opencontainers.image.source");
+                        let has_version = l
+                            .keys()
+                            .any(|k| k == "org.opencontainers.image.version");
+                        let mut missing = Vec::new();
+                        if !has_source {
+                            missing.push("org.opencontainers.image.source");
+                        }
+                        if !has_version {
+                            missing.push("org.opencontainers.image.version");
+                        }
+                        if missing.is_empty() {
+                            (true, "Required OCI labels present".to_string())
+                        } else {
+                            (
+                                false,
+                                format!("Missing required labels: {}", missing.join(", ")),
+                            )
+                        }
+                    }
+                    None => (false, "No labels found on image".to_string()),
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,6 +430,12 @@ mod tests {
     fn config_json(user: &str, labels: &str) -> String {
         format!(
             r#"{{"config":{{"User":"{user}","Labels":{labels}}}}}"#
+        )
+    }
+
+    fn config_json_with_healthcheck(user: &str, labels: &str) -> String {
+        format!(
+            r#"{{"config":{{"User":"{user}","Labels":{labels},"Healthcheck":{{"Test":["CMD","healthcheck"]}}}}}}"#
         )
     }
 
@@ -347,7 +466,7 @@ mod tests {
     fn generate_controls_default() {
         let plugin = OciPlugin::new(make_runner(), "docker://test");
         let controls = plugin.generate_controls(&PluginConfig::default());
-        assert_eq!(controls.len(), 4);
+        assert_eq!(controls.len(), 6);
         assert!(controls.iter().all(|c| c.domain == "oci"));
     }
 
@@ -357,7 +476,7 @@ mod tests {
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert_eq!(controls.len(), 5);
+        assert_eq!(controls.len(), 8);
     }
 
     #[test]
@@ -399,11 +518,11 @@ mod tests {
     #[tokio::test]
     async fn evaluate_all_pass() {
         let runner = make_runner();
-        let img = "docker://test:latest";
+        let img = "docker://test:v1.2.3";
         runner.add_response(
             "skopeo",
             &["inspect", "--config", img],
-            &config_json("1000", r#"{"cap-drop":"ALL","read-only":"true"}"#),
+            &config_json_with_healthcheck("1000", r#"{"cap-drop":"ALL","read-only":"true"}"#),
         );
         runner.add_response(
             "skopeo",
@@ -581,7 +700,7 @@ mod tests {
     #[tokio::test]
     async fn advisory_labels_check() {
         let runner = make_runner();
-        let img = "docker://test:latest";
+        let img = "docker://test:v1.0";
         runner.add_response(
             "skopeo",
             &["inspect", "--config", img],
@@ -601,5 +720,150 @@ mod tests {
 
         let labels = result.evaluations.iter().find(|e| e.control.id == "OCI-005").unwrap();
         assert!(labels.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_no_healthcheck_fails() {
+        let runner = make_runner();
+        let img = "docker://test:v1.0";
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--config", img],
+            &config_json("1000", r#"{}"#),
+        );
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--raw", img],
+            raw_manifest_with_digest(),
+        );
+
+        let plugin = OciPlugin::new(runner, img);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let hc = result.evaluations.iter().find(|e| e.control.id == "OCI-006").unwrap();
+        assert!(!hc.passed);
+        assert!(hc.message.contains("No HEALTHCHECK"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_healthcheck_present_passes() {
+        let runner = make_runner();
+        let img = "docker://test:v1.0";
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--config", img],
+            &config_json_with_healthcheck("1000", r#"{}"#),
+        );
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--raw", img],
+            raw_manifest_with_digest(),
+        );
+
+        let plugin = OciPlugin::new(runner, img);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let hc = result.evaluations.iter().find(|e| e.control.id == "OCI-006").unwrap();
+        assert!(hc.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_latest_tag_fails() {
+        let runner = make_runner();
+        let img = "docker://test:latest";
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--config", img],
+            &config_json_with_healthcheck("1000", r#"{}"#),
+        );
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--raw", img],
+            raw_manifest_with_digest(),
+        );
+
+        let plugin = OciPlugin::new(runner, img);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let tag = result.evaluations.iter().find(|e| e.control.id == "OCI-007").unwrap();
+        assert!(!tag.passed);
+        assert!(tag.message.contains("latest"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_pinned_digest_passes() {
+        let runner = make_runner();
+        let img = "docker://test@sha256:abcdef";
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--config", img],
+            &config_json_with_healthcheck("1000", r#"{}"#),
+        );
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--raw", img],
+            raw_manifest_with_digest(),
+        );
+
+        let plugin = OciPlugin::new(runner, img);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let tag = result.evaluations.iter().find(|e| e.control.id == "OCI-007").unwrap();
+        assert!(tag.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_required_oci_labels_all_present() {
+        let runner = make_runner();
+        let img = "docker://test:v1.0";
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--config", img],
+            &config_json("1000", r#"{"org.opencontainers.image.source":"https://github.com/test","org.opencontainers.image.version":"1.0"}"#),
+        );
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--raw", img],
+            raw_manifest_with_digest(),
+        );
+
+        let plugin = OciPlugin::new(runner, img);
+        let mut config = PluginConfig::default();
+        config.include_advisory = true;
+        let controls = plugin.generate_controls(&config);
+        let result = plugin.evaluate(&controls, &config).await.unwrap();
+
+        let labels = result.evaluations.iter().find(|e| e.control.id == "OCI-008").unwrap();
+        assert!(labels.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_required_oci_labels_missing() {
+        let runner = make_runner();
+        let img = "docker://test:v1.0";
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--config", img],
+            &config_json("1000", r#"{"maintainer":"test"}"#),
+        );
+        runner.add_response(
+            "skopeo",
+            &["inspect", "--raw", img],
+            raw_manifest_with_digest(),
+        );
+
+        let plugin = OciPlugin::new(runner, img);
+        let mut config = PluginConfig::default();
+        config.include_advisory = true;
+        let controls = plugin.generate_controls(&config);
+        let result = plugin.evaluate(&controls, &config).await.unwrap();
+
+        let labels = result.evaluations.iter().find(|e| e.control.id == "OCI-008").unwrap();
+        assert!(!labels.passed);
+        assert!(labels.message.contains("Missing"));
     }
 }

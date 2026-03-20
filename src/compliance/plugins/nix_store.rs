@@ -46,6 +46,7 @@ impl<C: CommandRunner + 'static> CompliancePlugin for NixStorePlugin<C> {
             "SI".to_string(), // System and Information Integrity
             "CM".to_string(), // Configuration Management
             "SA".to_string(), // System and Services Acquisition
+            "AC".to_string(), // Access Control
         ]
     }
 
@@ -92,6 +93,36 @@ impl<C: CommandRunner + 'static> CompliancePlugin for NixStorePlugin<C> {
             },
         ];
 
+        controls.push(ComplianceControl {
+            id: "NIX-006".to_string(),
+            title: "Nix sandbox enabled".to_string(),
+            description: "Nix builds must run in a sandbox (sandbox = true in nix.conf)"
+                .to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["CM-7".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "NIX-007".to_string(),
+            title: "Trusted users restricted".to_string(),
+            description: "trusted-users must not be set to wildcard (*) in nix.conf".to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["AC-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "NIX-008".to_string(),
+            title: "Substituters require signed narinfo".to_string(),
+            description: "All substituters must require signed narinfo (require-sigs = true)"
+                .to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["SI-7".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+
         if config.include_advisory {
             controls.push(ComplianceControl {
                 id: "NIX-005".to_string(),
@@ -118,6 +149,9 @@ impl<C: CommandRunner + 'static> CompliancePlugin for NixStorePlugin<C> {
             let now = Utc::now();
             let mut evaluations = Vec::with_capacity(controls.len());
 
+            // Pre-fetch nix config once (used by NIX-005, NIX-006, NIX-007, NIX-008)
+            let nix_config_output = runner.run("nix", &["show-config", "--json"]).await;
+
             for control in &controls {
                 let start = std::time::Instant::now();
                 let (passed, message) = match control.id.as_str() {
@@ -125,7 +159,10 @@ impl<C: CommandRunner + 'static> CompliancePlugin for NixStorePlugin<C> {
                     "NIX-002" => check_flake_inputs_pinned(&*runner).await,
                     "NIX-003" => check_store_verify(&*runner).await,
                     "NIX-004" => check_no_known_cves(&*runner).await,
-                    "NIX-005" => check_binary_cache_sigs(&*runner).await,
+                    "NIX-005" => check_binary_cache_sigs_from_config(&nix_config_output),
+                    "NIX-006" => check_sandbox_from_config(&nix_config_output),
+                    "NIX-007" => check_trusted_users_from_config(&nix_config_output),
+                    "NIX-008" => check_require_sigs_from_config(&nix_config_output),
                     _ => (false, format!("Unknown control: {}", control.id)),
                 };
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -249,12 +286,11 @@ async fn check_no_known_cves<C: CommandRunner>(runner: &C) -> (bool, String) {
     }
 }
 
-async fn check_binary_cache_sigs<C: CommandRunner>(runner: &C) -> (bool, String) {
-    match runner
-        .run("nix", &["show-config", "--json"])
-        .await
-    {
-        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+fn check_binary_cache_sigs_from_config(
+    config_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match config_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
             Ok(config) => {
                 if let Some(keys) = config
                     .get("trusted-public-keys")
@@ -268,6 +304,96 @@ async fn check_binary_cache_sigs<C: CommandRunner>(runner: &C) -> (bool, String)
                     )
                 } else {
                     (false, "No trusted public keys configured".to_string())
+                }
+            }
+            Err(e) => (false, format!("Failed to parse nix config: {e}")),
+        },
+        Err(e) => (false, format!("nix show-config failed: {e}")),
+    }
+}
+
+fn check_sandbox_from_config(
+    config_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match config_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let sandbox = config
+                    .get("sandbox")
+                    .and_then(|s| s.get("value"))
+                    .and_then(|v| v.as_bool());
+                match sandbox {
+                    Some(true) => (true, "Nix sandbox is enabled".to_string()),
+                    Some(false) => (false, "Nix sandbox is disabled".to_string()),
+                    None => {
+                        // Also check string value ("true"/"relaxed")
+                        let str_val = config
+                            .get("sandbox")
+                            .and_then(|s| s.get("value"))
+                            .and_then(|v| v.as_str());
+                        match str_val {
+                            Some("true") => (true, "Nix sandbox is enabled".to_string()),
+                            Some(other) => (
+                                false,
+                                format!("Nix sandbox is set to '{other}' (expected true)"),
+                            ),
+                            None => (false, "sandbox setting not found in nix config".to_string()),
+                        }
+                    }
+                }
+            }
+            Err(e) => (false, format!("Failed to parse nix config: {e}")),
+        },
+        Err(e) => (false, format!("nix show-config failed: {e}")),
+    }
+}
+
+fn check_trusted_users_from_config(
+    config_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match config_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let users = config
+                    .get("trusted-users")
+                    .and_then(|s| s.get("value"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if users.contains('*') {
+                    (
+                        false,
+                        "trusted-users contains wildcard (*) -- overly permissive".to_string(),
+                    )
+                } else {
+                    (
+                        true,
+                        format!("trusted-users is restricted: {users}"),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse nix config: {e}")),
+        },
+        Err(e) => (false, format!("nix show-config failed: {e}")),
+    }
+}
+
+fn check_require_sigs_from_config(
+    config_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match config_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let require_sigs = config
+                    .get("require-sigs")
+                    .and_then(|s| s.get("value"))
+                    .and_then(|v| v.as_bool());
+                match require_sigs {
+                    Some(true) => (true, "Substituters require signed narinfo".to_string()),
+                    Some(false) => (
+                        false,
+                        "require-sigs is false -- substituters accept unsigned narinfo".to_string(),
+                    ),
+                    None => (false, "require-sigs not found in nix config".to_string()),
                 }
             }
             Err(e) => (false, format!("Failed to parse nix config: {e}")),
@@ -300,11 +426,26 @@ mod tests {
         assert!(families.contains(&"SA".to_string()));
     }
 
+    fn nix_config_json(sandbox: bool, trusted_users: &str, require_sigs: bool) -> String {
+        format!(
+            r#"{{"sandbox":{{"value":{}}},"trusted-users":{{"value":"{}"}},"require-sigs":{{"value":{}}},"trusted-public-keys":{{"value":"cache.nixos.org-1:key1"}}}}"#,
+            sandbox, trusted_users, require_sigs
+        )
+    }
+
+    fn setup_nix_config_response(runner: &MockCommandRunner, sandbox: bool, trusted_users: &str, require_sigs: bool) {
+        runner.add_response(
+            "nix",
+            &["show-config", "--json"],
+            &nix_config_json(sandbox, trusted_users, require_sigs),
+        );
+    }
+
     #[test]
     fn generate_controls_default() {
         let plugin = NixStorePlugin::new(make_runner());
         let controls = plugin.generate_controls(&PluginConfig::default());
-        assert_eq!(controls.len(), 4);
+        assert_eq!(controls.len(), 7);
         assert!(controls.iter().all(|c| c.domain == "nix-store"));
     }
 
@@ -314,7 +455,7 @@ mod tests {
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert_eq!(controls.len(), 5);
+        assert_eq!(controls.len(), 8);
     }
 
     #[test]
@@ -372,6 +513,7 @@ mod tests {
             "",
         );
         runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -396,6 +538,7 @@ mod tests {
         );
         runner.add_response("nix-store", &["--verify", "--check-contents"], "");
         runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -420,6 +563,7 @@ mod tests {
         );
         runner.add_response("nix-store", &["--verify", "--check-contents"], "");
         runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -449,6 +593,7 @@ mod tests {
             "error: path '/nix/store/xyz' has changed hash",
         );
         runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -477,6 +622,7 @@ mod tests {
             &["--system"],
             "CVE-2024-1234 openssl\nCVE-2024-5678 curl\n",
         );
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -502,6 +648,7 @@ mod tests {
         );
         runner.add_response("nix-store", &["--verify", "--check-contents"], "");
         runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -528,6 +675,7 @@ mod tests {
         );
         runner.add_response("nix-store", &["--verify", "--check-contents"], "");
         runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -553,6 +701,7 @@ mod tests {
         );
         runner.add_response("nix-store", &["--verify", "--check-contents"], "");
         runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", true);
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
@@ -561,5 +710,83 @@ mod tests {
         let closure = result.evaluations.iter().find(|e| e.control.id == "NIX-001").unwrap();
         assert!(!closure.passed);
         assert!(closure.message.contains("failed"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_sandbox_disabled_fails() {
+        let runner = make_runner();
+        runner.add_response(
+            "nix-store",
+            &["--query", "--requisites", "/run/current-system"],
+            "/nix/store/abc-foo\n",
+        );
+        runner.add_response(
+            "nix",
+            &["flake", "metadata", "--json"],
+            r#"{"locks":{"nodes":{"root":{}}}}"#,
+        );
+        runner.add_response("nix-store", &["--verify", "--check-contents"], "");
+        runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, false, "root", true);
+
+        let plugin = NixStorePlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let sandbox = result.evaluations.iter().find(|e| e.control.id == "NIX-006").unwrap();
+        assert!(!sandbox.passed);
+        assert!(sandbox.message.contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_trusted_users_wildcard_fails() {
+        let runner = make_runner();
+        runner.add_response(
+            "nix-store",
+            &["--query", "--requisites", "/run/current-system"],
+            "/nix/store/abc-foo\n",
+        );
+        runner.add_response(
+            "nix",
+            &["flake", "metadata", "--json"],
+            r#"{"locks":{"nodes":{"root":{}}}}"#,
+        );
+        runner.add_response("nix-store", &["--verify", "--check-contents"], "");
+        runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "*", true);
+
+        let plugin = NixStorePlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let users = result.evaluations.iter().find(|e| e.control.id == "NIX-007").unwrap();
+        assert!(!users.passed);
+        assert!(users.message.contains("wildcard"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_require_sigs_false_fails() {
+        let runner = make_runner();
+        runner.add_response(
+            "nix-store",
+            &["--query", "--requisites", "/run/current-system"],
+            "/nix/store/abc-foo\n",
+        );
+        runner.add_response(
+            "nix",
+            &["flake", "metadata", "--json"],
+            r#"{"locks":{"nodes":{"root":{}}}}"#,
+        );
+        runner.add_response("nix-store", &["--verify", "--check-contents"], "");
+        runner.add_error("vulnix", &["--system"], "not found");
+        setup_nix_config_response(&runner, true, "root", false);
+
+        let plugin = NixStorePlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let sigs = result.evaluations.iter().find(|e| e.control.id == "NIX-008").unwrap();
+        assert!(!sigs.passed);
+        assert!(sigs.message.contains("false"));
     }
 }

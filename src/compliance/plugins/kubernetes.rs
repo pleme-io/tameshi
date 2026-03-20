@@ -106,6 +106,47 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KubernetesPlugin<C> {
             },
         ];
 
+        controls.push(ComplianceControl {
+            id: "K8S-007".to_string(),
+            title: "No host namespace sharing".to_string(),
+            description:
+                "Pods must not share host namespaces (hostNetwork, hostPID, hostIPC)"
+                    .to_string(),
+            severity: ControlSeverity::Critical,
+            nist_control_ids: vec!["SC-7".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-008".to_string(),
+            title: "No privileged containers".to_string(),
+            description: "No containers should run in privileged mode".to_string(),
+            severity: ControlSeverity::Critical,
+            nist_control_ids: vec!["AC-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-009".to_string(),
+            title: "automountServiceAccountToken disabled".to_string(),
+            description:
+                "Pods should not automount service account tokens by default"
+                    .to_string(),
+            severity: ControlSeverity::Medium,
+            nist_control_ids: vec!["AC-2".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-010".to_string(),
+            title: "No hostPath volumes".to_string(),
+            description: "Pods must not use hostPath volume mounts".to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["SC-28".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+
         if config.include_advisory {
             controls.push(ComplianceControl {
                 id: "K8S-006".to_string(),
@@ -145,15 +186,27 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KubernetesPlugin<C> {
                 )
                 .await;
 
+            // Pre-fetch all pods once (used by K8S-004, K8S-007, K8S-008, K8S-009, K8S-010)
+            let all_pods_output = (*runner)
+                .run(
+                    "kubectl",
+                    &["get", "pods", "--all-namespaces", "-o", "json"],
+                )
+                .await;
+
             for control in &controls {
                 let start = std::time::Instant::now();
                 let (passed, message) = match control.id.as_str() {
                     "K8S-001" => check_pod_security_standards(&*runner).await,
                     "K8S-002" => check_default_deny_netpol(&*runner).await,
                     "K8S-003" => check_cluster_admin_bindings(&*runner).await,
-                    "K8S-004" => check_resource_limits(&*runner).await,
+                    "K8S-004" => check_resource_limits_from_output(&all_pods_output),
                     "K8S-005" => check_secrets_encrypted_from_output(&apiserver_output),
                     "K8S-006" => check_audit_logging_from_output(&apiserver_output),
+                    "K8S-007" => check_no_host_namespace_from_output(&all_pods_output),
+                    "K8S-008" => check_no_privileged_from_output(&all_pods_output),
+                    "K8S-009" => check_automount_sa_token_from_output(&all_pods_output),
+                    "K8S-010" => check_no_host_path_from_output(&all_pods_output),
                     _ => (false, format!("Unknown control: {}", control.id)),
                 };
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -346,15 +399,11 @@ async fn check_cluster_admin_bindings<C: CommandRunner>(runner: &C) -> (bool, St
     }
 }
 
-async fn check_resource_limits<C: CommandRunner>(runner: &C) -> (bool, String) {
-    match runner
-        .run(
-            "kubectl",
-            &["get", "pods", "--all-namespaces", "-o", "json"],
-        )
-        .await
-    {
-        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+fn check_resource_limits_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
             Ok(pod_list) => {
                 let items = pod_list
                     .get("items")
@@ -499,6 +548,187 @@ fn check_audit_logging_from_output(
     }
 }
 
+fn check_no_host_namespace_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut violating = Vec::new();
+                for pod in &items {
+                    let name = pod
+                        .pointer("/metadata/name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("unknown");
+                    let host_network = pod
+                        .pointer("/spec/hostNetwork")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let host_pid = pod
+                        .pointer("/spec/hostPID")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let host_ipc = pod
+                        .pointer("/spec/hostIPC")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    if host_network || host_pid || host_ipc {
+                        violating.push(name.to_string());
+                    }
+                }
+
+                if violating.is_empty() {
+                    (true, "No pods share host namespaces".to_string())
+                } else {
+                    (
+                        false,
+                        format!(
+                            "Pods sharing host namespaces: {}",
+                            violating.join(", ")
+                        ),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+fn check_no_privileged_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut privileged_count: u32 = 0;
+                for pod in &items {
+                    let containers = pod
+                        .pointer("/spec/containers")
+                        .and_then(|c| c.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for container in &containers {
+                        let is_privileged = container
+                            .pointer("/securityContext/privileged")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        if is_privileged {
+                            privileged_count += 1;
+                        }
+                    }
+                }
+
+                if privileged_count == 0 {
+                    (true, "No privileged containers found".to_string())
+                } else {
+                    (
+                        false,
+                        format!("{privileged_count} privileged container(s) found"),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+fn check_automount_sa_token_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut automount_count: u32 = 0;
+                for pod in &items {
+                    // automountServiceAccountToken defaults to true if not specified
+                    let automount = pod
+                        .pointer("/spec/automountServiceAccountToken")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    if automount {
+                        automount_count += 1;
+                    }
+                }
+
+                if automount_count == 0 {
+                    (true, "All pods have automountServiceAccountToken disabled".to_string())
+                } else {
+                    (
+                        false,
+                        format!(
+                            "{automount_count} pod(s) have automountServiceAccountToken enabled"
+                        ),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+fn check_no_host_path_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut host_path_count: u32 = 0;
+                for pod in &items {
+                    let volumes = pod
+                        .pointer("/spec/volumes")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for volume in &volumes {
+                        if volume.get("hostPath").is_some() {
+                            host_path_count += 1;
+                        }
+                    }
+                }
+
+                if host_path_count == 0 {
+                    (true, "No hostPath volumes found".to_string())
+                } else {
+                    (
+                        false,
+                        format!("{host_path_count} hostPath volume(s) found"),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,7 +820,7 @@ mod tests {
         runner.add_response(
             "kubectl",
             &["get", "pods", "--all-namespaces", "-o", "json"],
-            &pods_json(&[true, true]),
+            &secure_pods_json(&[true, true]),
         );
         runner.add_response(
             "kubectl",
@@ -614,11 +844,30 @@ mod tests {
         assert!(families.contains(&"CM".to_string()));
     }
 
+    /// Generate a pods JSON with full security context (for new checks)
+    fn secure_pods_json(containers: &[bool]) -> String {
+        let container_items: Vec<String> = containers
+            .iter()
+            .map(|has_limits| {
+                if *has_limits {
+                    r#"{"name":"app","resources":{"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"privileged":false}}"#
+                        .to_string()
+                } else {
+                    r#"{"name":"app","resources":{},"securityContext":{"privileged":false}}"#.to_string()
+                }
+            })
+            .collect();
+        format!(
+            r#"{{"items":[{{"metadata":{{"name":"test-pod"}},"spec":{{"automountServiceAccountToken":false,"containers":[{}]}}}}]}}"#,
+            container_items.join(",")
+        )
+    }
+
     #[test]
     fn generate_controls_default() {
         let plugin = KubernetesPlugin::new(make_runner());
         let controls = plugin.generate_controls(&PluginConfig::default());
-        assert_eq!(controls.len(), 5);
+        assert_eq!(controls.len(), 9);
         assert!(controls.iter().all(|c| c.domain == "kubernetes"));
     }
 
@@ -628,7 +877,7 @@ mod tests {
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert_eq!(controls.len(), 6);
+        assert_eq!(controls.len(), 10);
     }
 
     #[test]
@@ -972,5 +1221,110 @@ mod tests {
         let items = parsed.get("items").unwrap().as_array().unwrap();
         assert_eq!(items.len(), 3);
         // All are system namespaces — should be skipped
+    }
+
+    fn host_namespace_pods_json() -> String {
+        r#"{"items":[{"metadata":{"name":"bad-pod"},"spec":{"hostNetwork":true,"automountServiceAccountToken":false,"containers":[{"name":"app","resources":{"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"privileged":false}}]}}]}"#.to_string()
+    }
+
+    fn privileged_pods_json() -> String {
+        r#"{"items":[{"metadata":{"name":"priv-pod"},"spec":{"automountServiceAccountToken":false,"containers":[{"name":"app","resources":{"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"privileged":true}}]}}]}"#.to_string()
+    }
+
+    fn automount_pods_json() -> String {
+        // automountServiceAccountToken defaults to true (not specified)
+        r#"{"items":[{"metadata":{"name":"auto-pod"},"spec":{"containers":[{"name":"app","resources":{"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"privileged":false}}]}}]}"#.to_string()
+    }
+
+    fn hostpath_pods_json() -> String {
+        r#"{"items":[{"metadata":{"name":"hp-pod"},"spec":{"automountServiceAccountToken":false,"volumes":[{"name":"data","hostPath":{"path":"/var/data"}}],"containers":[{"name":"app","resources":{"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"privileged":false}}]}}]}"#.to_string()
+    }
+
+    #[tokio::test]
+    async fn evaluate_host_namespace_fails() {
+        let runner = make_runner();
+        runner.add_response("kubectl", &["get", "namespaces", "-o", "json"], &ns_json(&[("app-ns", true)]));
+        runner.add_response("kubectl", &["get", "networkpolicies", "--all-namespaces", "-o", "json"], &netpol_json(true));
+        runner.add_response("kubectl", &["get", "clusterrolebindings", "-o", "json"], &crb_json(&[("system:admin", "cluster-admin")]));
+        runner.add_response("kubectl", &["get", "pods", "--all-namespaces", "-o", "json"], &host_namespace_pods_json());
+        runner.add_response("kubectl", &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"], &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]));
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let host_ns = result.evaluations.iter().find(|e| e.control.id == "K8S-007").unwrap();
+        assert!(!host_ns.passed);
+        assert!(host_ns.message.contains("bad-pod"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_privileged_container_fails() {
+        let runner = make_runner();
+        runner.add_response("kubectl", &["get", "namespaces", "-o", "json"], &ns_json(&[("app-ns", true)]));
+        runner.add_response("kubectl", &["get", "networkpolicies", "--all-namespaces", "-o", "json"], &netpol_json(true));
+        runner.add_response("kubectl", &["get", "clusterrolebindings", "-o", "json"], &crb_json(&[("system:admin", "cluster-admin")]));
+        runner.add_response("kubectl", &["get", "pods", "--all-namespaces", "-o", "json"], &privileged_pods_json());
+        runner.add_response("kubectl", &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"], &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]));
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let priv_ctl = result.evaluations.iter().find(|e| e.control.id == "K8S-008").unwrap();
+        assert!(!priv_ctl.passed);
+        assert!(priv_ctl.message.contains("privileged"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_automount_sa_token_fails() {
+        let runner = make_runner();
+        runner.add_response("kubectl", &["get", "namespaces", "-o", "json"], &ns_json(&[("app-ns", true)]));
+        runner.add_response("kubectl", &["get", "networkpolicies", "--all-namespaces", "-o", "json"], &netpol_json(true));
+        runner.add_response("kubectl", &["get", "clusterrolebindings", "-o", "json"], &crb_json(&[("system:admin", "cluster-admin")]));
+        runner.add_response("kubectl", &["get", "pods", "--all-namespaces", "-o", "json"], &automount_pods_json());
+        runner.add_response("kubectl", &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"], &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]));
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let automount = result.evaluations.iter().find(|e| e.control.id == "K8S-009").unwrap();
+        assert!(!automount.passed);
+        assert!(automount.message.contains("automountServiceAccountToken"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_hostpath_volume_fails() {
+        let runner = make_runner();
+        runner.add_response("kubectl", &["get", "namespaces", "-o", "json"], &ns_json(&[("app-ns", true)]));
+        runner.add_response("kubectl", &["get", "networkpolicies", "--all-namespaces", "-o", "json"], &netpol_json(true));
+        runner.add_response("kubectl", &["get", "clusterrolebindings", "-o", "json"], &crb_json(&[("system:admin", "cluster-admin")]));
+        runner.add_response("kubectl", &["get", "pods", "--all-namespaces", "-o", "json"], &hostpath_pods_json());
+        runner.add_response("kubectl", &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"], &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]));
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let hp = result.evaluations.iter().find(|e| e.control.id == "K8S-010").unwrap();
+        assert!(!hp.passed);
+        assert!(hp.message.contains("hostPath"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_secure_pods_pass_all_new_controls() {
+        let runner = make_runner();
+        setup_passing_runner(&runner);
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        // All new controls should pass with secure_pods_json
+        for id in &["K8S-007", "K8S-008", "K8S-009", "K8S-010"] {
+            let eval = result.evaluations.iter().find(|e| e.control.id == *id).unwrap();
+            assert!(eval.passed, "Control {} should pass: {}", id, eval.message);
+        }
     }
 }
