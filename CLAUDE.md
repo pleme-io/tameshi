@@ -6,7 +6,7 @@ Core library for cryptographic hash computation, Merkle tree composition, and si
 
 ```bash
 cargo check
-cargo test          # 518 tests
+cargo test          # 564 tests (518 lib + 22 e2e + 15 proptest + 9 doc)
 cargo build --release
 ```
 
