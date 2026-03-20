@@ -84,8 +84,8 @@ pub mod prelude {
         compute_multi_target_hash, compute_target_attestation_hash,
     };
     pub use crate::config::ConfigLoader;
-    pub use crate::hash::{AttestationHasher, Blake3Hash, Blake3Hasher, Sha256Hash};
-    pub use crate::merkle::{compose_merkle, compute_merkle_root};
+    pub use crate::hash::{AttestationHasher, Blake3Hash, Blake3Hasher, Sha256Hash, Sha256Hasher};
+    pub use crate::merkle::{compose_merkle, compute_merkle_root, domain_separated_leaf};
     pub use crate::signature::{InputHash, LayerSignature, LayerType, MasterSignature};
     pub use crate::traits::{
         Clock, CommandRunner, DefaultGatingEngine, DefaultVerifier, FileSystem, FixedClock,

@@ -32,7 +32,7 @@ use tameshi::compliance::slsa::{
     ArtifactType, BuildType, ProvenanceSubject, SlsaLevel, SlsaProvenance,
 };
 use tameshi::hash::Blake3Hash;
-use tameshi::merkle::{compute_merkle_root, compose_merkle, merkle_proof, verify_proof};
+use tameshi::merkle::{compute_merkle_root, compose_merkle, domain_separated_leaf, merkle_proof, verify_proof};
 use tameshi::signature::{InputHash, LayerSignature, LayerType};
 use tameshi::verify::verify_master;
 
@@ -559,7 +559,9 @@ fn empty_and_edge_cases() {
         vec![],
     );
     let single_root = compute_merkle_root(&[single_layer.clone()]);
-    assert_eq!(single_root, Blake3Hash::digest(b"single"));
+    // With domain separation: single leaf root = BLAKE3(0x00 || leaf_hash)
+    let expected = Blake3Hash(domain_separated_leaf(&Blake3Hash::digest(b"single").0));
+    assert_eq!(single_root, expected);
 
     // Single layer Merkle proof
     let single_proof = merkle_proof(&[single_layer.clone()], 0).unwrap();

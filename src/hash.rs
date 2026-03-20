@@ -303,6 +303,61 @@ impl AttestationHasher for Blake3Hasher {
     }
 }
 
+/// SHA-256 implementation of `AttestationHasher` for FIPS 140-3 compliance.
+///
+/// Provides a trait-based SHA-256 hasher that can be used as a drop-in
+/// alternative to `Blake3Hasher` where FIPS-validated algorithms are required.
+#[derive(Clone, Debug)]
+pub struct Sha256Hasher;
+
+impl AttestationHasher for Sha256Hasher {
+    type Output = Sha256Hash;
+
+    fn hash(data: &[u8]) -> Sha256Hash {
+        Sha256Hash::digest(data)
+    }
+
+    fn hash_file(path: &std::path::Path) -> crate::error::Result<Sha256Hash> {
+        use std::io::Read;
+
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::with_capacity(65536, file);
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 65536];
+        loop {
+            let bytes_read = reader.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+        let result = hasher.finalize();
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&result);
+        Ok(Sha256Hash(arr))
+    }
+
+    fn combine(a: &Sha256Hash, b: &Sha256Hash) -> Sha256Hash {
+        let mut hasher = Sha256::new();
+        hasher.update(&a.0);
+        hasher.update(&b.0);
+        let result = hasher.finalize();
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&result);
+        Sha256Hash(arr)
+    }
+
+    fn to_hex(output: &Sha256Hash) -> String {
+        output.to_hex()
+    }
+
+    fn from_hex(hex: &str) -> crate::error::Result<Sha256Hash> {
+        Sha256Hash::from_hex(hex).map_err(|e| {
+            crate::error::TameshiError::InvalidInput(format!("invalid hex: {e}"))
+        })
+    }
+}
+
 /// Serde helper for [u8; 32] as hex.
 mod hex_bytes {
     use serde::{self, Deserialize, Deserializer, Serializer};
@@ -694,6 +749,58 @@ mod tests {
     #[test]
     fn sha256_wrong_length_hex_errors() {
         let result = Sha256Hash::from_hex("abcd");
+        assert!(result.is_err());
+    }
+
+    // -- Sha256Hasher trait tests --
+
+    #[test]
+    fn sha256_hasher_consistency() {
+        let data = b"sha256 hasher test";
+        let direct = Sha256Hash::digest(data);
+        let via_trait = Sha256Hasher::hash(data);
+        assert_eq!(direct, via_trait);
+    }
+
+    #[test]
+    fn sha256_hasher_combine() {
+        let a = Sha256Hash::digest(b"a");
+        let b = Sha256Hash::digest(b"b");
+        let combined = Sha256Hasher::combine(&a, &b);
+        let combined2 = Sha256Hasher::combine(&a, &b);
+        assert_eq!(combined, combined2);
+    }
+
+    #[test]
+    fn sha256_hasher_hex_roundtrip() {
+        let h = Sha256Hasher::hash(b"roundtrip");
+        let hex = Sha256Hasher::to_hex(&h);
+        let h2 = Sha256Hasher::from_hex(&hex).unwrap();
+        assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn sha256_hasher_combine_not_commutative() {
+        let a = Sha256Hash::digest(b"a");
+        let b = Sha256Hash::digest(b"b");
+        let ab = Sha256Hasher::combine(&a, &b);
+        let ba = Sha256Hasher::combine(&b, &a);
+        assert_ne!(ab, ba, "SHA-256 combine must not be commutative");
+    }
+
+    #[test]
+    fn sha256_hasher_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("sha256-test.bin");
+        std::fs::write(&file_path, b"sha256 file content for hasher trait").unwrap();
+        let direct = Sha256Hash::digest(b"sha256 file content for hasher trait");
+        let via_trait = Sha256Hasher::hash_file(&file_path).unwrap();
+        assert_eq!(direct, via_trait);
+    }
+
+    #[test]
+    fn sha256_hasher_from_hex_invalid() {
+        let result = Sha256Hasher::from_hex("zzz-invalid");
         assert!(result.is_err());
     }
 }
