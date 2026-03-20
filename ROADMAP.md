@@ -1600,6 +1600,115 @@ Timeline:
 The heartbeat chain provides cryptographic proof of the exact violation window,
 which is the primary evidence artifact for CIRCIA 72-hour reporting.
 
+### Dynamic Compliance Ingestion (Client-Fed CVEs & Standards)
+
+> **Requirement:** An external client can submit a new CVE, compliance standard,
+> or test suite via the API, and it immediately becomes part of the continuous
+> attestation pipeline — no redeployment, no restart.
+
+**Core domain types:**
+
+```rust
+/// A dynamically submitted compliance check.
+pub struct DynamicComplianceCheck {
+    /// Unique identifier for this check.
+    pub id: String,
+    /// Human-readable name (e.g., "CVE-2026-XXXX mitigation").
+    pub name: String,
+    /// Which framework this belongs to (NIST, SOC2, PCI, custom).
+    pub framework: String,
+    /// The check definition — what to verify.
+    pub check: CheckDefinition,
+    /// When this check was submitted.
+    pub submitted_at: DateTime<Utc>,
+    /// Who submitted it (for audit trail).
+    pub submitted_by: String,
+    /// Whether this check is currently active.
+    pub active: bool,
+}
+
+/// What a dynamic check actually verifies.
+pub enum CheckDefinition {
+    /// Check that a specific binary hash is NOT in the allow map (CVE revocation).
+    BinaryRevocation { hash: Blake3Hash, cve_id: String },
+    /// Check that a specific config value matches expected (compliance).
+    ConfigAssertion { path: String, expected: serde_json::Value },
+    /// Check that a Helm rendered value contains/excludes a pattern.
+    HelmValueCheck { key: String, pattern: String, must_match: bool },
+    /// Run an InSpec profile from a URL.
+    InSpecProfile { profile_url: String },
+    /// Run a custom shell command and check exit code.
+    CustomScript { script: String, expected_exit: i32 },
+    /// Check that a NIST control is satisfied by verifying specific layer attestation.
+    NistControl { control_id: String, required_layers: Vec<String> },
+}
+
+/// Result of evaluating a dynamic check.
+pub struct DynamicCheckResult {
+    pub check_id: String,
+    pub passed: bool,
+    pub evidence: String,
+    pub evaluated_at: DateTime<Utc>,
+    pub evaluation_duration: Duration,
+}
+```
+
+**API endpoints:**
+
+```
+POST /api/v1/compliance/checks
+  → Submit a new dynamic compliance check
+  → Body: DynamicComplianceCheck
+  → Returns: { id, status: "active" }
+
+GET /api/v1/compliance/checks
+  → List all active dynamic checks
+  → Returns: [ { id, name, framework, active, last_result } ]
+
+DELETE /api/v1/compliance/checks/{id}
+  → Deactivate a dynamic check (soft delete for audit trail)
+
+POST /api/v1/compliance/checks/{id}/evaluate
+  → Force immediate evaluation of a specific check
+  → Returns: DynamicCheckResult
+
+POST /api/v1/cve/ingest
+  → Shortcut: submit a CVE and automatically create:
+    1. A BinaryRevocation check for affected binaries
+    2. A kanshi revocation map entry
+    3. A heartbeat event recording the CVE ingestion
+  → Body: { cve_id: "CVE-2026-XXXX", affected_hashes: ["blake3:..."] }
+  → Returns: { checks_created: 2, revocations_pushed: 1, heartbeat_recorded: true }
+
+POST /api/v1/standards/import
+  → Import a new compliance standard (OSCAL catalog format)
+  → Automatically creates dynamic checks for each control
+  → Body: OSCAL catalog JSON
+  → Returns: { controls_imported: 42, checks_created: 42 }
+```
+
+**How it integrates with continuous attestation:**
+
+```
+1. Client submits CVE-2026-XXXX via POST /api/v1/cve/ingest
+2. kensa creates a BinaryRevocation check
+3. kanshi pushes the affected hash to tameshi_revocation_list BPF map
+4. Next heartbeat records the CVE ingestion event
+5. Next attestation cycle evaluates the new check
+6. If affected binary is running → violation detected → auto-rollback
+7. ComplianceState.compliance_score drops
+8. ComplianceDistance shows time since last clean state
+9. CIRCIA evidence chain records the full incident timeline
+```
+
+**Storage:** Dynamic checks stored in kensa's ComplianceStore (same FsStore/MemStore
+abstraction). Persisted as JSON, loaded on startup, synced across cluster via
+sekiban federation CRD replication.
+
+**Security:** Check submission requires Akeyless authentication. Only roles with
+`tameshi:compliance:write` permission can submit checks. All submissions are
+recorded in the heartbeat chain for non-repudiation.
+
 ### Pattern for Future Features
 
 To add a new API capability:
