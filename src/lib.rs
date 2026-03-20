@@ -55,6 +55,7 @@ pub mod heartbeat;
 pub mod iac_attestation;
 pub mod merkle;
 pub mod reporting;
+pub mod sdlc;
 pub mod selftest;
 pub mod signature;
 pub mod signing;
@@ -122,4 +123,5 @@ pub mod prelude {
     };
     pub use crate::compliance::registry::{PluginRegistry, PluginRegistryBuilder};
     pub use crate::compliance::plugin_orchestrator::{ComplianceOrchestrator, FullComplianceReport};
+    pub use crate::sdlc::{SdlcPhase, SdlcCheckpoint, SdlcChain};
 }
