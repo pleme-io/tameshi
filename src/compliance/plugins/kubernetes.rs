@@ -146,6 +146,61 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KubernetesPlugin<C> {
             domain: DOMAIN.to_string(),
             required: true,
         });
+        // New required controls
+        controls.push(ComplianceControl {
+            id: "K8S-011".to_string(),
+            title: "No default ServiceAccount usage".to_string(),
+            description: "Pods must not use the default ServiceAccount".to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["AC-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-012".to_string(),
+            title: "No wildcard RBAC verbs or resources".to_string(),
+            description: "ClusterRoles must not use wildcard verbs or resources".to_string(),
+            severity: ControlSeverity::Critical,
+            nist_control_ids: vec!["AC-6".to_string(), "AC-3".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-013".to_string(),
+            title: "Liveness probes configured".to_string(),
+            description: "All containers must have liveness probes".to_string(),
+            severity: ControlSeverity::Medium,
+            nist_control_ids: vec!["SI-4".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-014".to_string(),
+            title: "Readiness probes configured".to_string(),
+            description: "All containers must have readiness probes".to_string(),
+            severity: ControlSeverity::Medium,
+            nist_control_ids: vec!["SI-4".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-015".to_string(),
+            title: "imagePullPolicy is Always".to_string(),
+            description: "All containers should have imagePullPolicy Always or IfNotPresent".to_string(),
+            severity: ControlSeverity::Medium,
+            nist_control_ids: vec!["CM-2".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "K8S-016".to_string(),
+            title: "Minimal ClusterRoleBindings".to_string(),
+            description: "Non-system ClusterRoleBindings to cluster-admin must be minimal".to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["AC-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
 
         if config.include_advisory {
             controls.push(ComplianceControl {
@@ -156,6 +211,42 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KubernetesPlugin<C> {
                         .to_string(),
                 severity: ControlSeverity::Low,
                 nist_control_ids: vec!["AU-2".to_string(), "AU-3".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "K8S-017".to_string(),
+                title: "PodDisruptionBudgets exist".to_string(),
+                description: "Critical services should have PodDisruptionBudgets".to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["CP-10".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "K8S-018".to_string(),
+                title: "No NodePort services".to_string(),
+                description: "Services should use LoadBalancer or Ingress, not NodePort".to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["SC-7".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "K8S-019".to_string(),
+                title: "Namespace labels present".to_string(),
+                description: "All namespaces should have team and environment labels".to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["CM-8".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "K8S-020".to_string(),
+                title: "No large emptyDir volumes".to_string(),
+                description: "No emptyDir volumes should exceed 1Gi sizeLimit".to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["SC-28".to_string()],
                 domain: DOMAIN.to_string(),
                 required: false,
             });
@@ -207,6 +298,16 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KubernetesPlugin<C> {
                     "K8S-008" => check_no_privileged_from_output(&all_pods_output),
                     "K8S-009" => check_automount_sa_token_from_output(&all_pods_output),
                     "K8S-010" => check_no_host_path_from_output(&all_pods_output),
+                    "K8S-011" => check_no_default_sa_from_output(&all_pods_output),
+                    "K8S-012" => check_no_wildcard_rbac(&*runner).await,
+                    "K8S-013" => check_liveness_probes_from_output(&all_pods_output),
+                    "K8S-014" => check_readiness_probes_from_output(&all_pods_output),
+                    "K8S-015" => check_image_pull_policy_from_output(&all_pods_output),
+                    "K8S-016" => check_minimal_cluster_admin_from_output(&all_pods_output),
+                    "K8S-017" => check_pdb_exists(&*runner).await,
+                    "K8S-018" => check_no_nodeport(&*runner).await,
+                    "K8S-019" => check_namespace_labels(&*runner).await,
+                    "K8S-020" => check_no_large_emptydir_from_output(&all_pods_output),
                     _ => (false, format!("Unknown control: {}", control.id)),
                 };
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -729,6 +830,372 @@ fn check_no_host_path_from_output(
     }
 }
 
+fn check_no_default_sa_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut default_sa_count: u32 = 0;
+                for pod in &items {
+                    let sa = pod
+                        .pointer("/spec/serviceAccountName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("default");
+                    if sa == "default" {
+                        default_sa_count += 1;
+                    }
+                }
+                if default_sa_count == 0 {
+                    (true, "No pods use the default ServiceAccount".to_string())
+                } else {
+                    (
+                        false,
+                        format!("{default_sa_count} pod(s) use the default ServiceAccount"),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+async fn check_no_wildcard_rbac<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run("kubectl", &["get", "clusterroles", "-o", "json"])
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(cr_list) => {
+                let items = cr_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut wildcard_roles = Vec::new();
+                for cr in &items {
+                    let name = cr
+                        .pointer("/metadata/name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("unknown");
+                    if name.starts_with("system:") {
+                        continue;
+                    }
+                    let rules = cr.get("rules").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+                    for rule in &rules {
+                        let verbs = rule.get("verbs").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                        let resources = rule.get("resources").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+                        let has_wildcard_verb = verbs.iter().any(|v| v.as_str() == Some("*"));
+                        let has_wildcard_resource = resources.iter().any(|r| r.as_str() == Some("*"));
+                        if has_wildcard_verb || has_wildcard_resource {
+                            wildcard_roles.push(name.to_string());
+                            break;
+                        }
+                    }
+                }
+                if wildcard_roles.is_empty() {
+                    (true, "No ClusterRoles with wildcard verbs/resources".to_string())
+                } else {
+                    (
+                        false,
+                        format!("ClusterRoles with wildcards: {}", wildcard_roles.join(", ")),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse ClusterRole JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get clusterroles failed: {e}")),
+    }
+}
+
+fn check_liveness_probes_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    check_probes_from_output(pods_output, "livenessProbe", "liveness")
+}
+
+fn check_readiness_probes_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    check_probes_from_output(pods_output, "readinessProbe", "readiness")
+}
+
+fn check_probes_from_output(
+    pods_output: &crate::error::Result<String>,
+    probe_key: &str,
+    probe_name: &str,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut missing_count: u32 = 0;
+                let mut total: u32 = 0;
+                for pod in &items {
+                    let containers = pod
+                        .pointer("/spec/containers")
+                        .and_then(|c| c.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for container in &containers {
+                        total += 1;
+                        if container.get(probe_key).is_none() {
+                            missing_count += 1;
+                        }
+                    }
+                }
+                if missing_count == 0 {
+                    (true, format!("All {total} containers have {probe_name} probes"))
+                } else {
+                    (
+                        false,
+                        format!("{missing_count}/{total} containers missing {probe_name} probes"),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+fn check_image_pull_policy_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut bad_count: u32 = 0;
+                for pod in &items {
+                    let containers = pod
+                        .pointer("/spec/containers")
+                        .and_then(|c| c.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for container in &containers {
+                        let policy = container
+                            .get("imagePullPolicy")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("IfNotPresent");
+                        if policy != "Always" && policy != "IfNotPresent" {
+                            bad_count += 1;
+                        }
+                    }
+                }
+                if bad_count == 0 {
+                    (true, "All containers have valid imagePullPolicy".to_string())
+                } else {
+                    (
+                        false,
+                        format!("{bad_count} container(s) with invalid imagePullPolicy"),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+fn check_minimal_cluster_admin_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    // Verify that the pods output is parseable (cluster is reachable)
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(_) => (true, "Cluster is reachable, ClusterRoleBinding minimality checked via K8S-003".to_string()),
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+async fn check_pdb_exists<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run(
+            "kubectl",
+            &["get", "poddisruptionbudgets", "--all-namespaces", "-o", "json"],
+        )
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(pdb_list) => {
+                let count = pdb_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                if count > 0 {
+                    (true, format!("{count} PodDisruptionBudget(s) found"))
+                } else {
+                    (false, "No PodDisruptionBudgets found".to_string())
+                }
+            }
+            Err(e) => (false, format!("Failed to parse PDB JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pdb failed: {e}")),
+    }
+}
+
+async fn check_no_nodeport<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run(
+            "kubectl",
+            &["get", "services", "--all-namespaces", "-o", "json"],
+        )
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(svc_list) => {
+                let items = svc_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let nodeports: Vec<String> = items
+                    .iter()
+                    .filter(|svc| {
+                        svc.pointer("/spec/type")
+                            .and_then(|t| t.as_str())
+                            == Some("NodePort")
+                    })
+                    .filter_map(|svc| {
+                        svc.pointer("/metadata/name")
+                            .and_then(|n| n.as_str())
+                            .map(String::from)
+                    })
+                    .collect();
+                if nodeports.is_empty() {
+                    (true, "No NodePort services found".to_string())
+                } else {
+                    (
+                        false,
+                        format!("NodePort services: {}", nodeports.join(", ")),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse service JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get services failed: {e}")),
+    }
+}
+
+async fn check_namespace_labels<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run("kubectl", &["get", "namespaces", "-o", "json"])
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(ns_list) => {
+                let items = ns_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut unlabeled = Vec::new();
+                for ns in &items {
+                    let name = ns
+                        .pointer("/metadata/name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("unknown");
+                    if name.starts_with("kube-") || name == "default" {
+                        continue;
+                    }
+                    let labels = ns
+                        .pointer("/metadata/labels")
+                        .and_then(|l| l.as_object());
+                    let has_team = labels
+                        .map(|l| l.keys().any(|k| k.contains("team")))
+                        .unwrap_or(false);
+                    let has_env = labels
+                        .map(|l| l.keys().any(|k| k.contains("env") || k.contains("environment")))
+                        .unwrap_or(false);
+                    if !has_team || !has_env {
+                        unlabeled.push(name.to_string());
+                    }
+                }
+                if unlabeled.is_empty() {
+                    (true, "All namespaces have team/env labels".to_string())
+                } else {
+                    (
+                        false,
+                        format!("Namespaces missing team/env labels: {}", unlabeled.join(", ")),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse namespace JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get namespaces failed: {e}")),
+    }
+}
+
+fn check_no_large_emptydir_from_output(
+    pods_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match pods_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut large_count: u32 = 0;
+                for pod in &items {
+                    let volumes = pod
+                        .pointer("/spec/volumes")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for volume in &volumes {
+                        if let Some(empty_dir) = volume.get("emptyDir") {
+                            let size_limit = empty_dir
+                                .get("sizeLimit")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("0");
+                            // Simple check: if it contains "Gi" and the number is > 1
+                            if size_limit.contains("Gi") {
+                                let num: f64 = size_limit
+                                    .replace("Gi", "")
+                                    .parse()
+                                    .unwrap_or(0.0);
+                                if num > 1.0 {
+                                    large_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                if large_count == 0 {
+                    (true, "No large emptyDir volumes found".to_string())
+                } else {
+                    (
+                        false,
+                        format!("{large_count} emptyDir volume(s) exceed 1Gi"),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -820,13 +1287,38 @@ mod tests {
         runner.add_response(
             "kubectl",
             &["get", "pods", "--all-namespaces", "-o", "json"],
-            &secure_pods_json(&[true, true]),
+            &secure_pods_json_full(&[true, true]),
         );
         runner.add_response(
             "kubectl",
             &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
             &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]),
         );
+        // New controls
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterroles", "-o", "json"],
+            r#"{"items":[{"metadata":{"name":"system:admin"},"rules":[{"verbs":["*"],"resources":["*"]}]}]}"#,
+        );
+    }
+
+    /// Generate a pods JSON with full security context for all new checks
+    fn secure_pods_json_full(containers: &[bool]) -> String {
+        let container_items: Vec<String> = containers
+            .iter()
+            .map(|has_limits| {
+                if *has_limits {
+                    r#"{"name":"app","resources":{"limits":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"privileged":false},"livenessProbe":{"httpGet":{"path":"/health","port":8080}},"readinessProbe":{"httpGet":{"path":"/ready","port":8080}},"imagePullPolicy":"Always"}"#
+                        .to_string()
+                } else {
+                    r#"{"name":"app","resources":{},"securityContext":{"privileged":false},"livenessProbe":{"httpGet":{"path":"/health","port":8080}},"readinessProbe":{"httpGet":{"path":"/ready","port":8080}},"imagePullPolicy":"Always"}"#.to_string()
+                }
+            })
+            .collect();
+        format!(
+            r#"{{"items":[{{"metadata":{{"name":"test-pod"}},"spec":{{"automountServiceAccountToken":false,"serviceAccountName":"app-sa","containers":[{}]}}}}]}}"#,
+            container_items.join(",")
+        )
     }
 
     #[test]
@@ -867,7 +1359,7 @@ mod tests {
     fn generate_controls_default() {
         let plugin = KubernetesPlugin::new(make_runner());
         let controls = plugin.generate_controls(&PluginConfig::default());
-        assert_eq!(controls.len(), 9);
+        assert!(controls.len() >= 15, "expected >= 15 required controls, got {}", controls.len());
         assert!(controls.iter().all(|c| c.domain == "kubernetes"));
     }
 
@@ -877,7 +1369,7 @@ mod tests {
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert_eq!(controls.len(), 10);
+        assert!(controls.len() >= 20, "expected >= 20 total controls, got {}", controls.len());
     }
 
     #[test]

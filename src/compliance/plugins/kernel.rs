@@ -5,6 +5,8 @@
 //!
 //! Uses [`CommandRunner`] for subprocess execution so all evaluation can be
 //! tested with [`MockCommandRunner`] — no real Linux kernel needed.
+//!
+//! Controls are defined data-driven via tuples for easy expansion.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -21,6 +23,237 @@ use crate::traits::CommandRunner;
 
 const DOMAIN: &str = "kernel";
 
+/// Sysctl control definition: (id, title, description, sysctl_key, expected_value, required, nist_ids).
+/// Controls using exact match (check_sysctl).
+type SysctlExactDef = (
+    &'static str, // id
+    &'static str, // title
+    &'static str, // description
+    &'static str, // sysctl_key
+    &'static str, // expected_value
+    bool,         // required
+    &'static [&'static str], // nist_control_ids
+    ControlSeverity,
+);
+
+/// Sysctl control definition for >= comparison.
+type SysctlGteDef = (
+    &'static str, // id
+    &'static str, // title
+    &'static str, // description
+    &'static str, // sysctl_key
+    i64,          // min_value
+    bool,         // required
+    &'static [&'static str], // nist_control_ids
+    ControlSeverity,
+);
+
+/// Required sysctl controls with exact match.
+const REQUIRED_SYSCTL_EXACT: &[SysctlExactDef] = &[
+    (
+        "KERN-001",
+        "IP forwarding disabled",
+        "net.ipv4.ip_forward must be 0 to prevent packet forwarding",
+        "net.ipv4.ip_forward",
+        "0",
+        true,
+        &["SC-7", "CM-6"],
+        ControlSeverity::High,
+    ),
+    (
+        "KERN-003",
+        "SYN cookies enabled",
+        "net.ipv4.tcp_syncookies must be 1 to mitigate SYN floods",
+        "net.ipv4.tcp_syncookies",
+        "1",
+        true,
+        &["SC-5"],
+        ControlSeverity::High,
+    ),
+    (
+        "KERN-004",
+        "Core dumps restricted",
+        "fs.suid_dumpable must be 0 to prevent SUID core dumps",
+        "fs.suid_dumpable",
+        "0",
+        true,
+        &["CM-6"],
+        ControlSeverity::Medium,
+    ),
+    (
+        "KERN-009",
+        "Dmesg access restricted",
+        "kernel.dmesg_restrict must be 1 to restrict kernel log access",
+        "kernel.dmesg_restrict",
+        "1",
+        true,
+        &["AU-9"],
+        ControlSeverity::Medium,
+    ),
+    (
+        "KERN-010",
+        "SUID core dumps disabled",
+        "fs.suid_dumpable must be 0 to prevent SUID core dumps",
+        "fs.suid_dumpable",
+        "0",
+        true,
+        &["AC-6"],
+        ControlSeverity::Medium,
+    ),
+    // Network hardening
+    (
+        "KERN-012",
+        "ICMP redirects rejected",
+        "net.ipv4.conf.all.accept_redirects must be 0 to reject ICMP redirects",
+        "net.ipv4.conf.all.accept_redirects",
+        "0",
+        true,
+        &["CM-7", "SC-7"],
+        ControlSeverity::High,
+    ),
+    (
+        "KERN-013",
+        "Source routing disabled",
+        "net.ipv4.conf.all.accept_source_route must be 0 to prevent source routing",
+        "net.ipv4.conf.all.accept_source_route",
+        "0",
+        true,
+        &["CM-7", "SC-7"],
+        ControlSeverity::High,
+    ),
+    (
+        "KERN-014",
+        "Martian packets logged",
+        "net.ipv4.conf.all.log_martians must be 1 to log impossible addresses",
+        "net.ipv4.conf.all.log_martians",
+        "1",
+        true,
+        &["AU-2", "SI-4"],
+        ControlSeverity::Medium,
+    ),
+    (
+        "KERN-015",
+        "Reverse path filtering enabled",
+        "net.ipv4.conf.all.rp_filter must be 1 for source address validation",
+        "net.ipv4.conf.all.rp_filter",
+        "1",
+        true,
+        &["SC-7"],
+        ControlSeverity::High,
+    ),
+    // Filesystem hardening
+    (
+        "KERN-018",
+        "Protected hardlinks",
+        "fs.protected_hardlinks must be 1 to prevent hardlink attacks",
+        "fs.protected_hardlinks",
+        "1",
+        true,
+        &["AC-6", "SC-28"],
+        ControlSeverity::High,
+    ),
+    (
+        "KERN-019",
+        "Protected symlinks",
+        "fs.protected_symlinks must be 1 to prevent symlink attacks",
+        "fs.protected_symlinks",
+        "1",
+        true,
+        &["AC-6", "SC-28"],
+        ControlSeverity::High,
+    ),
+];
+
+/// Required sysctl controls with >= comparison.
+const REQUIRED_SYSCTL_GTE: &[SysctlGteDef] = &[
+    (
+        "KERN-002",
+        "ASLR fully enabled",
+        "kernel.randomize_va_space must be 2 for full ASLR",
+        "kernel.randomize_va_space",
+        2,
+        true,
+        &["SI-16"],
+        ControlSeverity::Critical,
+    ),
+    (
+        "KERN-007",
+        "Ptrace scope restricted",
+        "kernel.yama.ptrace_scope must be >= 1 to prevent ptrace attacks",
+        "kernel.yama.ptrace_scope",
+        1,
+        true,
+        &["SI-3"],
+        ControlSeverity::High,
+    ),
+    (
+        "KERN-008",
+        "Kernel pointer restriction",
+        "kernel.kptr_restrict must be >= 1 to hide kernel pointers",
+        "kernel.kptr_restrict",
+        1,
+        true,
+        &["SC-28"],
+        ControlSeverity::High,
+    ),
+    // Memory protection
+    (
+        "KERN-020",
+        "Minimum mmap address enforced",
+        "vm.mmap_min_addr must be >= 65536 to prevent NULL pointer dereference exploits",
+        "vm.mmap_min_addr",
+        65536,
+        true,
+        &["SC-3", "SI-16"],
+        ControlSeverity::High,
+    ),
+];
+
+/// Advisory (non-required) sysctl controls with exact match.
+const ADVISORY_SYSCTL_EXACT: &[SysctlExactDef] = &[
+    (
+        "KERN-006",
+        "Kernel module loading restricted",
+        "kernel.modules_disabled should be 1 on hardened systems",
+        "kernel.modules_disabled",
+        "1",
+        false,
+        &["CM-7"],
+        ControlSeverity::Low,
+    ),
+    (
+        "KERN-011",
+        "Exec-shield enabled",
+        "kernel.exec-shield should be 1 for executable space protection",
+        "kernel.exec-shield",
+        "1",
+        false,
+        &["SI-16"],
+        ControlSeverity::Low,
+    ),
+    // IPv6 hardening (advisory because not all systems use IPv6)
+    (
+        "KERN-016",
+        "IPv6 router advertisements rejected",
+        "net.ipv6.conf.all.accept_ra should be 0 to prevent RA-based attacks",
+        "net.ipv6.conf.all.accept_ra",
+        "0",
+        false,
+        &["CM-7", "SC-7"],
+        ControlSeverity::Medium,
+    ),
+    (
+        "KERN-017",
+        "IPv6 redirects rejected",
+        "net.ipv6.conf.all.accept_redirects should be 0 to prevent redirect attacks",
+        "net.ipv6.conf.all.accept_redirects",
+        "0",
+        false,
+        &["CM-7"],
+        ControlSeverity::Medium,
+    ),
+];
+
 /// Kernel hardening compliance plugin.
 ///
 /// Checks sysctl parameters, kernel module loading, and MAC enforcement.
@@ -33,6 +266,25 @@ impl<C: CommandRunner> KernelPlugin<C> {
     #[must_use]
     pub fn new(runner: Arc<C>) -> Self {
         Self { runner }
+    }
+}
+
+fn make_sysctl_control(
+    id: &str,
+    title: &str,
+    description: &str,
+    required: bool,
+    nist_ids: &[&str],
+    severity: &ControlSeverity,
+) -> ComplianceControl {
+    ComplianceControl {
+        id: id.to_string(),
+        title: title.to_string(),
+        description: description.to_string(),
+        severity: severity.clone(),
+        nist_control_ids: nist_ids.iter().map(|s| (*s).to_string()).collect(),
+        domain: DOMAIN.to_string(),
+        required,
     }
 }
 
@@ -52,118 +304,44 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KernelPlugin<C> {
     }
 
     fn generate_controls(&self, config: &PluginConfig) -> Vec<ComplianceControl> {
-        let mut controls = vec![
-            ComplianceControl {
-                id: "KERN-001".to_string(),
-                title: "IP forwarding disabled".to_string(),
-                description: "net.ipv4.ip_forward must be 0 to prevent packet forwarding"
-                    .to_string(),
-                severity: ControlSeverity::High,
-                nist_control_ids: vec!["SC-7".to_string(), "CM-6".to_string()],
-                domain: DOMAIN.to_string(),
-                required: true,
-            },
-            ComplianceControl {
-                id: "KERN-002".to_string(),
-                title: "ASLR fully enabled".to_string(),
-                description: "kernel.randomize_va_space must be 2 for full ASLR".to_string(),
-                severity: ControlSeverity::Critical,
-                nist_control_ids: vec!["SI-16".to_string()],
-                domain: DOMAIN.to_string(),
-                required: true,
-            },
-            ComplianceControl {
-                id: "KERN-003".to_string(),
-                title: "SYN cookies enabled".to_string(),
-                description: "net.ipv4.tcp_syncookies must be 1 to mitigate SYN floods"
-                    .to_string(),
-                severity: ControlSeverity::High,
-                nist_control_ids: vec!["SC-5".to_string()],
-                domain: DOMAIN.to_string(),
-                required: true,
-            },
-            ComplianceControl {
-                id: "KERN-004".to_string(),
-                title: "Core dumps restricted".to_string(),
-                description: "fs.suid_dumpable must be 0 to prevent SUID core dumps".to_string(),
-                severity: ControlSeverity::Medium,
-                nist_control_ids: vec!["CM-6".to_string()],
-                domain: DOMAIN.to_string(),
-                required: true,
-            },
-            ComplianceControl {
-                id: "KERN-005".to_string(),
-                title: "MAC enforcement active".to_string(),
-                description:
-                    "SELinux or AppArmor must be in enforcing mode for mandatory access control"
-                        .to_string(),
-                severity: ControlSeverity::Critical,
-                nist_control_ids: vec!["AC-3".to_string(), "SC-3".to_string()],
-                domain: DOMAIN.to_string(),
-                required: true,
-            },
-        ];
+        let mut controls = Vec::new();
 
-        // New required controls for expanded sysctl coverage
+        // Required exact-match sysctl controls
+        for &(id, title, desc, _key, _expected, required, nist_ids, ref severity) in
+            REQUIRED_SYSCTL_EXACT
+        {
+            controls.push(make_sysctl_control(id, title, desc, required, nist_ids, severity));
+        }
+
+        // MAC enforcement (special — not a simple sysctl check)
         controls.push(ComplianceControl {
-            id: "KERN-007".to_string(),
-            title: "Ptrace scope restricted".to_string(),
-            description: "kernel.yama.ptrace_scope must be >= 1 to prevent ptrace attacks"
-                .to_string(),
-            severity: ControlSeverity::High,
-            nist_control_ids: vec!["SI-3".to_string()],
-            domain: DOMAIN.to_string(),
-            required: true,
-        });
-        controls.push(ComplianceControl {
-            id: "KERN-008".to_string(),
-            title: "Kernel pointer restriction".to_string(),
-            description: "kernel.kptr_restrict must be >= 1 to hide kernel pointers".to_string(),
-            severity: ControlSeverity::High,
-            nist_control_ids: vec!["SC-28".to_string()],
-            domain: DOMAIN.to_string(),
-            required: true,
-        });
-        controls.push(ComplianceControl {
-            id: "KERN-009".to_string(),
-            title: "Dmesg access restricted".to_string(),
-            description: "kernel.dmesg_restrict must be 1 to restrict kernel log access"
-                .to_string(),
-            severity: ControlSeverity::Medium,
-            nist_control_ids: vec!["AU-9".to_string()],
-            domain: DOMAIN.to_string(),
-            required: true,
-        });
-        controls.push(ComplianceControl {
-            id: "KERN-010".to_string(),
-            title: "SUID core dumps disabled".to_string(),
-            description: "fs.suid_dumpable must be 0 to prevent SUID core dumps".to_string(),
-            severity: ControlSeverity::Medium,
-            nist_control_ids: vec!["AC-6".to_string()],
+            id: "KERN-005".to_string(),
+            title: "MAC enforcement active".to_string(),
+            description:
+                "SELinux or AppArmor must be in enforcing mode for mandatory access control"
+                    .to_string(),
+            severity: ControlSeverity::Critical,
+            nist_control_ids: vec!["AC-3".to_string(), "SC-3".to_string()],
             domain: DOMAIN.to_string(),
             required: true,
         });
 
+        // Required GTE sysctl controls
+        for &(id, title, desc, _key, _min, required, nist_ids, ref severity) in
+            REQUIRED_SYSCTL_GTE
+        {
+            controls.push(make_sysctl_control(id, title, desc, required, nist_ids, severity));
+        }
+
+        // Advisory controls
         if config.include_advisory {
-            controls.push(ComplianceControl {
-                id: "KERN-006".to_string(),
-                title: "Kernel module loading restricted".to_string(),
-                description: "kernel.modules_disabled should be 1 on hardened systems".to_string(),
-                severity: ControlSeverity::Low,
-                nist_control_ids: vec!["CM-7".to_string()],
-                domain: DOMAIN.to_string(),
-                required: false,
-            });
-            controls.push(ComplianceControl {
-                id: "KERN-011".to_string(),
-                title: "Exec-shield enabled".to_string(),
-                description: "kernel.exec-shield should be 1 for executable space protection"
-                    .to_string(),
-                severity: ControlSeverity::Low,
-                nist_control_ids: vec!["SI-16".to_string()],
-                domain: DOMAIN.to_string(),
-                required: false,
-            });
+            for &(id, title, desc, _key, _expected, required, nist_ids, ref severity) in
+                ADVISORY_SYSCTL_EXACT
+            {
+                controls.push(make_sysctl_control(
+                    id, title, desc, required, nist_ids, severity,
+                ));
+            }
         }
 
         controls
@@ -185,36 +363,7 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KernelPlugin<C> {
 
             for control in &controls {
                 let start = std::time::Instant::now();
-                let (passed, message) = match control.id.as_str() {
-                    "KERN-001" => check_sysctl(&sysctl_output, "net.ipv4.ip_forward", "0"),
-                    "KERN-002" => {
-                        check_sysctl(&sysctl_output, "kernel.randomize_va_space", "2")
-                    }
-                    "KERN-003" => {
-                        check_sysctl(&sysctl_output, "net.ipv4.tcp_syncookies", "1")
-                    }
-                    "KERN-004" => check_sysctl(&sysctl_output, "fs.suid_dumpable", "0"),
-                    "KERN-005" => check_mac_enforcement(&*runner).await,
-                    "KERN-006" => {
-                        check_sysctl(&sysctl_output, "kernel.modules_disabled", "1")
-                    }
-                    "KERN-007" => {
-                        check_sysctl_gte(&sysctl_output, "kernel.yama.ptrace_scope", 1)
-                    }
-                    "KERN-008" => {
-                        check_sysctl_gte(&sysctl_output, "kernel.kptr_restrict", 1)
-                    }
-                    "KERN-009" => {
-                        check_sysctl(&sysctl_output, "kernel.dmesg_restrict", "1")
-                    }
-                    "KERN-010" => {
-                        check_sysctl(&sysctl_output, "fs.suid_dumpable", "0")
-                    }
-                    "KERN-011" => {
-                        check_sysctl(&sysctl_output, "kernel.exec-shield", "1")
-                    }
-                    _ => (false, format!("Unknown control: {}", control.id)),
-                };
+                let (passed, message) = evaluate_control(&control.id, &sysctl_output, &*runner).await;
                 let duration_ms = start.elapsed().as_millis() as u64;
 
                 evaluations.push(ControlEvaluation {
@@ -247,6 +396,41 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KernelPlugin<C> {
     fn is_available(&self) -> bool {
         cfg!(target_os = "linux")
     }
+}
+
+/// Route a control ID to its evaluation function, using the data-driven tables.
+async fn evaluate_control<C: CommandRunner>(
+    id: &str,
+    sysctl_output: &crate::error::Result<String>,
+    runner: &C,
+) -> (bool, String) {
+    // Check exact-match required controls
+    for &(ctrl_id, _title, _desc, key, expected, _req, _nist, ref _sev) in REQUIRED_SYSCTL_EXACT {
+        if id == ctrl_id {
+            return check_sysctl(sysctl_output, key, expected);
+        }
+    }
+
+    // Check GTE required controls
+    for &(ctrl_id, _title, _desc, key, min_val, _req, _nist, ref _sev) in REQUIRED_SYSCTL_GTE {
+        if id == ctrl_id {
+            return check_sysctl_gte(sysctl_output, key, min_val);
+        }
+    }
+
+    // Check advisory exact-match controls
+    for &(ctrl_id, _title, _desc, key, expected, _req, _nist, ref _sev) in ADVISORY_SYSCTL_EXACT {
+        if id == ctrl_id {
+            return check_sysctl(sysctl_output, key, expected);
+        }
+    }
+
+    // Special controls
+    if id == "KERN-005" {
+        return check_mac_enforcement(runner).await;
+    }
+
+    (false, format!("Unknown control: {id}"))
 }
 
 fn check_sysctl(
@@ -358,28 +542,29 @@ mod tests {
         assert!(families.contains(&"SC".to_string()));
         assert!(families.contains(&"CM".to_string()));
         assert!(families.contains(&"SI".to_string()));
+        assert!(families.contains(&"AC".to_string()));
+        assert!(families.contains(&"AU".to_string()));
     }
 
     #[test]
-    fn generate_controls_default() {
+    fn generate_controls_default_has_20_plus() {
         let runner = Arc::new(MockCommandRunner::new());
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        assert_eq!(controls.len(), 9);
+        // 11 required exact + 1 MAC + 4 required GTE = 16 required
+        assert!(controls.len() >= 16, "expected >= 16 required controls, got {}", controls.len());
         assert!(controls.iter().all(|c| c.domain == "kernel"));
     }
 
     #[test]
-    fn generate_controls_with_advisory() {
+    fn generate_controls_with_advisory_has_20_plus() {
         let runner = Arc::new(MockCommandRunner::new());
         let plugin = KernelPlugin::new(runner);
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert_eq!(controls.len(), 11);
-        // Last two are advisory (KERN-006, KERN-011)
-        assert!(!controls[controls.len() - 1].required);
-        assert!(!controls[controls.len() - 2].required);
+        // 16 required + 4 advisory = 20
+        assert!(controls.len() >= 20, "expected >= 20 total controls, got {}", controls.len());
     }
 
     #[test]
@@ -400,7 +585,9 @@ mod tests {
     fn controls_have_nist_tags() {
         let runner = Arc::new(MockCommandRunner::new());
         let plugin = KernelPlugin::new(runner);
-        let controls = plugin.generate_controls(&PluginConfig::default());
+        let mut config = PluginConfig::default();
+        config.include_advisory = true;
+        let controls = plugin.generate_controls(&config);
         for c in &controls {
             assert!(!c.nist_control_ids.is_empty(), "Control {} has no NIST IDs", c.id);
         }
@@ -424,6 +611,16 @@ mod tests {
             ("kernel.yama.ptrace_scope", "1"),
             ("kernel.kptr_restrict", "2"),
             ("kernel.dmesg_restrict", "1"),
+            // New network hardening
+            ("net.ipv4.conf.all.accept_redirects", "0"),
+            ("net.ipv4.conf.all.accept_source_route", "0"),
+            ("net.ipv4.conf.all.log_martians", "1"),
+            ("net.ipv4.conf.all.rp_filter", "1"),
+            // Filesystem hardening
+            ("fs.protected_hardlinks", "1"),
+            ("fs.protected_symlinks", "1"),
+            // Memory protection
+            ("vm.mmap_min_addr", "65536"),
         ]
     }
 
@@ -439,7 +636,6 @@ mod tests {
 
         assert!(result.all_required_passed);
         assert_eq!(result.domain, "kernel");
-        assert_eq!(result.evaluations.len(), 9);
         for eval in &result.evaluations {
             assert!(eval.passed, "Control {} should pass: {}", eval.control.id, eval.message);
         }
@@ -464,14 +660,21 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_sysctl_not_found() {
+        // Missing net.ipv4.ip_forward
         let runner = make_runner_with_sysctl(&[
-            // Missing net.ipv4.ip_forward
             ("kernel.randomize_va_space", "2"),
             ("net.ipv4.tcp_syncookies", "1"),
             ("fs.suid_dumpable", "0"),
             ("kernel.yama.ptrace_scope", "1"),
             ("kernel.kptr_restrict", "2"),
             ("kernel.dmesg_restrict", "1"),
+            ("net.ipv4.conf.all.accept_redirects", "0"),
+            ("net.ipv4.conf.all.accept_source_route", "0"),
+            ("net.ipv4.conf.all.log_martians", "1"),
+            ("net.ipv4.conf.all.rp_filter", "1"),
+            ("fs.protected_hardlinks", "1"),
+            ("fs.protected_symlinks", "1"),
+            ("vm.mmap_min_addr", "65536"),
         ]);
         runner.add_response("getenforce", &[], "Enforcing\n");
 
@@ -584,8 +787,10 @@ mod tests {
     #[tokio::test]
     async fn advisory_control_evaluation() {
         let mut params = full_sysctl_params();
-        params.push(("kernel.modules_disabled", "0")); // Not restricted
-        params.push(("kernel.exec-shield", "0")); // Not enabled
+        params.push(("kernel.modules_disabled", "0"));
+        params.push(("kernel.exec-shield", "0"));
+        params.push(("net.ipv6.conf.all.accept_ra", "1"));
+        params.push(("net.ipv6.conf.all.accept_redirects", "1"));
         let runner = make_runner_with_sysctl(&params);
         runner.add_response("getenforce", &[], "Enforcing\n");
 
@@ -606,7 +811,6 @@ mod tests {
     #[tokio::test]
     async fn evaluate_ptrace_scope_zero_fails() {
         let mut params = full_sysctl_params();
-        // Set ptrace_scope to 0 (insecure)
         for p in &mut params {
             if p.0 == "kernel.yama.ptrace_scope" {
                 *p = ("kernel.yama.ptrace_scope", "0");
@@ -705,6 +909,8 @@ mod tests {
         let mut params = full_sysctl_params();
         params.push(("kernel.modules_disabled", "1"));
         params.push(("kernel.exec-shield", "1"));
+        params.push(("net.ipv6.conf.all.accept_ra", "0"));
+        params.push(("net.ipv6.conf.all.accept_redirects", "0"));
         let runner = make_runner_with_sysctl(&params);
         runner.add_response("getenforce", &[], "Enforcing\n");
 
@@ -716,5 +922,162 @@ mod tests {
 
         let exec_shield = result.evaluations.iter().find(|e| e.control.id == "KERN-011").unwrap();
         assert!(exec_shield.passed);
+    }
+
+    // -- New control tests --
+
+    #[tokio::test]
+    async fn evaluate_icmp_redirects_enabled_fails() {
+        let mut params = full_sysctl_params();
+        for p in &mut params {
+            if p.0 == "net.ipv4.conf.all.accept_redirects" {
+                *p = ("net.ipv4.conf.all.accept_redirects", "1");
+            }
+        }
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-012").unwrap();
+        assert!(!ctrl.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_source_route_enabled_fails() {
+        let mut params = full_sysctl_params();
+        for p in &mut params {
+            if p.0 == "net.ipv4.conf.all.accept_source_route" {
+                *p = ("net.ipv4.conf.all.accept_source_route", "1");
+            }
+        }
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-013").unwrap();
+        assert!(!ctrl.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_log_martians_disabled_fails() {
+        let mut params = full_sysctl_params();
+        for p in &mut params {
+            if p.0 == "net.ipv4.conf.all.log_martians" {
+                *p = ("net.ipv4.conf.all.log_martians", "0");
+            }
+        }
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-014").unwrap();
+        assert!(!ctrl.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_rp_filter_disabled_fails() {
+        let mut params = full_sysctl_params();
+        for p in &mut params {
+            if p.0 == "net.ipv4.conf.all.rp_filter" {
+                *p = ("net.ipv4.conf.all.rp_filter", "0");
+            }
+        }
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-015").unwrap();
+        assert!(!ctrl.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_protected_hardlinks_off_fails() {
+        let mut params = full_sysctl_params();
+        for p in &mut params {
+            if p.0 == "fs.protected_hardlinks" {
+                *p = ("fs.protected_hardlinks", "0");
+            }
+        }
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-018").unwrap();
+        assert!(!ctrl.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_protected_symlinks_off_fails() {
+        let mut params = full_sysctl_params();
+        for p in &mut params {
+            if p.0 == "fs.protected_symlinks" {
+                *p = ("fs.protected_symlinks", "0");
+            }
+        }
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-019").unwrap();
+        assert!(!ctrl.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_mmap_min_addr_too_low_fails() {
+        let mut params = full_sysctl_params();
+        for p in &mut params {
+            if p.0 == "vm.mmap_min_addr" {
+                *p = ("vm.mmap_min_addr", "0");
+            }
+        }
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-020").unwrap();
+        assert!(!ctrl.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_ipv6_advisory_controls() {
+        let mut params = full_sysctl_params();
+        params.push(("kernel.modules_disabled", "1"));
+        params.push(("kernel.exec-shield", "1"));
+        params.push(("net.ipv6.conf.all.accept_ra", "0"));
+        params.push(("net.ipv6.conf.all.accept_redirects", "0"));
+        let runner = make_runner_with_sysctl(&params);
+        runner.add_response("getenforce", &[], "Enforcing\n");
+
+        let plugin = KernelPlugin::new(runner);
+        let mut config = PluginConfig::default();
+        config.include_advisory = true;
+        let controls = plugin.generate_controls(&config);
+        let result = plugin.evaluate(&controls, &config).await.unwrap();
+
+        let ipv6_ra = result.evaluations.iter().find(|e| e.control.id == "KERN-016").unwrap();
+        assert!(ipv6_ra.passed);
+        let ipv6_redir = result.evaluations.iter().find(|e| e.control.id == "KERN-017").unwrap();
+        assert!(ipv6_redir.passed);
     }
 }

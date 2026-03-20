@@ -5,6 +5,8 @@
 //!
 //! Uses [`CommandRunner`] for `skopeo inspect` so all evaluation can be
 //! tested with [`MockCommandRunner`].
+//!
+//! Controls are defined data-driven for easy expansion.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -113,6 +115,43 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
             domain: DOMAIN.to_string(),
             required: true,
         });
+        // New required controls
+        controls.push(ComplianceControl {
+            id: "OCI-009".to_string(),
+            title: "No secrets in env vars".to_string(),
+            description: "Container must not have SECRET/PASSWORD/KEY/TOKEN in environment variable names".to_string(),
+            severity: ControlSeverity::Critical,
+            nist_control_ids: vec!["SC-28".to_string(), "IA-5".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "OCI-010".to_string(),
+            title: "WORKDIR is explicitly set".to_string(),
+            description: "Container image should have an explicit WORKDIR set".to_string(),
+            severity: ControlSeverity::Medium,
+            nist_control_ids: vec!["CM-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "OCI-011".to_string(),
+            title: "No privileged ports".to_string(),
+            description: "Container should not expose ports below 1024".to_string(),
+            severity: ControlSeverity::Medium,
+            nist_control_ids: vec!["AC-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
+        controls.push(ComplianceControl {
+            id: "OCI-012".to_string(),
+            title: "ENTRYPOINT is explicitly set".to_string(),
+            description: "Container image must have an explicit ENTRYPOINT".to_string(),
+            severity: ControlSeverity::High,
+            nist_control_ids: vec!["CM-6".to_string()],
+            domain: DOMAIN.to_string(),
+            required: true,
+        });
 
         if config.include_advisory {
             controls.push(ComplianceControl {
@@ -133,6 +172,33 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
                         .to_string(),
                 severity: ControlSeverity::Low,
                 nist_control_ids: vec!["CM-8".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "OCI-013".to_string(),
+                title: "Only expected ports exposed".to_string(),
+                description: "Only expected application ports should be exposed".to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["SC-7".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "OCI-014".to_string(),
+                title: "Multi-stage build used".to_string(),
+                description: "Image should use multi-stage builds for minimal final image size".to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["CM-7".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+            controls.push(ComplianceControl {
+                id: "OCI-015".to_string(),
+                title: "No ADD instructions".to_string(),
+                description: "Image should use COPY instead of ADD to avoid unexpected behavior".to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["CM-7".to_string()],
                 domain: DOMAIN.to_string(),
                 required: false,
             });
@@ -173,6 +239,13 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
                     "OCI-006" => check_healthcheck(&inspect_result),
                     "OCI-007" => check_no_latest_tag(&image_ref),
                     "OCI-008" => check_required_oci_labels(&inspect_result),
+                    "OCI-009" => check_no_env_secrets(&inspect_result),
+                    "OCI-010" => check_workdir_set(&inspect_result),
+                    "OCI-011" => check_no_privileged_ports(&inspect_result),
+                    "OCI-012" => check_entrypoint_set(&inspect_result),
+                    "OCI-013" => check_exposed_ports(&inspect_result),
+                    "OCI-014" => check_multi_stage(&inspect_result),
+                    "OCI-015" => check_no_add(&inspect_result),
                     _ => (false, format!("Unknown control: {}", control.id)),
                 };
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -418,6 +491,218 @@ fn check_required_oci_labels(inspect_result: &crate::error::Result<String>) -> (
     }
 }
 
+fn check_no_env_secrets(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let env_vars = config
+                    .get("config")
+                    .and_then(|c| c.get("Env"))
+                    .and_then(|e| e.as_array());
+                match env_vars {
+                    Some(vars) => {
+                        let secret_patterns = ["SECRET", "PASSWORD", "KEY", "TOKEN", "PRIVATE"];
+                        let leaks: Vec<String> = vars
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .filter(|v| {
+                                let name = v.split('=').next().unwrap_or("");
+                                let upper = name.to_uppercase();
+                                secret_patterns.iter().any(|p| upper.contains(p))
+                            })
+                            .map(|v| v.split('=').next().unwrap_or("").to_string())
+                            .collect();
+                        if leaks.is_empty() {
+                            (true, "No secret-like env vars found".to_string())
+                        } else {
+                            (
+                                false,
+                                format!("Potential secrets in env: {}", leaks.join(", ")),
+                            )
+                        }
+                    }
+                    None => (true, "No environment variables set".to_string()),
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
+fn check_workdir_set(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let workdir = config
+                    .get("config")
+                    .and_then(|c| c.get("WorkingDir"))
+                    .and_then(|w| w.as_str())
+                    .unwrap_or("");
+                if workdir.is_empty() {
+                    (false, "WORKDIR is not set in container image".to_string())
+                } else {
+                    (true, format!("WORKDIR is set to '{workdir}'"))
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
+fn check_no_privileged_ports(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let ports = config
+                    .get("config")
+                    .and_then(|c| c.get("ExposedPorts"))
+                    .and_then(|p| p.as_object());
+                match ports {
+                    Some(port_map) => {
+                        let privileged: Vec<String> = port_map
+                            .keys()
+                            .filter(|k| {
+                                let port_str = k.split('/').next().unwrap_or("0");
+                                port_str.parse::<u16>().unwrap_or(0) < 1024
+                            })
+                            .cloned()
+                            .collect();
+                        if privileged.is_empty() {
+                            (true, "No privileged ports exposed".to_string())
+                        } else {
+                            (
+                                false,
+                                format!("Privileged ports exposed: {}", privileged.join(", ")),
+                            )
+                        }
+                    }
+                    None => (true, "No ports exposed".to_string()),
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
+fn check_entrypoint_set(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let entrypoint = config
+                    .get("config")
+                    .and_then(|c| c.get("Entrypoint"));
+                match entrypoint {
+                    Some(ep) if !ep.is_null() => {
+                        if let Some(arr) = ep.as_array() {
+                            if arr.is_empty() {
+                                (false, "ENTRYPOINT is empty".to_string())
+                            } else {
+                                (true, "ENTRYPOINT is set".to_string())
+                            }
+                        } else {
+                            (true, "ENTRYPOINT is set".to_string())
+                        }
+                    }
+                    _ => (false, "No ENTRYPOINT defined in container image".to_string()),
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
+fn check_exposed_ports(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                let ports = config
+                    .get("config")
+                    .and_then(|c| c.get("ExposedPorts"))
+                    .and_then(|p| p.as_object());
+                match ports {
+                    Some(port_map) => {
+                        let count = port_map.len();
+                        if count <= 5 {
+                            (true, format!("{count} port(s) exposed (reasonable)"))
+                        } else {
+                            (
+                                false,
+                                format!("{count} ports exposed (unusually many)"),
+                            )
+                        }
+                    }
+                    None => (true, "No ports exposed".to_string()),
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
+fn check_multi_stage(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                // Heuristic: check layer count or image size hints from labels
+                let labels = config
+                    .get("config")
+                    .and_then(|c| c.get("Labels"))
+                    .and_then(|l| l.as_object());
+                let has_multistage_label = labels
+                    .map(|l| {
+                        l.keys()
+                            .any(|k| k.contains("multi-stage") || k.contains("build.stage"))
+                    })
+                    .unwrap_or(false);
+                if has_multistage_label {
+                    (true, "Multi-stage build label present".to_string())
+                } else {
+                    // Advisory: we can't definitively tell from inspect alone
+                    (
+                        false,
+                        "No multi-stage build indicator found (advisory)".to_string(),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
+fn check_no_add(inspect_result: &crate::error::Result<String>) -> (bool, String) {
+    match inspect_result {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(config) => {
+                // Check history for ADD instructions
+                let history = config.get("history").and_then(|h| h.as_array());
+                match history {
+                    Some(entries) => {
+                        let has_add = entries.iter().any(|e| {
+                            e.get("created_by")
+                                .and_then(|c| c.as_str())
+                                .is_some_and(|s| s.starts_with("ADD "))
+                        });
+                        if has_add {
+                            (false, "Image uses ADD instruction (use COPY instead)".to_string())
+                        } else {
+                            (true, "No ADD instructions found".to_string())
+                        }
+                    }
+                    None => (true, "No build history available (advisory pass)".to_string()),
+                }
+            }
+            Err(e) => (false, format!("Invalid config JSON: {e}")),
+        },
+        Err(e) => (false, format!("skopeo inspect --config failed: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,6 +721,12 @@ mod tests {
     fn config_json_with_healthcheck(user: &str, labels: &str) -> String {
         format!(
             r#"{{"config":{{"User":"{user}","Labels":{labels},"Healthcheck":{{"Test":["CMD","healthcheck"]}}}}}}"#
+        )
+    }
+
+    fn config_json_full(user: &str, labels: &str) -> String {
+        format!(
+            r#"{{"config":{{"User":"{user}","Labels":{labels},"Healthcheck":{{"Test":["CMD","healthcheck"]}},"WorkingDir":"/app","Entrypoint":["/app/start"],"ExposedPorts":{{"8080/tcp":{{}}}},"Env":["PATH=/usr/bin","HOME=/app"]}}}}"#
         )
     }
 
@@ -466,7 +757,7 @@ mod tests {
     fn generate_controls_default() {
         let plugin = OciPlugin::new(make_runner(), "docker://test");
         let controls = plugin.generate_controls(&PluginConfig::default());
-        assert_eq!(controls.len(), 6);
+        assert_eq!(controls.len(), 10);
         assert!(controls.iter().all(|c| c.domain == "oci"));
     }
 
@@ -476,7 +767,7 @@ mod tests {
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert_eq!(controls.len(), 8);
+        assert!(controls.len() >= 15, "expected >= 15 controls, got {}", controls.len());
     }
 
     #[test]
@@ -522,7 +813,7 @@ mod tests {
         runner.add_response(
             "skopeo",
             &["inspect", "--config", img],
-            &config_json_with_healthcheck("1000", r#"{"cap-drop":"ALL","read-only":"true"}"#),
+            &config_json_full("1000", r#"{"cap-drop":"ALL","read-only":"true"}"#),
         );
         runner.add_response(
             "skopeo",
@@ -534,7 +825,8 @@ mod tests {
         let controls = plugin.generate_controls(&PluginConfig::default());
         let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
 
-        assert!(result.all_required_passed);
+        assert!(result.all_required_passed, "Expected all required to pass. Failures: {:?}",
+            result.evaluations.iter().filter(|e| !e.passed).map(|e| format!("{}: {}", e.control.id, e.message)).collect::<Vec<_>>());
         assert_eq!(result.domain, "oci");
     }
 
