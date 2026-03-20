@@ -116,4 +116,10 @@ pub mod prelude {
         IacTestAttester, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport,
         MockIacTestAttester,
     };
+    pub use crate::compliance::plugin::{
+        ComplianceControl, CompliancePlugin, ControlEvaluation, ControlSeverity,
+        DomainEvaluation, MockPlugin, PluginConfig,
+    };
+    pub use crate::compliance::registry::{PluginRegistry, PluginRegistryBuilder};
+    pub use crate::compliance::plugin_orchestrator::{ComplianceOrchestrator, FullComplianceReport};
 }

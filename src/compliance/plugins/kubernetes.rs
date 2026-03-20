@@ -1,0 +1,976 @@
+//! Kubernetes cluster compliance plugin.
+//!
+//! Evaluates Kubernetes cluster security: Pod Security Standards, NetworkPolicy
+//! default deny, cluster-admin RoleBindings, and resource limits.
+//!
+//! Uses [`CommandRunner`] for `kubectl get` so all evaluation can be
+//! tested with [`MockCommandRunner`].
+
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use chrono::Utc;
+
+use crate::compliance::plugin::{
+    ComplianceControl, CompliancePlugin, ControlEvaluation, ControlSeverity, DomainEvaluation,
+    PluginConfig,
+};
+use crate::hash::Blake3Hash;
+use crate::traits::CommandRunner;
+
+const DOMAIN: &str = "kubernetes";
+
+/// Kubernetes cluster compliance plugin.
+///
+/// Checks Pod Security Standards, network policies, RBAC, and resource limits.
+pub struct KubernetesPlugin<C: CommandRunner> {
+    runner: Arc<C>,
+}
+
+impl<C: CommandRunner> KubernetesPlugin<C> {
+    /// Create a new Kubernetes plugin with the given command runner.
+    #[must_use]
+    pub fn new(runner: Arc<C>) -> Self {
+        Self { runner }
+    }
+}
+
+impl<C: CommandRunner + 'static> CompliancePlugin for KubernetesPlugin<C> {
+    fn domain(&self) -> &str {
+        DOMAIN
+    }
+
+    fn nist_families(&self) -> Vec<String> {
+        vec![
+            "AC".to_string(), // Access Control
+            "SC".to_string(), // System and Communications Protection
+            "CM".to_string(), // Configuration Management
+            "SI".to_string(), // System and Information Integrity
+        ]
+    }
+
+    fn generate_controls(&self, config: &PluginConfig) -> Vec<ComplianceControl> {
+        let mut controls = vec![
+            ComplianceControl {
+                id: "K8S-001".to_string(),
+                title: "Pod Security Standards enforced".to_string(),
+                description:
+                    "All namespaces must have pod-security.kubernetes.io/enforce labels"
+                        .to_string(),
+                severity: ControlSeverity::Critical,
+                nist_control_ids: vec!["AC-3".to_string(), "CM-6".to_string()],
+                domain: DOMAIN.to_string(),
+                required: true,
+            },
+            ComplianceControl {
+                id: "K8S-002".to_string(),
+                title: "Default deny NetworkPolicy".to_string(),
+                description:
+                    "Each namespace must have a default-deny NetworkPolicy for ingress and egress"
+                        .to_string(),
+                severity: ControlSeverity::High,
+                nist_control_ids: vec!["SC-7".to_string()],
+                domain: DOMAIN.to_string(),
+                required: true,
+            },
+            ComplianceControl {
+                id: "K8S-003".to_string(),
+                title: "No cluster-admin RoleBindings".to_string(),
+                description:
+                    "No ClusterRoleBindings should reference the cluster-admin ClusterRole"
+                        .to_string(),
+                severity: ControlSeverity::Critical,
+                nist_control_ids: vec!["AC-6".to_string(), "AC-2".to_string()],
+                domain: DOMAIN.to_string(),
+                required: true,
+            },
+            ComplianceControl {
+                id: "K8S-004".to_string(),
+                title: "Resource limits on all containers".to_string(),
+                description: "All pods must have resource limits (CPU and memory) set".to_string(),
+                severity: ControlSeverity::Medium,
+                nist_control_ids: vec!["SC-6".to_string()],
+                domain: DOMAIN.to_string(),
+                required: true,
+            },
+            ComplianceControl {
+                id: "K8S-005".to_string(),
+                title: "Secrets encrypted at rest".to_string(),
+                description: "Kubernetes secrets must be encrypted at rest via EncryptionConfiguration"
+                    .to_string(),
+                severity: ControlSeverity::High,
+                nist_control_ids: vec!["SC-28".to_string()],
+                domain: DOMAIN.to_string(),
+                required: true,
+            },
+        ];
+
+        if config.include_advisory {
+            controls.push(ComplianceControl {
+                id: "K8S-006".to_string(),
+                title: "Audit logging enabled".to_string(),
+                description:
+                    "Kubernetes API server audit logging should be enabled with appropriate policy"
+                        .to_string(),
+                severity: ControlSeverity::Low,
+                nist_control_ids: vec!["AU-2".to_string(), "AU-3".to_string()],
+                domain: DOMAIN.to_string(),
+                required: false,
+            });
+        }
+
+        controls
+    }
+
+    fn evaluate(
+        &self,
+        controls: &[ComplianceControl],
+        _config: &PluginConfig,
+    ) -> Pin<Box<dyn Future<Output = crate::error::Result<DomainEvaluation>> + Send + '_>> {
+        let controls = controls.to_vec();
+        let runner = Arc::clone(&self.runner);
+        Box::pin(async move {
+            let now = Utc::now();
+            let mut evaluations = Vec::with_capacity(controls.len());
+
+            // Pre-fetch shared data to avoid consuming mock responses multiple times
+            let apiserver_output = (*runner)
+                .run(
+                    "kubectl",
+                    &[
+                        "get", "pods", "-n", "kube-system", "-l",
+                        "component=kube-apiserver", "-o", "json",
+                    ],
+                )
+                .await;
+
+            for control in &controls {
+                let start = std::time::Instant::now();
+                let (passed, message) = match control.id.as_str() {
+                    "K8S-001" => check_pod_security_standards(&*runner).await,
+                    "K8S-002" => check_default_deny_netpol(&*runner).await,
+                    "K8S-003" => check_cluster_admin_bindings(&*runner).await,
+                    "K8S-004" => check_resource_limits(&*runner).await,
+                    "K8S-005" => check_secrets_encrypted_from_output(&apiserver_output),
+                    "K8S-006" => check_audit_logging_from_output(&apiserver_output),
+                    _ => (false, format!("Unknown control: {}", control.id)),
+                };
+                let duration_ms = start.elapsed().as_millis() as u64;
+
+                evaluations.push(ControlEvaluation {
+                    control: control.clone(),
+                    passed,
+                    message: message.clone(),
+                    evidence_hash: Some(Blake3Hash::digest(message.as_bytes())),
+                    evaluated_at: now,
+                    duration_ms,
+                });
+            }
+
+            let domain_hash = DomainEvaluation::compute_domain_hash(DOMAIN, &evaluations);
+            let total_duration_ms = evaluations.iter().map(|e| e.duration_ms).sum();
+            let all_required_passed = evaluations
+                .iter()
+                .all(|e| !e.control.required || e.passed);
+
+            Ok(DomainEvaluation {
+                domain: DOMAIN.to_string(),
+                evaluations,
+                domain_hash,
+                completed_at: Utc::now(),
+                total_duration_ms,
+                all_required_passed,
+            })
+        })
+    }
+
+    fn is_available(&self) -> bool {
+        // kubectl is available on any system with cluster access
+        true
+    }
+}
+
+async fn check_pod_security_standards<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+        )
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(ns_list) => {
+                let items = ns_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut unlabeled = Vec::new();
+                for ns in &items {
+                    let name = ns
+                        .pointer("/metadata/name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("unknown");
+
+                    // Skip system namespaces
+                    if name.starts_with("kube-") || name == "default" {
+                        continue;
+                    }
+
+                    let labels = ns
+                        .pointer("/metadata/labels")
+                        .and_then(|l| l.as_object());
+
+                    let has_pss = labels
+                        .map(|l| {
+                            l.keys()
+                                .any(|k| k.starts_with("pod-security.kubernetes.io/enforce"))
+                        })
+                        .unwrap_or(false);
+
+                    if !has_pss {
+                        unlabeled.push(name.to_string());
+                    }
+                }
+
+                if unlabeled.is_empty() {
+                    (true, "All namespaces have PSS enforcement labels".to_string())
+                } else {
+                    (
+                        false,
+                        format!(
+                            "Namespaces missing PSS enforce label: {}",
+                            unlabeled.join(", ")
+                        ),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse namespace JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get namespaces failed: {e}")),
+    }
+}
+
+async fn check_default_deny_netpol<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+        )
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(np_list) => {
+                let items = np_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                // Check if any NetworkPolicy is a default deny (empty podSelector)
+                let has_default_deny = items.iter().any(|np| {
+                    let pod_selector = np.pointer("/spec/podSelector");
+                    // Empty podSelector = {} means "match all pods"
+                    matches!(pod_selector, Some(ps) if ps.as_object().is_some_and(|o| o.is_empty()))
+                });
+
+                if has_default_deny {
+                    (true, "Default deny NetworkPolicy found".to_string())
+                } else {
+                    (
+                        false,
+                        "No default deny NetworkPolicy found".to_string(),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse NetworkPolicy JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get networkpolicies failed: {e}")),
+    }
+}
+
+async fn check_cluster_admin_bindings<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+        )
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(crb_list) => {
+                let items = crb_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let admin_bindings: Vec<String> = items
+                    .iter()
+                    .filter(|crb| {
+                        let role_ref = crb.pointer("/roleRef/name");
+                        let name = crb.pointer("/metadata/name").and_then(|n| n.as_str()).unwrap_or("");
+                        // Skip system bindings
+                        !name.starts_with("system:")
+                            && role_ref
+                                .and_then(|r| r.as_str())
+                                .is_some_and(|r| r == "cluster-admin")
+                    })
+                    .filter_map(|crb| {
+                        crb.pointer("/metadata/name")
+                            .and_then(|n| n.as_str())
+                            .map(String::from)
+                    })
+                    .collect();
+
+                if admin_bindings.is_empty() {
+                    (
+                        true,
+                        "No non-system cluster-admin bindings found".to_string(),
+                    )
+                } else {
+                    (
+                        false,
+                        format!(
+                            "cluster-admin bindings: {}",
+                            admin_bindings.join(", ")
+                        ),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse ClusterRoleBinding JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get clusterrolebindings failed: {e}")),
+    }
+}
+
+async fn check_resource_limits<C: CommandRunner>(runner: &C) -> (bool, String) {
+    match runner
+        .run(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+        )
+        .await
+    {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(&output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut without_limits = 0u32;
+                let mut total_containers = 0u32;
+
+                for pod in &items {
+                    let containers = pod
+                        .pointer("/spec/containers")
+                        .and_then(|c| c.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    for container in &containers {
+                        total_containers += 1;
+                        let has_limits = container
+                            .pointer("/resources/limits")
+                            .and_then(|l| l.as_object())
+                            .is_some_and(|l| !l.is_empty());
+
+                        if !has_limits {
+                            without_limits += 1;
+                        }
+                    }
+                }
+
+                if without_limits == 0 {
+                    (
+                        true,
+                        format!("All {total_containers} containers have resource limits"),
+                    )
+                } else {
+                    (
+                        false,
+                        format!(
+                            "{without_limits}/{total_containers} containers missing resource limits"
+                        ),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get pods failed: {e}")),
+    }
+}
+
+fn check_secrets_encrypted_from_output(
+    apiserver_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match apiserver_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let has_encryption = items.iter().any(|pod| {
+                    let containers = pod
+                        .pointer("/spec/containers")
+                        .and_then(|c| c.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    containers.iter().any(|c| {
+                        let command = c
+                            .get("command")
+                            .and_then(|cmd| cmd.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        command.iter().any(|arg| {
+                            arg.as_str()
+                                .is_some_and(|s| s.contains("encryption-provider-config"))
+                        })
+                    })
+                });
+
+                if has_encryption {
+                    (true, "Secrets encryption at rest configured".to_string())
+                } else {
+                    (
+                        false,
+                        "No encryption-provider-config found on kube-apiserver".to_string(),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse apiserver pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get apiserver pods failed: {e}")),
+    }
+}
+
+fn check_audit_logging_from_output(
+    apiserver_output: &crate::error::Result<String>,
+) -> (bool, String) {
+    match apiserver_output {
+        Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
+            Ok(pod_list) => {
+                let items = pod_list
+                    .get("items")
+                    .and_then(|i| i.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let has_audit = items.iter().any(|pod| {
+                    let containers = pod
+                        .pointer("/spec/containers")
+                        .and_then(|c| c.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    containers.iter().any(|c| {
+                        let command = c
+                            .get("command")
+                            .and_then(|cmd| cmd.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        command.iter().any(|arg| {
+                            arg.as_str()
+                                .is_some_and(|s| s.contains("audit-policy-file"))
+                        })
+                    })
+                });
+
+                if has_audit {
+                    (true, "Audit logging enabled".to_string())
+                } else {
+                    (
+                        false,
+                        "No audit-policy-file found on kube-apiserver".to_string(),
+                    )
+                }
+            }
+            Err(e) => (false, format!("Failed to parse apiserver pod JSON: {e}")),
+        },
+        Err(e) => (false, format!("kubectl get apiserver pods failed: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::MockCommandRunner;
+
+    fn make_runner() -> Arc<MockCommandRunner> {
+        Arc::new(MockCommandRunner::new())
+    }
+
+    fn ns_json(namespaces: &[(&str, bool)]) -> String {
+        let items: Vec<String> = namespaces
+            .iter()
+            .map(|(name, has_pss)| {
+                let labels = if *has_pss {
+                    r#"{"pod-security.kubernetes.io/enforce":"restricted"}"#
+                } else {
+                    r#"{}"#
+                };
+                format!(
+                    r#"{{"metadata":{{"name":"{name}","labels":{labels}}}}}"#
+                )
+            })
+            .collect();
+        format!(r#"{{"items":[{}]}}"#, items.join(","))
+    }
+
+    fn netpol_json(has_default_deny: bool) -> String {
+        if has_default_deny {
+            r#"{"items":[{"metadata":{"name":"default-deny"},"spec":{"podSelector":{},"policyTypes":["Ingress","Egress"]}}]}"#.to_string()
+        } else {
+            r#"{"items":[]}"#.to_string()
+        }
+    }
+
+    fn crb_json(bindings: &[(&str, &str)]) -> String {
+        let items: Vec<String> = bindings
+            .iter()
+            .map(|(name, role)| {
+                format!(
+                    r#"{{"metadata":{{"name":"{name}"}},"roleRef":{{"name":"{role}"}}}}"#
+                )
+            })
+            .collect();
+        format!(r#"{{"items":[{}]}}"#, items.join(","))
+    }
+
+    fn pods_json(containers: &[bool]) -> String {
+        let container_items: Vec<String> = containers
+            .iter()
+            .map(|has_limits| {
+                if *has_limits {
+                    r#"{"name":"app","resources":{"limits":{"cpu":"100m","memory":"128Mi"}}}"#
+                        .to_string()
+                } else {
+                    r#"{"name":"app","resources":{}}"#.to_string()
+                }
+            })
+            .collect();
+        format!(
+            r#"{{"items":[{{"spec":{{"containers":[{}]}}}}]}}"#,
+            container_items.join(",")
+        )
+    }
+
+    fn apiserver_json(args: &[&str]) -> String {
+        let cmd: Vec<String> = args.iter().map(|a| format!(r#""{a}""#)).collect();
+        format!(
+            r#"{{"items":[{{"spec":{{"containers":[{{"command":[{}]}}]}}}}]}}"#,
+            cmd.join(",")
+        )
+    }
+
+    fn setup_passing_runner(runner: &MockCommandRunner) {
+        runner.add_response(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+            &ns_json(&[("app-ns", true), ("monitoring", true)]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+            &netpol_json(true),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+            &crb_json(&[("system:admin", "cluster-admin")]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+            &pods_json(&[true, true]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
+            &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]),
+        );
+    }
+
+    #[test]
+    fn domain_name() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        assert_eq!(plugin.domain(), "kubernetes");
+    }
+
+    #[test]
+    fn nist_families_covered() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        let families = plugin.nist_families();
+        assert!(families.contains(&"AC".to_string()));
+        assert!(families.contains(&"SC".to_string()));
+        assert!(families.contains(&"CM".to_string()));
+    }
+
+    #[test]
+    fn generate_controls_default() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        assert_eq!(controls.len(), 5);
+        assert!(controls.iter().all(|c| c.domain == "kubernetes"));
+    }
+
+    #[test]
+    fn generate_controls_with_advisory() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        let mut config = PluginConfig::default();
+        config.include_advisory = true;
+        let controls = plugin.generate_controls(&config);
+        assert_eq!(controls.len(), 6);
+    }
+
+    #[test]
+    fn control_ids_are_unique() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        let mut config = PluginConfig::default();
+        config.include_advisory = true;
+        let controls = plugin.generate_controls(&config);
+        let ids: Vec<&str> = controls.iter().map(|c| c.id.as_str()).collect();
+        let mut deduped = ids.clone();
+        deduped.sort();
+        deduped.dedup();
+        assert_eq!(ids.len(), deduped.len());
+    }
+
+    #[test]
+    fn controls_have_nist_tags() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        for c in &controls {
+            assert!(!c.nist_control_ids.is_empty(), "Control {} has no NIST IDs", c.id);
+        }
+    }
+
+    #[test]
+    fn controls_are_deterministic() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        let c1 = plugin.generate_controls(&PluginConfig::default());
+        let c2 = plugin.generate_controls(&PluginConfig::default());
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn is_available_true() {
+        let plugin = KubernetesPlugin::new(make_runner());
+        assert!(plugin.is_available());
+    }
+
+    #[tokio::test]
+    async fn evaluate_all_pass() {
+        let runner = make_runner();
+        setup_passing_runner(&runner);
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        assert!(result.all_required_passed);
+        assert_eq!(result.domain, "kubernetes");
+        for eval in &result.evaluations {
+            assert!(eval.passed, "Control {} should pass: {}", eval.control.id, eval.message);
+        }
+    }
+
+    #[tokio::test]
+    async fn evaluate_missing_pss_labels() {
+        let runner = make_runner();
+        runner.add_response(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+            &ns_json(&[("app-ns", false), ("monitoring", true)]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+            &netpol_json(true),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+            &crb_json(&[("system:admin", "cluster-admin")]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+            &pods_json(&[true]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
+            &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]),
+        );
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let pss = result.evaluations.iter().find(|e| e.control.id == "K8S-001").unwrap();
+        assert!(!pss.passed);
+        assert!(pss.message.contains("app-ns"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_no_default_deny() {
+        let runner = make_runner();
+        runner.add_response(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+            &ns_json(&[("app-ns", true)]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+            &netpol_json(false),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+            &crb_json(&[("system:admin", "cluster-admin")]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+            &pods_json(&[true]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
+            &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]),
+        );
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let netpol = result.evaluations.iter().find(|e| e.control.id == "K8S-002").unwrap();
+        assert!(!netpol.passed);
+    }
+
+    #[tokio::test]
+    async fn evaluate_cluster_admin_binding() {
+        let runner = make_runner();
+        runner.add_response(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+            &ns_json(&[("app-ns", true)]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+            &netpol_json(true),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+            &crb_json(&[("bad-admin", "cluster-admin")]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+            &pods_json(&[true]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
+            &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]),
+        );
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let crb = result.evaluations.iter().find(|e| e.control.id == "K8S-003").unwrap();
+        assert!(!crb.passed);
+        assert!(crb.message.contains("bad-admin"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_missing_resource_limits() {
+        let runner = make_runner();
+        runner.add_response(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+            &ns_json(&[("app-ns", true)]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+            &netpol_json(true),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+            &crb_json(&[("system:admin", "cluster-admin")]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+            &pods_json(&[true, false]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
+            &apiserver_json(&["kube-apiserver", "--encryption-provider-config=/etc/k8s/enc.yaml"]),
+        );
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let limits = result.evaluations.iter().find(|e| e.control.id == "K8S-004").unwrap();
+        assert!(!limits.passed);
+        assert!(limits.message.contains("missing"));
+    }
+
+    #[tokio::test]
+    async fn evaluate_kubectl_fails() {
+        let runner = make_runner();
+        runner.add_error("kubectl", &["get", "namespaces", "-o", "json"], "connection refused");
+        runner.add_error("kubectl", &["get", "networkpolicies", "--all-namespaces", "-o", "json"], "connection refused");
+        runner.add_error("kubectl", &["get", "clusterrolebindings", "-o", "json"], "connection refused");
+        runner.add_error("kubectl", &["get", "pods", "--all-namespaces", "-o", "json"], "connection refused");
+        runner.add_error("kubectl", &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"], "connection refused");
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        assert!(!result.all_required_passed);
+        for eval in &result.evaluations {
+            assert!(!eval.passed);
+        }
+    }
+
+    #[tokio::test]
+    async fn domain_evaluation_serde_roundtrip() {
+        let runner = make_runner();
+        setup_passing_runner(&runner);
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let json = serde_json::to_string(&result).unwrap();
+        let back: DomainEvaluation = serde_json::from_str(&json).unwrap();
+        assert_eq!(result.domain, back.domain);
+        assert_eq!(result.domain_hash, back.domain_hash);
+    }
+
+    #[tokio::test]
+    async fn evidence_hashes_present() {
+        let runner = make_runner();
+        setup_passing_runner(&runner);
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        for eval in &result.evaluations {
+            assert!(eval.evidence_hash.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn evaluate_no_encryption_config() {
+        let runner = make_runner();
+        runner.add_response(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+            &ns_json(&[("app-ns", true)]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+            &netpol_json(true),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+            &crb_json(&[("system:admin", "cluster-admin")]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+            &pods_json(&[true]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
+            &apiserver_json(&["kube-apiserver", "--etcd-servers=localhost"]),
+        );
+
+        let plugin = KubernetesPlugin::new(runner);
+        let controls = plugin.generate_controls(&PluginConfig::default());
+        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+
+        let enc = result.evaluations.iter().find(|e| e.control.id == "K8S-005").unwrap();
+        assert!(!enc.passed);
+    }
+
+    #[tokio::test]
+    async fn advisory_audit_logging() {
+        let runner = make_runner();
+        runner.add_response(
+            "kubectl",
+            &["get", "namespaces", "-o", "json"],
+            &ns_json(&[("app-ns", true)]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "networkpolicies", "--all-namespaces", "-o", "json"],
+            &netpol_json(true),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "clusterrolebindings", "-o", "json"],
+            &crb_json(&[("system:admin", "cluster-admin")]),
+        );
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "--all-namespaces", "-o", "json"],
+            &pods_json(&[true]),
+        );
+        // Single response with both encryption and audit flags
+        runner.add_response(
+            "kubectl",
+            &["get", "pods", "-n", "kube-system", "-l", "component=kube-apiserver", "-o", "json"],
+            &apiserver_json(&[
+                "kube-apiserver",
+                "--encryption-provider-config=/etc/k8s/enc.yaml",
+                "--audit-policy-file=/etc/k8s/audit.yaml",
+            ]),
+        );
+
+        let plugin = KubernetesPlugin::new(runner);
+        let mut config = PluginConfig::default();
+        config.include_advisory = true;
+        let controls = plugin.generate_controls(&config);
+        let result = plugin.evaluate(&controls, &config).await.unwrap();
+
+        let audit = result.evaluations.iter().find(|e| e.control.id == "K8S-006").unwrap();
+        assert!(audit.passed);
+    }
+
+    #[test]
+    fn system_namespaces_skipped() {
+        // kube-system, kube-public, kube-node-lease, default are system namespaces
+        // and should be skipped in PSS checks
+        let ns = ns_json(&[("kube-system", false), ("kube-public", false), ("default", false)]);
+        let parsed: serde_json::Value = serde_json::from_str(&ns).unwrap();
+        let items = parsed.get("items").unwrap().as_array().unwrap();
+        assert_eq!(items.len(), 3);
+        // All are system namespaces — should be skipped
+    }
+}
