@@ -97,6 +97,16 @@ pub enum HeartbeatEvent {
     BreakGlass,
     /// Binary revocation event.
     Revocation,
+    /// IaC test infrastructure initialization completed.
+    IacTestInit,
+    /// IaC test infrastructure applied.
+    IacTestApply,
+    /// IaC test verification (InSpec) completed.
+    IacTestVerify,
+    /// IaC test infrastructure teardown completed.
+    IacTestTeardown,
+    /// Complete IaC test suite finished.
+    IacTestSuiteComplete,
 }
 
 impl std::fmt::Display for HeartbeatEvent {
@@ -111,6 +121,11 @@ impl std::fmt::Display for HeartbeatEvent {
             Self::ScriptVerification => write!(f, "script_verification"),
             Self::BreakGlass => write!(f, "break_glass"),
             Self::Revocation => write!(f, "revocation"),
+            Self::IacTestInit => write!(f, "iac_test_init"),
+            Self::IacTestApply => write!(f, "iac_test_apply"),
+            Self::IacTestVerify => write!(f, "iac_test_verify"),
+            Self::IacTestTeardown => write!(f, "iac_test_teardown"),
+            Self::IacTestSuiteComplete => write!(f, "iac_test_suite_complete"),
         }
     }
 }

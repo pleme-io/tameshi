@@ -52,6 +52,7 @@ pub mod error;
 pub mod gating;
 pub mod hash;
 pub mod heartbeat;
+pub mod iac_attestation;
 pub mod merkle;
 pub mod reporting;
 pub mod selftest;
@@ -111,4 +112,8 @@ pub mod prelude {
         attest_framework, compute_framework_hash, framework_attestation_hash,
     };
     pub use crate::verify::{verify_master, VerificationResult};
+    pub use crate::iac_attestation::{
+        IacTestAttester, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport,
+        MockIacTestAttester,
+    };
 }
