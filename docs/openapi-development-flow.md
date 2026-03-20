@@ -8,22 +8,22 @@ The tameshi attestation platform uses an **OpenAPI-first** approach where the AP
 
 ```
                      spec/openapi.yaml
-                           │
-              ┌────────────┼────────────────┐
-              │            │                │
-              ▼            ▼                ▼
+                           |
+              +------------+----------------+
+              |            |                |
+              v            v                v
         forge-gen     Hand-written      Proto generation
         (auto-gen)    Rust handlers     (optional gRPC)
-              │            │                │
-    ┌─────────┤       src/api/          proto/*.proto
-    │         │     (axum handlers)
-    │         │
-    ▼         ▼
+              |            |                |
+    +---------+       src/api/          proto/*.proto
+    |         |     (axum handlers)
+    |         |
+    v         v
 MCP server  SDKs, Docs, Completions
 (Rust rmcp) (Go, Python, TS, Markdown)
 ```
 
-## Spec → Central Data Structures
+## Spec to Central Data Structures
 
 The OpenAPI spec defines schemas that map directly to Rust types:
 
@@ -33,25 +33,42 @@ The OpenAPI spec defines schemas that map directly to Rust types:
 | `LayerType` | `signature::LayerType` | `src/signature.rs` |
 | `LayerSignature` | `signature::LayerSignature` | `src/signature.rs` |
 | `MasterSignature` | `signature::MasterSignature` | `src/signature.rs` |
-| `HeartbeatEntry` | `heartbeat::HeartbeatEntry` | `src/heartbeat.rs` |
-| `ConsistencyProof` | `heartbeat::ConsistencyProof` | `src/heartbeat.rs` |
+| `InputHash` | `signature::InputHash` | `src/signature.rs` |
+| `CertificationArtifact` | `certification_artifact::CertificationArtifact` | `src/certification_artifact.rs` |
+| `ArtifactProofPaths` | `certification_artifact::ArtifactProofPaths` | `src/certification_artifact.rs` |
 | `SignedRoot` | `signing::SignedRoot` | `src/signing.rs` |
+| `SigningAlgorithm` | `signing::SigningAlgorithm` | `src/signing.rs` |
+| `BreakGlassToken` | `signing::BreakGlassToken` | `src/signing.rs` |
+| `HeartbeatEntry` | `heartbeat::HeartbeatEntry` | `src/heartbeat.rs` |
+| `HeartbeatEvent` | `heartbeat::HeartbeatEvent` | `src/heartbeat.rs` |
+| `VerificationOutcome` | `heartbeat::VerificationOutcome` | `src/heartbeat.rs` |
+| `VerifierIdentity` | `heartbeat::VerifierIdentity` | `src/heartbeat.rs` |
+| `ConsistencyProof` | `heartbeat::ConsistencyProof` | `src/heartbeat.rs` |
 | `ComplianceState` | `compliance_api::ComplianceState` | `src/compliance_api.rs` |
 | `ComplianceDistance` | `compliance_api::ComplianceDistance` | `src/compliance_api.rs` |
+| `ComplianceStatus` | `compliance_api::ComplianceStatus` | `src/compliance_api.rs` |
+| `FrameworkState` | `compliance_api::FrameworkState` | `src/compliance_api.rs` |
+| `DynamicComplianceCheck` | `compliance_api::DynamicComplianceCheck` | `src/compliance_api.rs` |
+| `GateDecision` | `api_types::GateDecision` | `src/api_types.rs` |
+| `CertificationStatus` | `api_types::CertificationStatus` | `src/api_types.rs` |
+| `AuditEntry` | `api_types::AuditEntry` | `src/api_types.rs` |
+| `IacTestPhase` | `iac_attestation::IacTestPhase` | `src/iac_attestation.rs` |
+| `IacTestPhaseResult` | `iac_attestation::IacTestPhaseResult` | `src/iac_attestation.rs` |
+| `IacTestSuiteReport` | `iac_attestation::IacTestSuiteReport` | `src/iac_attestation.rs` |
 | `GateSummary` | sekiban API type | `sekiban/src/api/rest.rs` |
 | `CertificationSummary` | sekiban API type | `sekiban/src/api/rest.rs` |
 | `ResultSummary` | kensa API type | `kensa/src/api/rest.rs` |
 | `CertifyRequest` | kensa API type | `kensa/src/certification.rs` |
 
-All Rust types derive `Serialize`/`Deserialize` with serde, ensuring JSON schema compatibility with the OpenAPI definitions.
+All Rust types derive `Serialize`/`Deserialize` with serde and `schemars::JsonSchema`, ensuring JSON schema compatibility with the OpenAPI definitions. The 13 specification tests validate serde roundtrip correctness for every API type.
 
-## Central Data Structures → Generic API Exposure
+## Central Data Structures to Generic API Exposure
 
 The same central types power three transport layers:
 
 ### REST (axum)
 ```rust
-// src/api/rest.rs — primary implementation
+// src/api/rest.rs -- primary implementation
 use axum::{Json, Router, routing::get};
 
 async fn list_gates(State(state): State<AppState>) -> Json<Vec<GateSummary>> {
@@ -61,7 +78,7 @@ async fn list_gates(State(state): State<AppState>) -> Json<Vec<GateSummary>> {
 
 ### GraphQL (async-graphql)
 ```rust
-// src/api/graphql.rs — query resolvers use the same types
+// src/api/graphql.rs -- query resolvers use the same types
 #[Object]
 impl QueryRoot {
     async fn gates(&self, ctx: &Context<'_>) -> Vec<GateSummary> {
@@ -105,11 +122,11 @@ forge-gen generate --manifest forge-gen.toml
 ### Generated MCP Server
 
 mcp-forge produces a complete Rust project:
-- `src/api/types.rs` — serde structs matching spec schemas (with `schemars::JsonSchema`)
-- `src/client.rs` — typed HTTP client for all endpoints
-- `src/mcp.rs` — MCP tools with `#[tool_router]` / `#[tool_handler]`
-- `src/format.rs` — text formatters for each response type
-- `Cargo.toml`, `flake.nix`, `module/default.nix` — full Nix packaging
+- `src/api/types.rs` -- serde structs matching spec schemas (with `schemars::JsonSchema`)
+- `src/client.rs` -- typed HTTP client for all endpoints
+- `src/mcp.rs` -- MCP tools with `#[tool_router]` / `#[tool_handler]`
+- `src/format.rs` -- text formatters for each response type
+- `Cargo.toml`, `flake.nix`, `module/default.nix` -- full Nix packaging
 
 ## Adding a New Endpoint
 
@@ -165,7 +182,7 @@ components:
 
 ```rust
 // src/heartbeat.rs
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConsistencyProof {
     pub from_seq: u64,
     pub to_seq: u64,
@@ -198,23 +215,46 @@ forge-gen generate --manifest forge-gen.toml
 
 - Serde roundtrip tests ensure Rust types match spec schemas
 - `forge-gen validate --spec spec/openapi.yaml` checks spec consistency
-- `cargo test` runs handler unit tests
+- `cargo test` runs handler unit tests (925 total)
 
-## Spec Tags → Service Mapping
+## Spec Tags to Service Mapping
 
 | Tag | Service | Description |
 |-----|---------|-------------|
-| `gates` | sekiban | Signature gate management |
-| `certifications` | sekiban | Environment certification |
-| `audit` | sekiban | Audit trail |
-| `signatures` | sekiban | Signature computation |
-| `compliance` | kensa | Compliance results |
-| `reports` | kensa | Compliance reports |
-| `certification-pipeline` | kensa | Product certification |
+| `gates` | sekiban | Signature gate management (SignatureGate CRDs) |
+| `certifications` | sekiban | Environment certification status |
+| `audit` | sekiban | Audit trail queries |
+| `signatures` | sekiban | Signature computation and verification |
+| `compliance` | kensa | Compliance result ingestion |
+| `reports` | kensa | Compliance report generation |
+| `certification-pipeline` | kensa | Product certification workflow |
 | `heartbeat` | tameshi | Heartbeat chain + consistency proofs |
 | `collectors` | tameshi | Layer hash collection |
-| `signing` | tameshi | Merkle root signing |
+| `signing` | tameshi | Merkle root signing (LocalSigner, DFC, MockDfc) |
 | `compliance-query` | tameshi | Compliance state queries |
-| `cve` | kensa | CVE ingestion |
-| `dynamic-checks` | kensa | Dynamic compliance checks |
+| `cve` | kensa | CVE ingestion and revocation |
+| `dynamic-checks` | kensa | Dynamic compliance checks (Rhai scripting) |
+| `iac-tests` | tameshi | IaC test attestation (phase + suite) |
+| `certification-artifact` | tameshi | Per-binary 3-leaf Merkle certification |
 | `health` | both | Health and readiness probes |
+
+## forge-gen.toml
+
+```toml
+[spec]
+path = "spec/openapi.yaml"
+
+[output]
+dir = "generated"
+
+[mcp]
+targets = ["mcp-rust"]
+name = "tameshi"
+
+[completions]
+targets = ["skim-tab", "fish"]
+name = "tameshi"
+
+[docs]
+targets = ["markdown"]
+```
