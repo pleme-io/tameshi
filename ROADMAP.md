@@ -1475,6 +1475,144 @@ Fleet Root
 
 ---
 
+## Central Data Structures & API Exposure Architecture
+
+> **Principle:** All tameshi state flows through central, abstract data structures
+> that can be inferred for exposure as REST, gRPC, and GraphQL. No business logic
+> lives in the transport layer — the API is a thin projection of the core domain.
+
+### Core Domain Types (tameshi crate — the single source of truth)
+
+```rust
+// Central compliance state — queryable by any transport
+pub struct ComplianceState {
+    pub merkle_root: Blake3Hash,
+    pub last_attestation: DateTime<Utc>,
+    pub next_attestation_due: DateTime<Utc>,
+    pub layers: Vec<LayerStatus>,
+    pub compliance_score: f64,           // 0.0 - 1.0
+    pub heartbeat_chain_length: u64,
+    pub last_heartbeat: DateTime<Utc>,
+    pub enforcement_mode: EnforcementMode,
+    pub violations_since_last_attestation: u64,
+}
+
+// Compliance distance measurement
+pub struct ComplianceDistance {
+    pub time_since_last_attestation: Duration,
+    pub time_to_next_attestation: Duration,
+    pub attestation_freshness: f64,      // 1.0 = just attested, 0.0 = expired
+    pub violations_in_window: u64,
+    pub chain_integrity: bool,
+}
+
+// Continuous certification result
+pub struct CertificationStatus {
+    pub certified: bool,
+    pub merkle_root: Blake3Hash,
+    pub signed_root: Option<SignedRoot>,
+    pub layers_verified: usize,
+    pub layers_total: usize,
+    pub compliance_frameworks: Vec<FrameworkStatus>,
+    pub heartbeat_proof: ConsistencyProof,
+}
+```
+
+### API Exposure Pattern
+
+```
+┌─────────────────────────────────────────────────────┐
+│              CORE DOMAIN (tameshi crate)             │
+│                                                     │
+│  ComplianceState ─── ComplianceDistance              │
+│  CertificationStatus ─── HeartbeatChain             │
+│  MasterSignature ─── LayerSignature                 │
+│  BreakGlassToken ─── SignedRoot                     │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│           TRAIT ABSTRACTION LAYER                    │
+│                                                     │
+│  ComplianceQuery (trait)                             │
+│    fn current_state() -> ComplianceState             │
+│    fn compliance_distance() -> ComplianceDistance    │
+│    fn certification_status() -> CertificationStatus │
+│    fn heartbeat_proof(from, to) -> ConsistencyProof │
+│    fn layer_status(layer) -> LayerStatus            │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│           TRANSPORT PROJECTIONS                      │
+│                                                     │
+│  REST (axum)     ─── GET /api/v1/compliance/state   │
+│                  ─── GET /api/v1/compliance/distance │
+│                  ─── GET /api/v1/certification       │
+│                  ─── GET /api/v1/heartbeat/proof     │
+│                                                     │
+│  GraphQL         ─── query { complianceState { ... }}│
+│  (async-graphql) ─── query { certificationStatus }  │
+│                  ─── subscription { heartbeat }     │
+│                                                     │
+│  gRPC (tonic)    ─── rpc GetComplianceState(...)    │
+│                  ─── rpc StreamHeartbeat(...)        │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+### Continuous Certification API
+
+External clients can query the tameshi system for real-time compliance state:
+
+```
+GET /api/v1/compliance/state
+→ { certified: true, score: 1.0, last_attestation: "2026-03-20T10:00:00Z",
+    next_due: "2026-04-19T10:00:00Z", violations: 0, chain_length: 9847 }
+
+GET /api/v1/compliance/distance
+→ { time_since_last: "2h30m", time_to_next: "29d21h30m",
+    freshness: 0.997, violations_in_window: 0, chain_intact: true }
+
+GET /api/v1/certification
+→ { certified: true, merkle_root: "blake3:abc...", signed_root: { ... },
+    layers: [ { name: "nix", verified: true }, { name: "oci", verified: true } ],
+    frameworks: [ { name: "NIST-800-53", status: "compliant", controls: 38 } ] }
+
+GET /api/v1/heartbeat/proof?from=<seq>&to=<seq>
+→ { consistency_proof: [...], chain_head: "blake3:...", entries_in_range: 42 }
+```
+
+### Compliance Distance Measurement
+
+When a violation occurs, the system can measure the "distance" between:
+1. **Last known-good state** (last successful attestation)
+2. **Violation detection** (when the heartbeat chain records the failure)
+3. **Recovery** (when re-attestation succeeds)
+
+```
+Timeline:
+   ├── Attestation (t=0, distance=0)
+   │   ├── Heartbeat (t+5m, distance=5m)
+   │   ├── Heartbeat (t+10m, distance=10m)
+   │   ├── ⚠ VIOLATION (t+15m, distance=15m) ← measured gap
+   │   ├── Auto-rollback (t+15m01s)
+   │   ├── Re-attestation (t+16m, distance=0) ← gap closed
+   │   └── ...
+```
+
+The heartbeat chain provides cryptographic proof of the exact violation window,
+which is the primary evidence artifact for CIRCIA 72-hour reporting.
+
+### Pattern for Future Features
+
+To add a new API capability:
+1. Define the core domain type in tameshi (e.g., `VulnerabilityReport`)
+2. Add a trait method to `ComplianceQuery` (e.g., `fn vulnerability_scan()`)
+3. Implement the trait in the relevant repo (kensa for compliance, sekiban for admission)
+4. The REST/GraphQL/gRPC projections automatically pick it up
+
+This pattern ensures all business logic stays in Rust traits, and transport
+layers are pure projection — no business logic in route handlers.
+
+---
+
 ## Summary Timeline (Updated)
 
 | Week | Phase | Key Deliverables | Status |
