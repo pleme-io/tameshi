@@ -38,6 +38,15 @@ pub enum LayerType {
     /// Akeyless target infrastructure
     #[serde(rename = "akeyless_target")]
     AkeylessTarget,
+    /// Pangea synthesis output (deterministic Terraform JSON).
+    #[serde(rename = "pangea_synthesis")]
+    PangeaSynthesis,
+    /// RSpec test result JSON.
+    #[serde(rename = "rspec_result")]
+    RSpecResult,
+    /// InSpec compliance result JSON.
+    #[serde(rename = "inspec_result")]
+    InSpecResult,
 }
 
 impl fmt::Display for LayerType {
@@ -54,6 +63,9 @@ impl fmt::Display for LayerType {
             Self::ArgoCD => write!(f, "argocd"),
             Self::Akeyless => write!(f, "akeyless"),
             Self::AkeylessTarget => write!(f, "akeyless_target"),
+            Self::PangeaSynthesis => write!(f, "pangea_synthesis"),
+            Self::RSpecResult => write!(f, "rspec_result"),
+            Self::InSpecResult => write!(f, "inspec_result"),
         }
     }
 }
@@ -74,6 +86,9 @@ impl FromStr for LayerType {
             "argocd" | "argo" => Ok(Self::ArgoCD),
             "akeyless" => Ok(Self::Akeyless),
             "akeyless_target" | "akeylesstarget" => Ok(Self::AkeylessTarget),
+            "pangea_synthesis" | "pangeasynthesis" | "pangea" => Ok(Self::PangeaSynthesis),
+            "rspec_result" | "rspecresult" | "rspec" => Ok(Self::RSpecResult),
+            "inspec_result" | "inspecresult" => Ok(Self::InSpecResult),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
@@ -347,6 +362,9 @@ mod tests {
             LayerType::ArgoCD,
             LayerType::Akeyless,
             LayerType::AkeylessTarget,
+            LayerType::PangeaSynthesis,
+            LayerType::RSpecResult,
+            LayerType::InSpecResult,
         ];
         for lt in types {
             let s = lt.to_string();
@@ -490,6 +508,8 @@ mod tests {
             LayerType::Tofu, LayerType::Kubernetes, LayerType::Kindling,
             LayerType::Tatara, LayerType::FluxCD, LayerType::ArgoCD,
             LayerType::Akeyless, LayerType::AkeylessTarget,
+            LayerType::PangeaSynthesis, LayerType::RSpecResult,
+            LayerType::InSpecResult,
         ];
         for i in 0..types.len() {
             for j in 0..types.len() {

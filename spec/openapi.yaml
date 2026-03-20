@@ -728,6 +728,10 @@ components:
         - fluxcd
         - argocd
         - akeyless
+        - akeyless_target
+        - pangea_synthesis
+        - rspec_result
+        - inspec_result
       description: Infrastructure layer type used for signature computation
 
     # =========================================================================

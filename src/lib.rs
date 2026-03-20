@@ -84,6 +84,9 @@ pub mod prelude {
     pub use crate::collectors::akeyless_target::{
         AkeylessTargetCollector, LiveAkeylessTargetCollector,
     };
+    pub use crate::collectors::pangea::{
+        PangeaSynthesisCollector, hash_synthesis_file, hash_synthesis_json,
+    };
     pub use crate::collectors::traits::LayerCollector;
     pub use crate::collectors::MockCollector;
     pub use crate::compliance::akeyless_target::{
