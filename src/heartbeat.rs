@@ -155,7 +155,7 @@ impl HeartbeatChain {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: Vec::with_capacity(1024),
             next_sequence: 0,
             last_hash: Blake3Hash::from([0u8; 32]),
         }
@@ -243,30 +243,35 @@ impl HeartbeatChain {
     }
 
     /// Get the number of entries in the chain.
+    #[inline]
     #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Check if the chain is empty.
+    #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Get the last entry in the chain.
+    #[inline]
     #[must_use]
     pub fn last(&self) -> Option<&HeartbeatEntry> {
         self.entries.last()
     }
 
     /// Get all entries in the chain.
+    #[inline]
     #[must_use]
     pub fn entries(&self) -> &[HeartbeatEntry] {
         &self.entries
     }
 
     /// Get the current chain head hash.
+    #[inline]
     #[must_use]
     pub fn head_hash(&self) -> &Blake3Hash {
         &self.last_hash

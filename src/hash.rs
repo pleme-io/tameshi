@@ -42,9 +42,9 @@ impl Blake3Hash {
     #[inline]
     #[must_use]
     pub fn combine(left: &Blake3Hash, right: &Blake3Hash) -> Self {
-        let mut combined = Vec::with_capacity(64);
-        combined.extend_from_slice(&left.0);
-        combined.extend_from_slice(&right.0);
+        let mut combined = [0u8; 64];
+        combined[..32].copy_from_slice(&left.0);
+        combined[32..].copy_from_slice(&right.0);
         Self::digest(&combined)
     }
 
@@ -76,6 +76,7 @@ impl Blake3Hash {
     }
 
     /// Parse from prefixed string.
+    #[inline]
     pub fn from_prefixed(s: &str) -> Result<Self, const_hex::FromHexError> {
         let hex_str = s.strip_prefix("blake3:").unwrap_or(s);
         Self::from_hex(hex_str)
@@ -226,8 +227,19 @@ pub fn blake3_file(path: &std::path::Path) -> crate::error::Result<Blake3Hash> {
 /// Reads the file via tokio and hashes its contents. For very large files,
 /// prefer [`blake3_file`] which uses streaming buffers.
 pub async fn blake3_file_async(path: &std::path::Path) -> crate::error::Result<Blake3Hash> {
-    let data = tokio::fs::read(path).await?;
-    Ok(Blake3Hash::digest(&data))
+    use tokio::io::AsyncReadExt;
+    let file = tokio::fs::File::open(path).await?;
+    let mut reader = tokio::io::BufReader::with_capacity(65536, file);
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let bytes_read = reader.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    Ok(Blake3Hash(hasher.finalize().into()))
 }
 
 /// Hash a string with BLAKE3.

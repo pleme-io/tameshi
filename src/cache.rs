@@ -4,7 +4,7 @@
 //! cached results within the TTL window, avoiding repeated expensive
 //! collection operations (Nix store walks, OCI pulls, etc.).
 
-use std::sync::Mutex;
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 use crate::collectors::traits::LayerCollector;
@@ -14,7 +14,7 @@ use crate::signature::{LayerSignature, LayerType};
 /// A cached layer collector that wraps an inner collector with TTL-based caching.
 pub struct CachedCollector<C: LayerCollector> {
     inner: C,
-    cache: Mutex<Option<CacheEntry>>,
+    cache: RwLock<Option<CacheEntry>>,
     ttl: Duration,
 }
 
@@ -28,20 +28,22 @@ impl<C: LayerCollector> CachedCollector<C> {
     pub fn new(inner: C, ttl: Duration) -> Self {
         Self {
             inner,
-            cache: Mutex::new(None),
+            cache: RwLock::new(None),
             ttl,
         }
     }
 
     /// Invalidate the cache, forcing the next collect() to hit the inner collector.
+    #[inline]
     pub fn invalidate(&self) {
-        *self.cache.lock().expect("cache lock poisoned") = None;
+        *self.cache.write().expect("cache lock poisoned") = None;
     }
 
     /// Check if the cache currently holds a valid (non-expired) entry.
+    #[inline]
     #[must_use]
     pub fn is_cached(&self) -> bool {
-        let guard = self.cache.lock().expect("cache lock poisoned");
+        let guard = self.cache.read().expect("cache lock poisoned");
         guard
             .as_ref()
             .is_some_and(|entry| entry.cached_at.elapsed() < self.ttl)
@@ -50,9 +52,9 @@ impl<C: LayerCollector> CachedCollector<C> {
 
 impl<C: LayerCollector> LayerCollector for CachedCollector<C> {
     async fn collect(&self) -> Result<LayerSignature> {
-        // Check cache
+        // Check cache with read lock
         {
-            let guard = self.cache.lock().expect("cache lock poisoned");
+            let guard = self.cache.read().expect("cache lock poisoned");
             if let Some(entry) = guard.as_ref() {
                 if entry.cached_at.elapsed() < self.ttl {
                     return Ok(entry.signature.clone());
@@ -63,9 +65,9 @@ impl<C: LayerCollector> LayerCollector for CachedCollector<C> {
         // Cache miss or expired -- collect from inner
         let signature = self.inner.collect().await?;
 
-        // Store in cache
+        // Store in cache with write lock
         {
-            let mut guard = self.cache.lock().expect("cache lock poisoned");
+            let mut guard = self.cache.write().expect("cache lock poisoned");
             *guard = Some(CacheEntry {
                 signature: signature.clone(),
                 cached_at: Instant::now(),

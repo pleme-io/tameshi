@@ -55,6 +55,7 @@ pub mod reporting;
 pub mod selftest;
 pub mod signature;
 pub mod signing;
+pub mod testing;
 pub mod traits;
 pub mod verify;
 

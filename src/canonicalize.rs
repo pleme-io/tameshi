@@ -34,6 +34,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 /// Canonicalization mode for content hashing.
@@ -83,7 +84,7 @@ pub trait Canonicalizer: Send + Sync {
     /// - `Logical`: parses, normalizes, and re-serializes the content
     ///
     /// On parse failure in Logical mode, falls back to Strict (raw bytes).
-    fn canonicalize(&self, content: &[u8], mode: CanonicalMode) -> Vec<u8>;
+    fn canonicalize<'a>(&self, content: &'a [u8], mode: CanonicalMode) -> Cow<'a, [u8]>;
 
     /// The content format this canonicalizer handles (for logging/diagnostics).
     fn format_name(&self) -> &str;
@@ -96,22 +97,23 @@ pub trait Canonicalizer: Send + Sync {
 pub struct YamlCanonicalizer;
 
 impl Canonicalizer for YamlCanonicalizer {
-    fn canonicalize(&self, content: &[u8], mode: CanonicalMode) -> Vec<u8> {
+    fn canonicalize<'a>(&self, content: &'a [u8], mode: CanonicalMode) -> Cow<'a, [u8]> {
         match mode {
-            CanonicalMode::Strict => content.to_vec(),
+            CanonicalMode::Strict => Cow::Borrowed(content),
             CanonicalMode::Logical => {
                 let Ok(content_str) = std::str::from_utf8(content) else {
-                    return content.to_vec();
+                    return Cow::Borrowed(content);
                 };
                 let Ok(value) = serde_yaml_ng::from_str::<serde_json::Value>(content_str) else {
-                    return content.to_vec();
+                    return Cow::Borrowed(content);
                 };
                 let normalized = normalize_json_value(&value);
-                serde_json::to_vec(&normalized).unwrap_or_else(|_| content.to_vec())
+                Cow::Owned(serde_json::to_vec(&normalized).unwrap_or_else(|_| content.to_vec()))
             }
         }
     }
 
+    #[inline]
     fn format_name(&self) -> &str {
         "yaml"
     }
@@ -124,19 +126,20 @@ impl Canonicalizer for YamlCanonicalizer {
 pub struct JsonCanonicalizer;
 
 impl Canonicalizer for JsonCanonicalizer {
-    fn canonicalize(&self, content: &[u8], mode: CanonicalMode) -> Vec<u8> {
+    fn canonicalize<'a>(&self, content: &'a [u8], mode: CanonicalMode) -> Cow<'a, [u8]> {
         match mode {
-            CanonicalMode::Strict => content.to_vec(),
+            CanonicalMode::Strict => Cow::Borrowed(content),
             CanonicalMode::Logical => {
                 let Ok(value) = serde_json::from_slice::<serde_json::Value>(content) else {
-                    return content.to_vec();
+                    return Cow::Borrowed(content);
                 };
                 let normalized = normalize_json_value(&value);
-                serde_json::to_vec(&normalized).unwrap_or_else(|_| content.to_vec())
+                Cow::Owned(serde_json::to_vec(&normalized).unwrap_or_else(|_| content.to_vec()))
             }
         }
     }
 
+    #[inline]
     fn format_name(&self) -> &str {
         "json"
     }
@@ -154,29 +157,30 @@ impl Canonicalizer for JsonCanonicalizer {
 pub struct HclCanonicalizer;
 
 impl Canonicalizer for HclCanonicalizer {
-    fn canonicalize(&self, content: &[u8], mode: CanonicalMode) -> Vec<u8> {
+    fn canonicalize<'a>(&self, content: &'a [u8], mode: CanonicalMode) -> Cow<'a, [u8]> {
         match mode {
-            CanonicalMode::Strict => content.to_vec(),
+            CanonicalMode::Strict => Cow::Borrowed(content),
             CanonicalMode::Logical => {
                 // HCL files are often valid JSON (terraform state files)
                 // Try JSON first, then fall back to raw content
                 let Ok(content_str) = std::str::from_utf8(content) else {
-                    return content.to_vec();
+                    return Cow::Borrowed(content);
                 };
                 // Try JSON parse first (Tofu state files are JSON)
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(content_str) {
                     let normalized = normalize_json_value(&value);
-                    return serde_json::to_vec(&normalized)
-                        .unwrap_or_else(|_| content.to_vec());
+                    return Cow::Owned(serde_json::to_vec(&normalized)
+                        .unwrap_or_else(|_| content.to_vec()));
                 }
                 // For actual HCL (.tf files), we hash raw content since
                 // HCL parsing requires the hcl-rs crate which is optional.
                 // The plan uses `tofu show -json` which outputs JSON anyway.
-                content.to_vec()
+                Cow::Borrowed(content)
             }
         }
     }
 
+    #[inline]
     fn format_name(&self) -> &str {
         "hcl"
     }
@@ -189,10 +193,11 @@ impl Canonicalizer for HclCanonicalizer {
 pub struct RawCanonicalizer;
 
 impl Canonicalizer for RawCanonicalizer {
-    fn canonicalize(&self, content: &[u8], _mode: CanonicalMode) -> Vec<u8> {
-        content.to_vec()
+    fn canonicalize<'a>(&self, content: &'a [u8], _mode: CanonicalMode) -> Cow<'a, [u8]> {
+        Cow::Borrowed(content)
     }
 
+    #[inline]
     fn format_name(&self) -> &str {
         "raw"
     }
@@ -243,7 +248,7 @@ pub fn canonical_hash(
     canonicalizer: &dyn Canonicalizer,
 ) -> crate::hash::Blake3Hash {
     let canonical = canonicalizer.canonicalize(content, mode);
-    crate::hash::Blake3Hash::digest(&canonical)
+    crate::hash::Blake3Hash::digest(canonical.as_ref())
 }
 
 #[cfg(test)]
@@ -293,7 +298,7 @@ mod tests {
     fn yaml_strict_preserves_bytes() {
         let content = b"b: 2\na: 1\n# comment\n";
         let result = YamlCanonicalizer.canonicalize(content, CanonicalMode::Strict);
-        assert_eq!(result, content);
+        assert_eq!(&*result, content);
     }
 
     #[test]
@@ -336,14 +341,14 @@ mod tests {
     fn yaml_logical_fallback_on_invalid() {
         let invalid = b"not: valid: yaml: [[[";
         let result = YamlCanonicalizer.canonicalize(invalid, CanonicalMode::Logical);
-        assert_eq!(result, invalid, "Invalid YAML should fallback to strict");
+        assert_eq!(&*result, invalid, "Invalid YAML should fallback to strict");
     }
 
     #[test]
     fn yaml_logical_binary_fallback() {
         let binary = &[0xFF, 0xFE, 0x00, 0x01];
         let result = YamlCanonicalizer.canonicalize(binary, CanonicalMode::Logical);
-        assert_eq!(result, binary, "Binary content should fallback to strict");
+        assert_eq!(&*result, binary, "Binary content should fallback to strict");
     }
 
     #[test]
@@ -359,7 +364,7 @@ mod tests {
     fn json_strict_preserves_bytes() {
         let content = b"{\"b\":2,\"a\":1}";
         let result = JsonCanonicalizer.canonicalize(content, CanonicalMode::Strict);
-        assert_eq!(result, content);
+        assert_eq!(&*result, content);
     }
 
     #[test]
@@ -401,7 +406,7 @@ mod tests {
     fn json_logical_fallback_on_invalid() {
         let invalid = b"not json at all";
         let result = JsonCanonicalizer.canonicalize(invalid, CanonicalMode::Logical);
-        assert_eq!(result, invalid, "Invalid JSON should fallback to strict");
+        assert_eq!(&*result, invalid, "Invalid JSON should fallback to strict");
     }
 
     #[test]
@@ -417,7 +422,7 @@ mod tests {
     fn hcl_strict_preserves_bytes() {
         let content = b"resource \"aws_instance\" \"main\" {}";
         let result = HclCanonicalizer.canonicalize(content, CanonicalMode::Strict);
-        assert_eq!(result, content);
+        assert_eq!(&*result, content);
     }
 
     #[test]
@@ -435,7 +440,7 @@ mod tests {
         // Pure HCL (non-JSON) falls back to raw
         let hcl = b"resource \"aws_instance\" \"main\" {\n  ami = \"abc\"\n}";
         let result = HclCanonicalizer.canonicalize(hcl, CanonicalMode::Logical);
-        assert_eq!(result, hcl, "Non-JSON HCL should fallback to strict");
+        assert_eq!(&*result, hcl, "Non-JSON HCL should fallback to strict");
     }
 
     #[test]
@@ -452,8 +457,8 @@ mod tests {
         let content = b"anything \xff\xfe goes here";
         let strict = RawCanonicalizer.canonicalize(content, CanonicalMode::Strict);
         let logical = RawCanonicalizer.canonicalize(content, CanonicalMode::Logical);
-        assert_eq!(strict, content);
-        assert_eq!(logical, content);
+        assert_eq!(&*strict, content);
+        assert_eq!(&*logical, content);
     }
 
     #[test]

@@ -177,7 +177,7 @@ impl LayerSignature {
         let mut sorted_inputs = self.inputs.clone();
         sorted_inputs.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let mut hasher_data = Vec::new();
+        let mut hasher_data = Vec::with_capacity(sorted_inputs.len() * 32);
         for input in &sorted_inputs {
             hasher_data.extend_from_slice(&input.hash.0);
         }
@@ -229,6 +229,7 @@ impl MasterSignature {
     }
 
     /// Verify the untested signature by recomputing the Merkle root.
+    #[inline]
     #[must_use]
     pub fn verify_untested(&self) -> bool {
         let recomputed = crate::merkle::compute_merkle_root(&self.layers);
@@ -236,6 +237,7 @@ impl MasterSignature {
     }
 
     /// Verify the secure signature (untested + compliance).
+    #[inline]
     #[must_use]
     pub fn verify_secure(&self) -> bool {
         match (&self.compliance, &self.secure) {
@@ -248,6 +250,7 @@ impl MasterSignature {
     }
 
     /// Check if this signature is fully attested (has compliance).
+    #[inline]
     #[must_use]
     pub fn is_fully_attested(&self) -> bool {
         self.compliance.is_some() && self.secure.is_some()
@@ -255,12 +258,14 @@ impl MasterSignature {
 
     /// Get the effective gating signature.
     /// Returns secure if available, otherwise untested.
+    #[inline]
     #[must_use]
     pub fn gating_signature(&self) -> &Blake3Hash {
         self.secure.as_ref().unwrap_or(&self.untested)
     }
 
     /// Return prefixed string of the gating signature.
+    #[inline]
     #[must_use]
     pub fn gating_signature_prefixed(&self) -> String {
         self.gating_signature().to_prefixed()
