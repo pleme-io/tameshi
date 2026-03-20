@@ -193,6 +193,8 @@ impl HeartbeatChain {
     ///
     /// The entry's `sequence`, `entry_hash`, and `previous_hash` are
     /// computed automatically. The caller provides the verification context.
+    /// Uses the system clock for timestamping. For deterministic testing,
+    /// use [`append_with_clock`](Self::append_with_clock) instead.
     pub fn append(
         &self,
         verifier: VerifierIdentity,
@@ -201,9 +203,34 @@ impl HeartbeatChain {
         resource: &str,
         signature_checked: Blake3Hash,
     ) -> HeartbeatEntry {
+        self.append_with_clock(
+            verifier,
+            event,
+            result,
+            resource,
+            signature_checked,
+            &crate::traits::SystemClock,
+        )
+    }
+
+    /// Append a new entry to the chain with an explicit clock (for deterministic testing).
+    ///
+    /// The entry's `sequence`, `entry_hash`, and `previous_hash` are
+    /// computed automatically. The caller provides the verification context
+    /// and a [`Clock`](crate::traits::Clock) implementation to control
+    /// timestamping.
+    pub fn append_with_clock(
+        &self,
+        verifier: VerifierIdentity,
+        event: HeartbeatEvent,
+        result: VerificationOutcome,
+        resource: &str,
+        signature_checked: Blake3Hash,
+        clock: &impl crate::traits::Clock,
+    ) -> HeartbeatEntry {
         let mut inner = self.inner.write().expect("HeartbeatChain lock poisoned");
         let sequence = inner.next_sequence;
-        let timestamp = Utc::now();
+        let timestamp = clock.now();
         let previous_hash = inner.last_hash.clone();
 
         let entry_hash = compute_entry_hash(
@@ -1818,5 +1845,87 @@ mod tests {
         let result = store.get(&path).await.unwrap();
         let bytes = result.bytes().await.unwrap();
         assert!(!bytes.is_empty());
+    }
+
+    // =========================================================================
+    // Clock injection tests (Gap 1 + Gap 6)
+    // =========================================================================
+
+    #[test]
+    fn append_with_clock_uses_fixed_timestamp() {
+        use crate::traits::FixedClock;
+
+        let fixed_time = chrono::DateTime::parse_from_rfc3339("2026-01-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let clock = FixedClock::new(fixed_time);
+
+        let chain = HeartbeatChain::new();
+        let entry = chain.append_with_clock(
+            test_verifier(),
+            HeartbeatEvent::AdmissionDecision,
+            VerificationOutcome::Allowed,
+            "clock-test",
+            test_signature(),
+            &clock,
+        );
+
+        assert_eq!(entry.timestamp, fixed_time, "Entry must use the injected clock timestamp");
+    }
+
+    #[test]
+    fn append_with_clock_deterministic_same_clock_same_hash() {
+        use crate::traits::FixedClock;
+
+        let fixed_time = chrono::DateTime::parse_from_rfc3339("2026-06-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let clock = FixedClock::new(fixed_time);
+        let verifier = test_verifier();
+        let sig = test_signature();
+
+        // Build two independent chains with the same fixed clock
+        let chain1 = HeartbeatChain::new();
+        let entry1 = chain1.append_with_clock(
+            verifier.clone(),
+            HeartbeatEvent::GateCheck,
+            VerificationOutcome::Allowed,
+            "deterministic-resource",
+            sig.clone(),
+            &clock,
+        );
+
+        let chain2 = HeartbeatChain::new();
+        let entry2 = chain2.append_with_clock(
+            verifier,
+            HeartbeatEvent::GateCheck,
+            VerificationOutcome::Allowed,
+            "deterministic-resource",
+            sig,
+            &clock,
+        );
+
+        assert_eq!(
+            entry1.entry_hash, entry2.entry_hash,
+            "Same inputs + same clock must produce identical entry hashes"
+        );
+        assert_eq!(entry1.timestamp, entry2.timestamp);
+    }
+
+    #[test]
+    fn append_backward_compat_still_works() {
+        // Existing append() method (uses SystemClock internally) must still work.
+        let chain = HeartbeatChain::new();
+        let entry = chain.append(
+            test_verifier(),
+            HeartbeatEvent::ComplianceAssessment,
+            VerificationOutcome::Allowed,
+            "backward-compat",
+            test_signature(),
+        );
+
+        assert_eq!(entry.sequence, 0);
+        assert_eq!(entry.resource, "backward-compat");
+        assert!(chain.verify_integrity());
     }
 }
