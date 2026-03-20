@@ -261,4 +261,85 @@ proptest! {
         certified.changeset_hash = Blake3Hash::digest(b"tampered");
         prop_assert!(!verify_changeset(&certified));
     }
+
+    // =========================================================================
+    // Pillar 1: CertificationArtifact proptest properties
+    // =========================================================================
+
+    // Random inputs always produce valid artifacts that verify
+    #[test]
+    fn certification_artifact_compose_verify_roundtrip(
+        a_data in prop::collection::vec(any::<u8>(), 1..256),
+        c_data in prop::collection::vec(any::<u8>(), 1..256),
+        i_data in prop::collection::vec(any::<u8>(), 1..256),
+        path in "[a-z/]{1,100}",
+        env in "[a-z]{1,20}",
+    ) {
+        use tameshi::certification_artifact::{compose_certification_artifact, verify_certification_artifact};
+
+        let a = Blake3Hash::digest(&a_data);
+        let c = Blake3Hash::digest(&c_data);
+        let i = Blake3Hash::digest(&i_data);
+        let art = compose_certification_artifact(&path, a, c, i, &env);
+        prop_assert!(verify_certification_artifact(&art), "Random artifact should verify");
+    }
+
+    // Different artifact inputs always produce different roots
+    #[test]
+    fn certification_artifact_collision_resistance(
+        a1_data in prop::collection::vec(any::<u8>(), 1..256),
+        a2_data in prop::collection::vec(any::<u8>(), 1..256),
+        shared_data in prop::collection::vec(any::<u8>(), 1..256),
+    ) {
+        use tameshi::certification_artifact::compose_certification_artifact;
+
+        prop_assume!(a1_data != a2_data);
+        let c = Blake3Hash::digest(&shared_data);
+        let i = Blake3Hash::digest(&shared_data);
+        let art1 = compose_certification_artifact("/bin/app", Blake3Hash::digest(&a1_data), c.clone(), i.clone(), "prod");
+        let art2 = compose_certification_artifact("/bin/app", Blake3Hash::digest(&a2_data), c, i, "prod");
+        prop_assert_ne!(art1.composed_root, art2.composed_root);
+    }
+
+    // Tampered artifact never verifies
+    #[test]
+    fn certification_artifact_tamper_detection(
+        a_data in prop::collection::vec(any::<u8>(), 1..256),
+        c_data in prop::collection::vec(any::<u8>(), 1..256),
+        i_data in prop::collection::vec(any::<u8>(), 1..256),
+        tamper_data in prop::collection::vec(any::<u8>(), 1..256),
+    ) {
+        use tameshi::certification_artifact::{compose_certification_artifact, verify_certification_artifact};
+
+        prop_assume!(a_data != tamper_data);
+        let a = Blake3Hash::digest(&a_data);
+        let c = Blake3Hash::digest(&c_data);
+        let i = Blake3Hash::digest(&i_data);
+        let mut art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        // Tamper with artifact hash
+        art.artifact_hash = Blake3Hash::digest(&tamper_data);
+        prop_assert!(!verify_certification_artifact(&art), "Tampered artifact should not verify");
+    }
+
+    // Serde roundtrip preserves certification artifact integrity
+    #[test]
+    fn certification_artifact_serde_roundtrip(
+        a_data in prop::collection::vec(any::<u8>(), 1..256),
+        c_data in prop::collection::vec(any::<u8>(), 1..256),
+        i_data in prop::collection::vec(any::<u8>(), 1..256),
+    ) {
+        use tameshi::certification_artifact::{CertificationArtifact, compose_certification_artifact, verify_certification_artifact};
+
+        let art = compose_certification_artifact(
+            "/bin/app",
+            Blake3Hash::digest(&a_data),
+            Blake3Hash::digest(&c_data),
+            Blake3Hash::digest(&i_data),
+            "prod",
+        );
+        let json = serde_json::to_string(&art).unwrap();
+        let deserialized: CertificationArtifact = serde_json::from_str(&json).unwrap();
+        prop_assert_eq!(&art, &deserialized);
+        prop_assert!(verify_certification_artifact(&deserialized));
+    }
 }

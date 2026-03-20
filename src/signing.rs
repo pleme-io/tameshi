@@ -353,11 +353,20 @@ impl MerkleRootSigner for AkeylessDfcSigner {
 ///
 /// This is a MOCK for development/CI. In production, use `AkeylessDfcSigner`
 /// which calls the real Akeyless gateway for threshold signing.
-#[derive(Debug)]
 pub struct MockDfcSigner {
     signer_id: String,
     fragment_a: [u8; 32],
     fragment_b: [u8; 32],
+}
+
+impl std::fmt::Debug for MockDfcSigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MockDfcSigner")
+            .field("signer_id", &self.signer_id)
+            .field("fragment_a", &"[REDACTED]")
+            .field("fragment_b", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl MockDfcSigner {
@@ -457,6 +466,7 @@ impl MockDfcSigner {
 
     /// Reconstruct the signing key from both fragments.
     /// Key = BLAKE3(fragment_a XOR fragment_b)
+    #[inline]
     fn reconstruct_key(&self) -> [u8; 32] {
         let mut xored = [0u8; 32];
         for i in 0..32 {
@@ -1247,5 +1257,357 @@ mod tests {
             sig1.signature, sig2.signature,
             "Two for_testing() signers must produce identical signatures"
         );
+    }
+
+    // =========================================================================
+    // Deep testing: MockDfcSigner gaps
+    // =========================================================================
+
+    // ---- Fragment security: Debug does NOT leak fragment bytes ----
+
+    #[test]
+    fn mock_dfc_debug_redacts_fragments() {
+        let signer = MockDfcSigner::from_fragments([0xAA; 32], [0xBB; 32], "secret-signer");
+        let debug_output = format!("{signer:?}");
+        // Fragments must not appear in debug output
+        assert!(
+            !debug_output.contains("aa") && !debug_output.contains("AA"),
+            "Fragment A bytes should be redacted in debug output: {debug_output}"
+        );
+        assert!(
+            !debug_output.contains("bb") && !debug_output.contains("BB"),
+            "Fragment B bytes should be redacted in debug output: {debug_output}"
+        );
+        assert!(
+            debug_output.contains("REDACTED"),
+            "Debug output should show REDACTED: {debug_output}"
+        );
+        // Signer ID should still be visible
+        assert!(
+            debug_output.contains("secret-signer"),
+            "Signer ID should be visible in debug: {debug_output}"
+        );
+    }
+
+    // ---- All-zero fragments ----
+
+    #[tokio::test]
+    async fn mock_dfc_all_zero_fragments_sign_verify() {
+        let signer = MockDfcSigner::from_fragments([0u8; 32], [0u8; 32], "zero-frags");
+        let root = Blake3Hash::digest(b"test-data");
+        let signed = signer.sign(&root).await.unwrap();
+        assert!(signer.verify(&signed).await.unwrap());
+    }
+
+    #[test]
+    fn mock_dfc_all_zero_fragments_key_not_zero() {
+        let signer = MockDfcSigner::from_fragments([0u8; 32], [0u8; 32], "zero");
+        let key = signer.reconstruct_key();
+        // XOR of zeros is zeros, but BLAKE3(zeros) is not zero
+        assert_ne!(key, [0u8; 32], "BLAKE3 of all-zero XOR should not be zero");
+    }
+
+    // ---- Same fragments ----
+
+    #[test]
+    fn mock_dfc_same_fragments_xor_to_zero() {
+        let a = [42u8; 32];
+        let signer = MockDfcSigner::from_fragments(a, a, "same");
+        let key = signer.reconstruct_key();
+        // a XOR a = 0, so key = BLAKE3([0; 32])
+        let expected = *blake3::hash(&[0u8; 32]).as_bytes();
+        assert_eq!(key, expected, "Same fragments should XOR to zero then BLAKE3");
+    }
+
+    // ---- Large payload signing (1MB) ----
+
+    #[tokio::test]
+    async fn mock_dfc_sign_large_payload() {
+        let signer = MockDfcSigner::for_testing();
+        // Sign a hash derived from 1MB of data
+        let large_data = vec![0xFFu8; 1_000_000];
+        let root = Blake3Hash::digest(&large_data);
+        let signed = signer.sign(&root).await.unwrap();
+        assert!(signer.verify(&signed).await.unwrap());
+        assert_eq!(signed.signature.len(), 32, "BLAKE3 keyed hash is always 32 bytes");
+    }
+
+    // ---- Signature uniqueness: 1000 different roots ----
+
+    #[tokio::test]
+    async fn mock_dfc_1000_unique_signatures() {
+        let signer = MockDfcSigner::for_testing();
+        let mut sigs = std::collections::HashSet::new();
+        for i in 0..1000 {
+            let root = Blake3Hash::digest(format!("root-{i}").as_bytes());
+            let signed = signer.sign(&root).await.unwrap();
+            sigs.insert(signed.signature);
+        }
+        assert_eq!(sigs.len(), 1000, "1000 different roots should produce 1000 unique signatures");
+    }
+
+    // ---- Determinism (clock independence): same root always same signature ----
+
+    #[tokio::test]
+    async fn mock_dfc_clock_independence() {
+        let signer = MockDfcSigner::for_testing();
+        let root = Blake3Hash::digest(b"clock-test");
+
+        let signed1 = signer.sign(&root).await.unwrap();
+        // Wait a tiny bit (not actually needed due to determinism, but for clarity)
+        let signed2 = signer.sign(&root).await.unwrap();
+
+        assert_eq!(signed1.signature, signed2.signature, "Signature should be deterministic regardless of time");
+        // But signed_at may differ (that's fine, it's metadata)
+    }
+
+    // ---- Concurrent signing: multiple threads ----
+
+    #[tokio::test]
+    async fn mock_dfc_concurrent_signing() {
+        use std::sync::Arc;
+
+        let signer = Arc::new(MockDfcSigner::for_testing());
+        let mut handles = vec![];
+        for t in 0..8 {
+            let s = signer.clone();
+            handles.push(tokio::spawn(async move {
+                let root = Blake3Hash::digest(format!("thread-{t}").as_bytes());
+                let signed = s.sign(&root).await.unwrap();
+                assert!(s.verify(&signed).await.unwrap());
+                signed.signature
+            }));
+        }
+
+        let mut sigs = std::collections::HashSet::new();
+        for h in handles {
+            sigs.insert(h.await.unwrap());
+        }
+        assert_eq!(sigs.len(), 8, "8 threads should produce 8 distinct signatures");
+    }
+
+    // ---- Cross-pillar: sign a CertificationArtifact's composed_root ----
+
+    #[tokio::test]
+    async fn mock_dfc_sign_certification_artifact_root() {
+        use crate::certification_artifact::{compose_certification_artifact, verify_certification_artifact};
+
+        let art = compose_certification_artifact(
+            "/bin/test",
+            Blake3Hash::digest(b"nix"),
+            Blake3Hash::digest(b"kensa"),
+            Blake3Hash::digest(b"pangea"),
+            "prod",
+        );
+        assert!(verify_certification_artifact(&art));
+
+        let signer = MockDfcSigner::for_testing();
+        let signed = signer.sign(&art.composed_root).await.unwrap();
+        assert!(signer.verify(&signed).await.unwrap());
+        assert_eq!(signed.root, art.composed_root);
+    }
+
+    // ---- Tampered signature bytes ----
+
+    #[tokio::test]
+    async fn mock_dfc_tampered_signature_bytes_fails() {
+        let signer = MockDfcSigner::for_testing();
+        let root = Blake3Hash::digest(b"tamper-sig-test");
+        let mut signed = signer.sign(&root).await.unwrap();
+
+        // Flip one bit in the signature
+        signed.signature[0] ^= 0x01;
+        assert!(!signer.verify(&signed).await.unwrap(), "Tampered signature should fail");
+    }
+
+    // ---- Swapped fragments produce different keys ----
+
+    #[test]
+    fn mock_dfc_fragment_order_irrelevant_xor_commutative() {
+        // XOR is commutative, so swapping fragments does NOT change the key
+        let s1 = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "a");
+        let s2 = MockDfcSigner::from_fragments([2u8; 32], [1u8; 32], "b");
+        assert_eq!(s1.reconstruct_key(), s2.reconstruct_key());
+    }
+
+    // ---- Fragment B as invalid hex ----
+
+    #[test]
+    fn mock_dfc_load_from_invalid_hex_in_env_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let frag_file = dir.path().join(".tameshi_frag");
+        let hex_a = const_hex::encode([0xAAu8; 32]);
+        std::fs::write(&frag_file, &hex_a).unwrap();
+
+        let search_dirs = vec![dir.path().to_path_buf()];
+        let result = MockDfcSigner::load_from(&search_dirs, "not-valid-hex!!!", "test-bad-env");
+        assert!(result.is_err());
+    }
+
+    // ---- Fragment with wrong length ----
+
+    #[test]
+    fn mock_dfc_load_from_short_hex_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let frag_file = dir.path().join(".tameshi_frag");
+        // Only 16 bytes (32 hex chars) instead of 32 bytes (64 hex chars)
+        let short_hex = const_hex::encode([0xAAu8; 16]);
+        std::fs::write(&frag_file, &short_hex).unwrap();
+
+        let hex_b = const_hex::encode([0xBBu8; 32]);
+        let search_dirs = vec![dir.path().to_path_buf()];
+        let result = MockDfcSigner::load_from(&search_dirs, &hex_b, "test-short");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("expected 64 hex chars") || err.contains("32 bytes"),
+            "Error should mention expected length: {err}"
+        );
+    }
+
+    // ---- Multiple search dirs: second dir has the file ----
+
+    #[test]
+    fn mock_dfc_load_from_second_search_dir() {
+        let dir1 = tempfile::tempdir().unwrap();
+        let dir2 = tempfile::tempdir().unwrap();
+        // File only in dir2
+        let hex_a = const_hex::encode([0xDDu8; 32]);
+        std::fs::write(dir2.path().join(".tameshi_frag"), &hex_a).unwrap();
+
+        let hex_b = const_hex::encode([0xEEu8; 32]);
+        let search_dirs = vec![dir1.path().to_path_buf(), dir2.path().to_path_buf()];
+
+        let signer = MockDfcSigner::load_from(&search_dirs, &hex_b, "second-dir").unwrap();
+        assert_eq!(signer.fragment_a, [0xDDu8; 32]);
+        assert_eq!(signer.fragment_b, [0xEEu8; 32]);
+    }
+
+    // ---- Empty search dirs ----
+
+    #[test]
+    fn mock_dfc_load_from_empty_search_dirs_returns_error() {
+        let hex_b = const_hex::encode([0xBBu8; 32]);
+        let result = MockDfcSigner::load_from(&[], &hex_b, "empty-dirs");
+        assert!(result.is_err());
+    }
+
+    // ---- Whitespace trimming in fragment file ----
+
+    #[test]
+    fn mock_dfc_load_from_whitespace_trimmed() {
+        let dir = tempfile::tempdir().unwrap();
+        let frag_file = dir.path().join(".tameshi_frag");
+        let hex_a = const_hex::encode([0xCCu8; 32]);
+        // Add leading/trailing whitespace + newline
+        std::fs::write(&frag_file, format!("  {hex_a}  \n")).unwrap();
+
+        let hex_b = const_hex::encode([0xDDu8; 32]);
+        let search_dirs = vec![dir.path().to_path_buf()];
+
+        let signer = MockDfcSigner::load_from(&search_dirs, &hex_b, "ws-trim").unwrap();
+        assert_eq!(signer.fragment_a, [0xCCu8; 32]);
+    }
+
+    // =========================================================================
+    // Deep testing: LocalSigner additional gaps
+    // =========================================================================
+
+    #[test]
+    fn local_signer_public_key_hash_deterministic() {
+        let signer = LocalSigner::for_testing();
+        let pk1 = signer.public_key_hash();
+        let pk2 = signer.public_key_hash();
+        assert_eq!(pk1, pk2);
+    }
+
+    #[test]
+    fn local_signer_different_seeds_different_public_keys() {
+        let s1 = LocalSigner::from_seed([1u8; 32], "a");
+        let s2 = LocalSigner::from_seed([2u8; 32], "b");
+        assert_ne!(s1.public_key_hash(), s2.public_key_hash());
+    }
+
+    #[tokio::test]
+    async fn local_signer_concurrent_signing() {
+        use std::sync::Arc;
+
+        let signer = Arc::new(LocalSigner::for_testing());
+        let mut handles = vec![];
+        for t in 0..8 {
+            let s = signer.clone();
+            handles.push(tokio::spawn(async move {
+                let root = Blake3Hash::digest(format!("local-thread-{t}").as_bytes());
+                let signed = s.sign(&root).await.unwrap();
+                assert!(s.verify(&signed).await.unwrap());
+                signed
+            }));
+        }
+        for h in handles {
+            let _ = h.await.unwrap();
+        }
+    }
+
+    // =========================================================================
+    // Deep testing: BreakGlassToken additional gaps
+    // =========================================================================
+
+    #[test]
+    fn break_glass_token_multiple_namespaces() {
+        let signer = LocalSigner::for_testing();
+        let token = BreakGlassToken::create_signed(
+            "oncall@pleme.io",
+            "multi-ns test",
+            vec![
+                "namespace:production".to_string(),
+                "namespace:staging".to_string(),
+                "namespace:dev".to_string(),
+            ],
+            4,
+            &signer,
+        );
+        assert!(token.covers_namespace("production"));
+        assert!(token.covers_namespace("staging"));
+        assert!(token.covers_namespace("dev"));
+        assert!(!token.covers_namespace("sandbox"));
+    }
+
+    #[test]
+    fn break_glass_token_empty_scope() {
+        let signer = LocalSigner::for_testing();
+        let token = BreakGlassToken::create_signed(
+            "admin@pleme.io",
+            "empty scope",
+            vec![],
+            4,
+            &signer,
+        );
+        assert!(!token.covers_namespace("anything"));
+    }
+
+    #[test]
+    fn break_glass_token_schema_generation_no_panic() {
+        let _ = schemars::schema_for!(BreakGlassToken);
+        let _ = schemars::schema_for!(SignedRoot);
+        let _ = schemars::schema_for!(SigningAlgorithm);
+    }
+
+    // =========================================================================
+    // Deep testing: SignedRoot additional gaps
+    // =========================================================================
+
+    #[tokio::test]
+    async fn signed_root_fields_populated_correctly() {
+        let signer = MockDfcSigner::from_fragments([5u8; 32], [10u8; 32], "field-check");
+        let root = Blake3Hash::digest(b"field-test");
+        let signed = signer.sign(&root).await.unwrap();
+
+        assert_eq!(signed.root, root);
+        assert_eq!(signed.signer_id, "field-check");
+        assert!(matches!(signed.algorithm, SigningAlgorithm::MockDfc));
+        assert_eq!(signed.signature.len(), 32);
+        // signed_at should be recent (within a few seconds)
+        let elapsed = chrono::Utc::now() - signed.signed_at;
+        assert!(elapsed.num_seconds() < 5, "signed_at should be recent");
     }
 }

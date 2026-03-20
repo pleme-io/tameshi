@@ -62,6 +62,18 @@ pub struct CertificationArtifact {
     pub computed_at: DateTime<Utc>,
 }
 
+impl CertificationArtifact {
+    /// Return the composed root hash, suitable for BPF map population.
+    ///
+    /// This is a convenience alias for `self.composed_root` that makes the
+    /// intent clear at call sites that populate the eBPF sentinel map.
+    #[inline]
+    #[must_use]
+    pub fn binary_hash(&self) -> &Blake3Hash {
+        &self.composed_root
+    }
+}
+
 /// Merkle inclusion proof paths for the three certification inputs.
 /// Leaf indices are fixed: artifact=0, control=1, intent=2.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -82,6 +94,23 @@ pub struct ArtifactProofPaths {
 /// - Leaf 2: intent hash (Pangea synthesis output)
 ///
 /// Returns the artifact with composed root and inclusion proofs.
+///
+/// # Examples
+///
+/// ```
+/// use tameshi::certification_artifact::compose_certification_artifact;
+/// use tameshi::hash::Blake3Hash;
+///
+/// let artifact = compose_certification_artifact(
+///     "/usr/bin/myapp",
+///     Blake3Hash::digest(b"nix-closure"),
+///     Blake3Hash::digest(b"kensa-result"),
+///     Blake3Hash::digest(b"pangea-synthesis"),
+///     "production",
+/// );
+/// assert!(!artifact.composed_root.to_hex().is_empty());
+/// ```
+#[inline]
 #[must_use]
 pub fn compose_certification_artifact(
     binary_path: &str,
@@ -112,6 +141,23 @@ pub fn compose_certification_artifact(
 ///
 /// Checks that all three proof paths are valid against the composed root
 /// and that the root matches a recomputation from the three input hashes.
+///
+/// # Examples
+///
+/// ```
+/// use tameshi::certification_artifact::{compose_certification_artifact, verify_certification_artifact};
+/// use tameshi::hash::Blake3Hash;
+///
+/// let artifact = compose_certification_artifact(
+///     "/usr/bin/myapp",
+///     Blake3Hash::digest(b"nix"),
+///     Blake3Hash::digest(b"kensa"),
+///     Blake3Hash::digest(b"pangea"),
+///     "test",
+/// );
+/// assert!(verify_certification_artifact(&artifact));
+/// ```
+#[inline]
 #[must_use]
 pub fn verify_certification_artifact(artifact: &CertificationArtifact) -> bool {
     // Recompute the tree from the three input hashes
@@ -189,7 +235,49 @@ fn extract_proof_paths(tree: &MerkleTree<Blake3Algorithm>) -> ArtifactProofPaths
     }
 }
 
-/// Verify a single Merkle inclusion proof.
+/// Verify a single Merkle inclusion proof for a certification artifact leaf.
+///
+/// This is the public entry point for downstream consumers (e.g., eBPF sentinel)
+/// that need to verify individual leaf inclusion without the full artifact struct.
+///
+/// # Arguments
+///
+/// * `proof_hashes` - The Merkle proof path (sibling hashes along the path to root).
+/// * `root` - The expected Merkle root.
+/// * `leaf_hash` - The leaf hash to verify inclusion for.
+/// * `index` - The leaf index (0=artifact, 1=control, 2=intent).
+/// * `total` - Total number of leaves in the tree (always 3 for certification artifacts).
+///
+/// # Examples
+///
+/// ```
+/// use tameshi::certification_artifact::{compose_certification_artifact, verify_proof_path};
+/// use tameshi::hash::Blake3Hash;
+///
+/// let a = Blake3Hash::digest(b"artifact");
+/// let c = Blake3Hash::digest(b"control");
+/// let i = Blake3Hash::digest(b"intent");
+/// let art = compose_certification_artifact("/bin/app", a.clone(), c, i, "test");
+/// assert!(verify_proof_path(
+///     &art.proof_paths.artifact_proof,
+///     &art.composed_root,
+///     &a,
+///     0,
+///     3,
+/// ));
+/// ```
+#[must_use]
+pub fn verify_proof_path(
+    proof_hashes: &[Blake3Hash],
+    root: &Blake3Hash,
+    leaf_hash: &Blake3Hash,
+    index: usize,
+    total: usize,
+) -> bool {
+    verify_single_proof(proof_hashes, root, leaf_hash, index, total)
+}
+
+/// Verify a single Merkle inclusion proof (internal implementation).
 fn verify_single_proof(
     proof_hashes: &[Blake3Hash],
     root: &Blake3Hash,
@@ -814,5 +902,397 @@ mod tests {
             2,
             3,
         ));
+    }
+
+    // ---- 18. Public verify_proof_path function (3 tests) ----
+
+    #[test]
+    fn public_verify_proof_path_artifact_leaf() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a.clone(), c, i, "prod");
+        assert!(super::verify_proof_path(
+            &art.proof_paths.artifact_proof,
+            &art.composed_root,
+            &a,
+            0,
+            3,
+        ));
+    }
+
+    #[test]
+    fn public_verify_proof_path_invalid_hash_fails() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        let fake_hash = Blake3Hash::digest(b"not-a-leaf");
+        assert!(!super::verify_proof_path(
+            &art.proof_paths.artifact_proof,
+            &art.composed_root,
+            &fake_hash,
+            0,
+            3,
+        ));
+    }
+
+    #[test]
+    fn public_verify_proof_path_wrong_index_fails() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a.clone(), c, i, "prod");
+        // Use artifact proof at index 1 (should be control's index) => fails
+        assert!(!super::verify_proof_path(
+            &art.proof_paths.artifact_proof,
+            &art.composed_root,
+            &a,
+            1, // wrong index
+            3,
+        ));
+    }
+
+    // ---- 19. binary_hash() convenience method (2 tests) ----
+
+    #[test]
+    fn binary_hash_returns_composed_root() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        assert_eq!(art.binary_hash(), &art.composed_root);
+    }
+
+    #[test]
+    fn binary_hash_stable_across_calls() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        let h1 = art.binary_hash().clone();
+        let h2 = art.binary_hash().clone();
+        assert_eq!(h1, h2);
+    }
+
+    // ---- 20. Edge cases: very long binary_path (1 test) ----
+
+    #[test]
+    fn very_long_binary_path_4096_chars() {
+        let long_path: String = "/bin/".to_string() + &"a".repeat(4091);
+        assert_eq!(long_path.len(), 4096);
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact(&long_path, a, c, i, "prod");
+        assert_eq!(art.binary_path.len(), 4096);
+        assert!(verify_certification_artifact(&art));
+    }
+
+    // ---- 21. Edge case: unicode binary_path (1 test) ----
+
+    #[test]
+    fn unicode_binary_path() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact(
+            "/usr/bin/\u{1F680}rocket\u{2603}snowman",
+            a,
+            c,
+            i,
+            "prod",
+        );
+        assert!(art.binary_path.contains('\u{1F680}'));
+        assert!(verify_certification_artifact(&art));
+    }
+
+    // ---- 22. Edge case: zero hash inputs (1 test) ----
+
+    #[test]
+    fn zero_hash_inputs_produce_valid_artifact() {
+        let zero = Blake3Hash([0u8; 32]);
+        let art = compose_certification_artifact(
+            "/bin/zero",
+            zero.clone(),
+            zero.clone(),
+            zero.clone(),
+            "prod",
+        );
+        // Even all-zero inputs compose into a valid artifact
+        assert!(verify_certification_artifact(&art));
+        // The composed root should NOT be all zeros (domain separation changes it)
+        assert_ne!(art.composed_root, zero);
+    }
+
+    // ---- 23. Same hash for all three inputs (1 test) ----
+
+    #[test]
+    fn same_hash_all_three_still_valid_with_distinct_proofs() {
+        let same = Blake3Hash::digest(b"identical-input");
+        let art = compose_certification_artifact(
+            "/bin/app",
+            same.clone(),
+            same.clone(),
+            same.clone(),
+            "prod",
+        );
+        assert!(verify_certification_artifact(&art));
+        // Proof paths should exist for each leaf
+        assert!(!art.proof_paths.artifact_proof.is_empty());
+        assert!(!art.proof_paths.control_proof.is_empty());
+        assert!(!art.proof_paths.intent_proof.is_empty());
+    }
+
+    // ---- 24. Proof independence: changing ONE leaf doesn't invalidate OTHER proofs (2 tests) ----
+
+    #[test]
+    fn changing_artifact_leaf_preserves_other_leaf_proofs_structure() {
+        let (a, c, i) = sample_hashes();
+        let art1 = compose_certification_artifact(
+            "/bin/app",
+            a,
+            c.clone(),
+            i.clone(),
+            "prod",
+        );
+        let art2 = compose_certification_artifact(
+            "/bin/app",
+            Blake3Hash::digest(b"different-artifact"),
+            c,
+            i,
+            "prod",
+        );
+        // Roots differ (one leaf changed)
+        assert_ne!(art1.composed_root, art2.composed_root);
+        // But each artifact individually verifies
+        assert!(verify_certification_artifact(&art1));
+        assert!(verify_certification_artifact(&art2));
+    }
+
+    #[test]
+    fn proof_from_one_artifact_does_not_verify_against_another_root() {
+        let (a, c, i) = sample_hashes();
+        let art1 = compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
+        let art2 = compose_certification_artifact(
+            "/bin/app",
+            Blake3Hash::digest(b"different"),
+            c,
+            i,
+            "prod",
+        );
+        // Art1's artifact proof should NOT verify against art2's root
+        assert!(!verify_single_proof(
+            &art1.proof_paths.artifact_proof,
+            &art2.composed_root,
+            &a,
+            0,
+            3,
+        ));
+    }
+
+    // ---- 25. Concurrent composition: thread safety (1 test) ----
+
+    #[test]
+    fn concurrent_composition_thread_safety() {
+        use std::thread;
+
+        let results: Vec<_> = (0..8)
+            .map(|t| {
+                thread::spawn(move || {
+                    let a = Blake3Hash::digest(format!("a-{t}").as_bytes());
+                    let c = Blake3Hash::digest(format!("c-{t}").as_bytes());
+                    let i = Blake3Hash::digest(format!("i-{t}").as_bytes());
+                    let art = compose_certification_artifact(
+                        &format!("/bin/svc-{t}"),
+                        a,
+                        c,
+                        i,
+                        "prod",
+                    );
+                    assert!(verify_certification_artifact(&art));
+                    art.composed_root
+                })
+            })
+            .collect();
+
+        let roots: Vec<Blake3Hash> = results.into_iter().map(|h| h.join().unwrap()).collect();
+        // All roots should be unique (different inputs)
+        let unique: std::collections::HashSet<_> = roots.iter().map(|r| r.to_hex()).collect();
+        assert_eq!(unique.len(), 8);
+    }
+
+    // ---- 26. Batch composition: 100 artifacts all verify (1 test) ----
+
+    #[test]
+    fn batch_100_all_verify() {
+        let arts: Vec<CertificationArtifact> = (0..100)
+            .map(|idx| {
+                compose_certification_artifact(
+                    &format!("/bin/svc-{idx}"),
+                    Blake3Hash::digest(format!("a-{idx}").as_bytes()),
+                    Blake3Hash::digest(format!("c-{idx}").as_bytes()),
+                    Blake3Hash::digest(format!("i-{idx}").as_bytes()),
+                    "prod",
+                )
+            })
+            .collect();
+        for art in &arts {
+            assert!(verify_certification_artifact(art));
+        }
+        let roots: std::collections::HashSet<_> = arts.iter().map(|a| a.composed_root.to_hex()).collect();
+        assert_eq!(roots.len(), 100, "All 100 roots should be unique");
+    }
+
+    // ---- 27. Forged proof rejection (3 tests) ----
+
+    #[test]
+    fn manually_forged_proof_empty_vec_fails() {
+        let (a, c, i) = sample_hashes();
+        let mut art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        art.proof_paths.artifact_proof = vec![];
+        assert!(!verify_certification_artifact(&art));
+    }
+
+    #[test]
+    fn manually_forged_proof_reversed_hashes_fails() {
+        let (a, c, i) = sample_hashes();
+        let mut art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        // Reverse the proof hashes — this changes the path computation
+        art.proof_paths.artifact_proof.reverse();
+        // With only 2 proof nodes, reversing changes the sibling order,
+        // which should produce a different root.
+        if art.proof_paths.artifact_proof.len() >= 2 {
+            assert!(!verify_certification_artifact(&art));
+        }
+    }
+
+    #[test]
+    fn swapped_proof_paths_fail() {
+        let (a, c, i) = sample_hashes();
+        let mut art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        // Swap artifact and control proofs
+        std::mem::swap(
+            &mut art.proof_paths.artifact_proof,
+            &mut art.proof_paths.control_proof,
+        );
+        assert!(!verify_certification_artifact(&art));
+    }
+
+    // ---- 28. Builder: default trait (1 test) ----
+
+    #[test]
+    fn builder_default_same_as_new() {
+        let b1 = CertificationArtifactBuilder::new();
+        let b2 = CertificationArtifactBuilder::default();
+        // Both should be in the same unconfigured state
+        assert!(b1.binary_path.is_none());
+        assert!(b2.binary_path.is_none());
+    }
+
+    // ---- 29. Cross-pillar integration: compose -> sign -> verify signature -> verify artifact (1 test) ----
+
+    #[tokio::test]
+    async fn cross_pillar_compose_sign_verify_end_to_end() {
+        use crate::signing::{MerkleRootSigner, MockDfcSigner};
+
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+
+        // Step 1: artifact verifies
+        assert!(verify_certification_artifact(&art));
+
+        // Step 2: sign the composed_root with MockDfcSigner
+        let signer = MockDfcSigner::for_testing();
+        let signed_root = signer.sign(&art.composed_root).await.unwrap();
+
+        // Step 3: verify the signature
+        let sig_valid = signer.verify(&signed_root).await.unwrap();
+        assert!(sig_valid, "Signed root should verify with same signer");
+
+        // Step 4: the signed root matches the artifact's composed root
+        assert_eq!(signed_root.root, art.composed_root);
+    }
+
+    // ---- 30. Cross-pillar: LocalSigner integration (1 test) ----
+
+    #[tokio::test]
+    async fn cross_pillar_compose_local_signer_roundtrip() {
+        use crate::signing::{LocalSigner, MerkleRootSigner};
+
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a, c, i, "staging");
+        assert!(verify_certification_artifact(&art));
+
+        let signer = LocalSigner::for_testing();
+        let signed = signer.sign(&art.composed_root).await.unwrap();
+        assert!(signer.verify(&signed).await.unwrap());
+        assert_eq!(signed.root, art.composed_root);
+    }
+
+    // ---- 31. Environment does NOT affect composed_root (1 test) ----
+
+    #[test]
+    fn environment_does_not_affect_composed_root() {
+        let (a, c, i) = sample_hashes();
+        let art1 = compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
+        let art2 = compose_certification_artifact("/bin/app", a, c, i, "staging");
+        // Root depends only on the three hashes, not the environment
+        assert_eq!(art1.composed_root, art2.composed_root);
+    }
+
+    // ---- 32. binary_path does NOT affect composed_root (1 test) ----
+
+    #[test]
+    fn binary_path_does_not_affect_composed_root() {
+        let (a, c, i) = sample_hashes();
+        let art1 = compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
+        let art2 = compose_certification_artifact("/usr/sbin/other", a, c, i, "prod");
+        assert_eq!(art1.composed_root, art2.composed_root);
+    }
+
+    // ---- 33. Builder chaining order independence (1 test) ----
+
+    #[test]
+    fn builder_chaining_order_independence() {
+        let (a, c, i) = sample_hashes();
+        let art1 = CertificationArtifactBuilder::new()
+            .binary_path("/bin/app")
+            .artifact_hash(a.clone())
+            .control_hash(c.clone())
+            .intent_hash(i.clone())
+            .environment("prod")
+            .build()
+            .unwrap();
+        let art2 = CertificationArtifactBuilder::new()
+            .environment("prod")
+            .intent_hash(i)
+            .control_hash(c)
+            .artifact_hash(a)
+            .binary_path("/bin/app")
+            .build()
+            .unwrap();
+        assert_eq!(art1.composed_root, art2.composed_root);
+    }
+
+    // ---- 34. Clone produces equivalent artifact (1 test) ----
+
+    #[test]
+    fn clone_produces_equivalent_artifact() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        let cloned = art.clone();
+        assert_eq!(art, cloned);
+        assert!(verify_certification_artifact(&cloned));
+    }
+
+    // ---- 35. Schema generation does not panic (1 test) ----
+
+    #[test]
+    fn schema_generation_no_panic() {
+        let _ = schemars::schema_for!(CertificationArtifact);
+        let _ = schemars::schema_for!(ArtifactProofPaths);
+    }
+
+    // ---- 36. Proof paths have expected sizes for 3-leaf tree (1 test) ----
+
+    #[test]
+    fn proof_path_sizes_for_three_leaf_tree() {
+        let (a, c, i) = sample_hashes();
+        let art = compose_certification_artifact("/bin/app", a, c, i, "prod");
+        // For a 3-leaf tree, rs_merkle pads to 4 leaves (duplicating leaf 2).
+        // Leaves 0 and 1 get depth-2 proofs; leaf 2 (index 2) may get a
+        // shorter proof because its sibling is the duplicate padding leaf.
+        assert_eq!(art.proof_paths.artifact_proof.len(), 2, "artifact proof should have 2 nodes");
+        assert_eq!(art.proof_paths.control_proof.len(), 2, "control proof should have 2 nodes");
+        // Intent (leaf 2) gets 1 proof node: its sibling is the padding
+        // duplicate, so rs_merkle only emits the left subtree root.
+        assert_eq!(art.proof_paths.intent_proof.len(), 1, "intent proof should have 1 node (padding sibling omitted)");
     }
 }
