@@ -202,22 +202,47 @@
 | DISA STIG mapping (Cat1/Cat2/Cat3) | kensa | 8 | DONE |
 | kanshi scaffold (7 modules + Helm chart) | kanshi (NEW) | 37 | DONE |
 
+### Additionally Completed (Optimization Session)
+
+| Item | Repo | Tests | Status |
+|------|------|-------|--------|
+| Heartbeat wiring into sekiban admission handler | sekiban | 8 | DONE |
+| Heartbeat wiring into kensa orchestrator | kensa | 7 | DONE |
+| Heartbeat wiring into inshou gate | inshou | 4 | DONE |
+| Audit-First (Shadow) Mode (EnforcementMode) | sekiban | 6 | DONE |
+| Self-healing rollback controller (RollbackExecutor trait) | sekiban | 15 | DONE |
+| CEL fail-safe (ValidatingAdmissionPolicy Helm template) | sekiban | — | DONE |
+| Performance cache (CachedCollector + CacheStats) | tameshi | 9 | DONE |
+| Domain separation (0x00 leaf, 0x01 node, RFC 9162) | tameshi | 10 | DONE |
+| SHA-256 FIPS hasher (Sha256Hasher) | tameshi | 6 | DONE |
+| Akeyless mock server (8 endpoints, builder pattern) | tameshi | 18 | DONE |
+| Thread-safe RollbackRateLimiter (Mutex) | sekiban | +1 | DONE |
+| Thread-safe PolicyEngine (RwLock) | kanshi | +5 | DONE |
+| Config validation (map sizes, policy) | kanshi | +3 | DONE |
+| HashValidator trait + PolicyProvider trait | kanshi | — | DONE |
+| HeartbeatRecorder trait + NoopHeartbeat (all repos) | all | +6 | DONE |
+| Heartbeat export (JSON, JSONL, range, event, counts) | tameshi | +5 | DONE |
+| Dynamic compliance ingestion API architecture | ROADMAP | — | DOCUMENTED |
+
 ### Still Needs Building
 
 | Item | Repo | Priority |
 |------|------|----------|
 | kanshi eBPF programs (Linux-only, aya-rs) | kanshi | P0 |
-| Wire real DFC signing API (`sign_data_with_classic_key`) | tameshi | P0 |
-| K8s auth method with binary hash sub-claims | tameshi | P0 |
-| mTLS + certificate pinning (Akeyless PKI) | tameshi | P1 |
-| Log forwarding (heartbeat → S3/Splunk/Datadog) | tameshi | P1 |
-| Heartbeat wiring into sekiban/kensa/inshou | all repos | P1 |
-| Audit-First (Shadow) Mode | sekiban | P1 |
-| CEL fail-safe (ValidatingAdmissionPolicy) | sekiban | P2 |
+| Akeyless DFC API integration (real gateway calls) | tameshi | P0 |
+| K8s auth sub-claims for binary hash | tameshi | P0 |
+| mTLS + certificate pinning (actual reqwest wiring) | tameshi | P1 |
+| S3/Splunk log forwarding emitter | tameshi | P1 |
+| Helm rendered hashing (`hash_rendered_chart()`) | tameshi | P1 |
+| Dynamic compliance check ingestion API | kensa | P1 |
+| ComplianceQuery trait + REST/GraphQL/gRPC projections | all repos | P1 |
+| OSCAL output format for kensa reports | kensa | P1 |
+| Consistency proofs for heartbeat chain (CT-style) | tameshi | P2 |
+| Sigstore cosign integration | tameshi | P2 |
+| TUF metadata for Merkle root distribution | tameshi | P2 |
 | Hubble observability dashboard | kanshi | P2 |
-| Self-healing rollback controller | sekiban | P2 |
-| Performance caches (moka) | various | P3 |
 | OpenTelemetry tracing | sekiban, kensa | P3 |
+| IMA kernel helper integration | kanshi | P3 |
 
 ---
 
