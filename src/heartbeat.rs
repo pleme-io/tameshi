@@ -276,6 +276,48 @@ impl HeartbeatChain {
     pub fn head_hash(&self) -> &Blake3Hash {
         &self.last_hash
     }
+
+    /// Export the entire chain as JSON for CIRCIA evidence.
+    #[must_use]
+    pub fn export_json(&self) -> crate::error::Result<String> {
+        serde_json::to_string_pretty(&self.entries).map_err(|e| e.into())
+    }
+
+    /// Export the chain as compact JSONL (one entry per line).
+    #[must_use]
+    pub fn export_jsonl(&self) -> crate::error::Result<String> {
+        let mut output = String::new();
+        for entry in &self.entries {
+            let line = serde_json::to_string(entry)?;
+            output.push_str(&line);
+            output.push('\n');
+        }
+        Ok(output)
+    }
+
+    /// Get entries within a time range.
+    #[must_use]
+    pub fn entries_in_range(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<&HeartbeatEntry> {
+        self.entries.iter()
+            .filter(|e| e.timestamp >= from && e.timestamp <= to)
+            .collect()
+    }
+
+    /// Get entries by event type.
+    #[must_use]
+    pub fn entries_by_event(&self, event: &HeartbeatEvent) -> Vec<&HeartbeatEntry> {
+        self.entries.iter()
+            .filter(|e| &e.event == event)
+            .collect()
+    }
+
+    /// Get the number of allowed vs denied outcomes.
+    #[must_use]
+    pub fn outcome_counts(&self) -> (usize, usize) {
+        let allowed = self.entries.iter().filter(|e| e.result == VerificationOutcome::Allowed).count();
+        let denied = self.entries.iter().filter(|e| e.result == VerificationOutcome::Denied).count();
+        (allowed, denied)
+    }
 }
 
 impl Default for HeartbeatChain {
@@ -959,5 +1001,172 @@ mod tests {
         for window in chain.entries().windows(2) {
             assert!(window[1].timestamp >= window[0].timestamp);
         }
+    }
+
+    // =========================================================================
+    // Export and query method tests
+    // =========================================================================
+
+    #[test]
+    fn export_json_valid() {
+        let mut chain = HeartbeatChain::new();
+        for i in 0..3 {
+            chain.append(
+                test_verifier(),
+                HeartbeatEvent::AdmissionDecision,
+                VerificationOutcome::Allowed,
+                &format!("resource-{i}"),
+                test_signature(),
+            );
+        }
+        let json = chain.export_json().unwrap();
+        let parsed: Vec<HeartbeatEntry> = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].resource, "resource-0");
+        assert_eq!(parsed[2].resource, "resource-2");
+    }
+
+    #[test]
+    fn export_jsonl_line_count() {
+        let mut chain = HeartbeatChain::new();
+        for i in 0..5 {
+            chain.append(
+                test_verifier(),
+                HeartbeatEvent::GateCheck,
+                VerificationOutcome::Allowed,
+                &format!("res-{i}"),
+                test_signature(),
+            );
+        }
+        let jsonl = chain.export_jsonl().unwrap();
+        let lines: Vec<&str> = jsonl.lines().collect();
+        assert_eq!(lines.len(), 5, "JSONL line count should match entry count");
+        // Each line should be valid JSON
+        for line in &lines {
+            let _: HeartbeatEntry = serde_json::from_str(line).unwrap();
+        }
+    }
+
+    #[test]
+    fn entries_in_range_filters() {
+        let mut chain = HeartbeatChain::new();
+        // Append a few entries -- timestamps are set to Utc::now() in append()
+        let before = Utc::now();
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::AdmissionDecision,
+            VerificationOutcome::Allowed,
+            "early",
+            test_signature(),
+        );
+        let mid = Utc::now();
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::GateCheck,
+            VerificationOutcome::Denied,
+            "late",
+            test_signature(),
+        );
+        let after = Utc::now();
+
+        // Full range should return all
+        let all = chain.entries_in_range(before, after);
+        assert_eq!(all.len(), 2);
+
+        // Range before any entries
+        let none = chain.entries_in_range(
+            before - chrono::Duration::hours(2),
+            before - chrono::Duration::hours(1),
+        );
+        assert_eq!(none.len(), 0);
+
+        // Range that includes only entries from mid onward
+        let late_entries = chain.entries_in_range(mid, after);
+        assert!(late_entries.iter().all(|e| e.resource == "late"));
+    }
+
+    #[test]
+    fn entries_by_event_filters() {
+        let mut chain = HeartbeatChain::new();
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::AdmissionDecision,
+            VerificationOutcome::Allowed,
+            "a",
+            test_signature(),
+        );
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::GateCheck,
+            VerificationOutcome::Allowed,
+            "b",
+            test_signature(),
+        );
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::AdmissionDecision,
+            VerificationOutcome::Denied,
+            "c",
+            test_signature(),
+        );
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::Certification,
+            VerificationOutcome::Allowed,
+            "d",
+            test_signature(),
+        );
+
+        let admission = chain.entries_by_event(&HeartbeatEvent::AdmissionDecision);
+        assert_eq!(admission.len(), 2);
+        assert_eq!(admission[0].resource, "a");
+        assert_eq!(admission[1].resource, "c");
+
+        let gate = chain.entries_by_event(&HeartbeatEvent::GateCheck);
+        assert_eq!(gate.len(), 1);
+        assert_eq!(gate[0].resource, "b");
+
+        let cert = chain.entries_by_event(&HeartbeatEvent::Certification);
+        assert_eq!(cert.len(), 1);
+
+        let revocation = chain.entries_by_event(&HeartbeatEvent::Revocation);
+        assert_eq!(revocation.len(), 0);
+    }
+
+    #[test]
+    fn outcome_counts_correct() {
+        let mut chain = HeartbeatChain::new();
+        // 3 allowed
+        for _ in 0..3 {
+            chain.append(
+                test_verifier(),
+                HeartbeatEvent::AdmissionDecision,
+                VerificationOutcome::Allowed,
+                "ok",
+                test_signature(),
+            );
+        }
+        // 2 denied
+        for _ in 0..2 {
+            chain.append(
+                test_verifier(),
+                HeartbeatEvent::AdmissionDecision,
+                VerificationOutcome::Denied,
+                "bad",
+                test_signature(),
+            );
+        }
+        // 1 skipped (should not count as allowed or denied)
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::GateCheck,
+            VerificationOutcome::Skipped,
+            "skip",
+            test_signature(),
+        );
+
+        let (allowed, denied) = chain.outcome_counts();
+        assert_eq!(allowed, 3);
+        assert_eq!(denied, 2);
     }
 }
