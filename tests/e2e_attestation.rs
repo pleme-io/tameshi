@@ -1116,6 +1116,7 @@ async fn hackathon_demo_full_pipeline() {
         require_compliance: true,
         max_signature_age_secs: Some(3600),
         fail_open: false,
+        require_certification_artifacts: false,
     };
     let decision = tameshi::gating::evaluate_gate(
         &gate_policy,
@@ -1159,6 +1160,7 @@ async fn hackathon_demo_full_pipeline() {
         require_compliance: false,
         max_signature_age_secs: None,
         fail_open: false,
+        require_certification_artifacts: false,
     };
     let missing_decision = tameshi::gating::evaluate_gate(
         &missing_layer_policy,

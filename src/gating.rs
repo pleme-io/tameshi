@@ -20,6 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::api_types::GateDecision;
+use crate::certification_artifact::verify_certification_artifact;
 use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::signature::MasterSignature;
@@ -39,6 +40,13 @@ pub struct GatingPolicy {
     pub max_signature_age_secs: Option<u64>,
     /// Whether to allow if the gate endpoint is unreachable.
     pub fail_open: bool,
+    /// Whether to require CertificationArtifacts on the MasterSignature.
+    /// When true, gate evaluation verifies:
+    /// 1. master.certification_artifacts is non-empty
+    /// 2. All artifacts pass verify_certification_artifact()
+    /// 3. At least one artifact has a non-zero intent_hash (PangeaSynthesis-derived)
+    #[serde(default)]
+    pub require_certification_artifacts: bool,
 }
 
 impl Default for GatingPolicy {
@@ -49,6 +57,7 @@ impl Default for GatingPolicy {
             require_compliance: true,
             fail_open: false, // Fail closed by default
             max_signature_age_secs: Some(3600), // 1 hour
+            require_certification_artifacts: false,
         }
     }
 }
@@ -84,6 +93,47 @@ pub fn evaluate_gate_with_clock(
             &policy.name,
             "Compliance hash required but not present in master signature",
         );
+    }
+
+    // Check certification artifacts if required
+    if policy.require_certification_artifacts {
+        if master.certification_artifacts.is_empty() {
+            return GateDecision::deny(
+                master.gating_signature(),
+                expected,
+                &policy.name,
+                "Certification artifacts required but none present in master signature",
+            );
+        }
+
+        for (idx, artifact) in master.certification_artifacts.iter().enumerate() {
+            if !verify_certification_artifact(artifact) {
+                return GateDecision::deny(
+                    master.gating_signature(),
+                    expected,
+                    &policy.name,
+                    &format!(
+                        "Invalid certification artifact at index {}: verification failed",
+                        idx
+                    ),
+                );
+            }
+        }
+
+        // At least one artifact must have a non-zero intent_hash
+        // (PangeaSynthesis-derived)
+        let has_pangea_intent = master
+            .certification_artifacts
+            .iter()
+            .any(|a| a.intent_hash.0 != [0u8; 32]);
+        if !has_pangea_intent {
+            return GateDecision::deny(
+                master.gating_signature(),
+                expected,
+                &policy.name,
+                "No certification artifact with a PangeaSynthesis-derived intent_hash",
+            );
+        }
     }
 
     // Check signature age if configured
@@ -488,6 +538,7 @@ mod tests {
             require_compliance: true,
             max_signature_age_secs: Some(7200),
             fail_open: false,
+            require_certification_artifacts: false,
         };
         let json = serde_json::to_string(&policy).unwrap();
         let deserialized: GatingPolicy = serde_json::from_str(&json).unwrap();
@@ -645,5 +696,125 @@ mod tests {
         };
         let decision = evaluate_gate(&policy, &master, &expected);
         assert!(decision.allowed);
+    }
+
+    // ---- Certification artifact gate enforcement tests ----
+
+    #[test]
+    fn gate_require_artifacts_false_allows_empty_artifacts() {
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            require_certification_artifacts: false,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(decision.allowed, "require_certification_artifacts=false should allow empty artifacts");
+    }
+
+    #[test]
+    fn gate_require_artifacts_true_denies_empty_artifacts() {
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            require_certification_artifacts: true,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("none present"));
+    }
+
+    #[test]
+    fn gate_require_artifacts_true_allows_valid_artifacts() {
+        use crate::certification_artifact::compose_certification_artifact;
+
+        let layers = vec![
+            LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix"), "test", vec![]),
+            LayerSignature::new(LayerType::Oci, Blake3Hash::digest(b"oci"), "test", vec![]),
+        ];
+        let compliance = Blake3Hash::digest(b"compliance-passed");
+        let cert = compose_certification_artifact(
+            "/bin/app",
+            Blake3Hash::digest(b"artifact"),
+            Blake3Hash::digest(b"control"),
+            Blake3Hash::digest(b"pangea-intent"),
+            "test",
+        );
+        let master = merkle::compose_merkle(&layers, "test")
+            .with_compliance(compliance)
+            .with_certification_artifacts(vec![cert]);
+        let expected = master.gating_signature().clone();
+
+        let policy = GatingPolicy {
+            require_certification_artifacts: true,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(decision.allowed, "Valid artifacts should pass gate: {}", decision.reason);
+    }
+
+    #[test]
+    fn gate_require_artifacts_true_denies_invalid_artifact() {
+        use crate::certification_artifact::compose_certification_artifact;
+
+        let layers = vec![
+            LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix"), "test", vec![]),
+            LayerSignature::new(LayerType::Oci, Blake3Hash::digest(b"oci"), "test", vec![]),
+        ];
+        let compliance = Blake3Hash::digest(b"compliance-passed");
+        let mut cert = compose_certification_artifact(
+            "/bin/app",
+            Blake3Hash::digest(b"artifact"),
+            Blake3Hash::digest(b"control"),
+            Blake3Hash::digest(b"pangea-intent"),
+            "test",
+        );
+        // Tamper with the artifact hash to make verification fail
+        cert.artifact_hash = Blake3Hash::digest(b"tampered");
+
+        let master = merkle::compose_merkle(&layers, "test")
+            .with_compliance(compliance)
+            .with_certification_artifacts(vec![cert]);
+        let expected = master.gating_signature().clone();
+
+        let policy = GatingPolicy {
+            require_certification_artifacts: true,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("Invalid certification artifact"));
+    }
+
+    #[test]
+    fn gate_default_policy_does_not_require_certification_artifacts() {
+        let policy = GatingPolicy::default();
+        assert!(
+            !policy.require_certification_artifacts,
+            "Default policy must NOT require certification artifacts (backward compat)"
+        );
+    }
+
+    #[test]
+    fn gate_require_artifacts_serde_default_false() {
+        // Deserialize JSON without the field — should default to false
+        let json = r#"{
+            "name": "test",
+            "required_layers": [],
+            "require_compliance": false,
+            "fail_open": false
+        }"#;
+        let policy: GatingPolicy = serde_json::from_str(json).unwrap();
+        assert!(!policy.require_certification_artifacts);
+    }
+
+    #[test]
+    fn gate_require_artifacts_serde_roundtrip() {
+        let policy = GatingPolicy {
+            require_certification_artifacts: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&policy).unwrap();
+        let deserialized: GatingPolicy = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.require_certification_artifacts);
     }
 }

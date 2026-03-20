@@ -291,6 +291,24 @@ fn verify_single_proof(
     proof.verify(root.0, &[index], &[ds_leaf], total)
 }
 
+/// Compose a full attestation chain: layers -> master -> artifacts -> signed.
+///
+/// This is the top-level function that produces a complete proof. It takes
+/// pre-computed layer signatures, certification artifacts, an environment
+/// label, and a compliance hash, and returns a fully composed `MasterSignature`
+/// with compliance and certification artifacts attached.
+#[must_use]
+pub fn compose_full_attestation(
+    layer_signatures: &[crate::signature::LayerSignature],
+    certification_artifacts: Vec<CertificationArtifact>,
+    environment: &str,
+    compliance_hash: Blake3Hash,
+) -> crate::signature::MasterSignature {
+    crate::merkle::compose_merkle(layer_signatures, environment)
+        .with_compliance(compliance_hash)
+        .with_certification_artifacts(certification_artifacts)
+}
+
 /// Fluent builder for `CertificationArtifact`.
 pub struct CertificationArtifactBuilder {
     binary_path: Option<String>,
