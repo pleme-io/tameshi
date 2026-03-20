@@ -779,6 +779,161 @@ impl GatingEngine for MockGatingEngine {
 }
 
 // ---------------------------------------------------------------------------
+// MetricsRecorder
+// ---------------------------------------------------------------------------
+
+/// Standard metrics recording interface.
+///
+/// All attestation services implement this for observability.
+/// Default method implementations are no-ops, so callers can implement
+/// only what they need.
+///
+/// The [`NoopMetrics`] implementation is provided for testing.
+pub trait MetricsRecorder: Send + Sync {
+    /// Record a successful or failed operation.
+    fn record_operation(&self, _name: &str, _success: bool, _duration: std::time::Duration) {}
+
+    /// Increment an error counter by category.
+    fn record_error(&self, _category: &str) {}
+
+    /// Record a gauge value.
+    fn record_gauge(&self, _name: &str, _value: f64) {}
+}
+
+/// No-op metrics implementation for testing.
+#[derive(Clone, Debug, Default)]
+pub struct NoopMetrics;
+
+impl MetricsRecorder for NoopMetrics {}
+
+// ---------------------------------------------------------------------------
+// Store
+// ---------------------------------------------------------------------------
+
+/// Generic async store trait for persistence.
+///
+/// Object-safe via `Pin<Box<dyn Future>>` pattern so it can be used as
+/// `dyn Store<T>` behind a trait object. This is the same approach used
+/// throughout the attestation stack (kensa `CheckStore`, sekiban
+/// `PolicyStore`, inshou `ArtifactStore`).
+///
+/// Provided implementations (downstream):
+/// - `FsJsonStore` (filesystem, serde_json)
+/// - `MemStore` (in-memory, testing)
+pub trait Store<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned>:
+    Send + Sync
+{
+    /// Save an item and return its ID.
+    fn save(
+        &self,
+        item: &T,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send + '_>>;
+
+    /// Load an item by ID.
+    fn load(
+        &self,
+        id: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T>> + Send + '_>>;
+
+    /// List all stored items.
+    fn list(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<T>>> + Send + '_>>;
+
+    /// Delete an item by ID.
+    fn delete(
+        &self,
+        id: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + '_>>;
+}
+
+/// In-memory store for testing.
+///
+/// Items are keyed by the string returned from `save`. The default key
+/// generator uses an incrementing counter.
+pub struct MemStore<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned> {
+    items: Mutex<HashMap<String, T>>,
+    counter: std::sync::atomic::AtomicU64,
+}
+
+impl<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned> MemStore<T> {
+    /// Create a new empty in-memory store.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            items: Mutex::new(HashMap::new()),
+            counter: std::sync::atomic::AtomicU64::new(1),
+        }
+    }
+}
+
+impl<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned> Default
+    for MemStore<T>
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + 'static>
+    Store<T> for MemStore<T>
+{
+    fn save(
+        &self,
+        item: &T,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send + '_>> {
+        let item = item.clone();
+        Box::pin(async move {
+            let id = self
+                .counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                .to_string();
+            self.items.lock().unwrap().insert(id.clone(), item);
+            Ok(id)
+        })
+    }
+
+    fn load(
+        &self,
+        id: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T>> + Send + '_>> {
+        let id = id.to_string();
+        Box::pin(async move {
+            self.items
+                .lock()
+                .unwrap()
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| TameshiError::InvalidInput(format!("store: item not found: {id}")))
+        })
+    }
+
+    fn list(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<T>>> + Send + '_>> {
+        Box::pin(async move {
+            let items: Vec<T> = self.items.lock().unwrap().values().cloned().collect();
+            Ok(items)
+        })
+    }
+
+    fn delete(
+        &self,
+        id: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + '_>> {
+        let id = id.to_string();
+        Box::pin(async move {
+            self.items
+                .lock()
+                .unwrap()
+                .remove(&id)
+                .map(|_| ())
+                .ok_or_else(|| TameshiError::InvalidInput(format!("store: item not found: {id}")))
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Parallel collection
 // ---------------------------------------------------------------------------
 
@@ -1183,5 +1338,159 @@ mod tests {
 
         let result = collect_all_futures(vec![f1, f2]).await;
         assert!(result.is_err());
+    }
+
+    // -- MetricsRecorder tests --
+
+    #[test]
+    fn noop_metrics_record_operation_does_not_panic() {
+        let m = NoopMetrics;
+        m.record_operation("test_op", true, std::time::Duration::from_millis(42));
+        m.record_operation("test_op", false, std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn noop_metrics_record_error_does_not_panic() {
+        let m = NoopMetrics;
+        m.record_error("network");
+        m.record_error("timeout");
+    }
+
+    #[test]
+    fn noop_metrics_record_gauge_does_not_panic() {
+        let m = NoopMetrics;
+        m.record_gauge("queue_depth", 42.0);
+        m.record_gauge("memory_mb", 0.0);
+    }
+
+    #[test]
+    fn noop_metrics_is_clone_and_default() {
+        let m1 = NoopMetrics::default();
+        let m2 = m1.clone();
+        // Both work fine -- just verifying derive traits compile
+        m2.record_operation("op", true, std::time::Duration::ZERO);
+    }
+
+    /// Verify that a custom struct implementing `MetricsRecorder` with
+    /// only partial overrides compiles and works correctly.
+    #[test]
+    fn custom_metrics_recorder_partial_override() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        struct CountingMetrics {
+            ops: AtomicU64,
+        }
+
+        impl MetricsRecorder for CountingMetrics {
+            fn record_operation(
+                &self,
+                _name: &str,
+                _success: bool,
+                _duration: std::time::Duration,
+            ) {
+                self.ops.fetch_add(1, Ordering::Relaxed);
+            }
+            // record_error and record_gauge use default no-op
+        }
+
+        let m = CountingMetrics {
+            ops: AtomicU64::new(0),
+        };
+        m.record_operation("a", true, std::time::Duration::ZERO);
+        m.record_operation("b", false, std::time::Duration::from_secs(1));
+        m.record_error("ignored"); // default no-op
+        m.record_gauge("ignored", 0.0); // default no-op
+        assert_eq!(m.ops.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn metrics_recorder_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<NoopMetrics>();
+    }
+
+    // -- Store tests --
+
+    #[tokio::test]
+    async fn mem_store_save_and_load() {
+        let store = MemStore::<String>::new();
+        let id = store.save(&"hello".to_string()).await.unwrap();
+        let loaded = store.load(&id).await.unwrap();
+        assert_eq!(loaded, "hello");
+    }
+
+    #[tokio::test]
+    async fn mem_store_list() {
+        let store = MemStore::<String>::new();
+        store.save(&"a".to_string()).await.unwrap();
+        store.save(&"b".to_string()).await.unwrap();
+        let items = store.list().await.unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(items.contains(&"a".to_string()));
+        assert!(items.contains(&"b".to_string()));
+    }
+
+    #[tokio::test]
+    async fn mem_store_delete() {
+        let store = MemStore::<String>::new();
+        let id = store.save(&"to_delete".to_string()).await.unwrap();
+        store.delete(&id).await.unwrap();
+        let result = store.load(&id).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn mem_store_delete_nonexistent_returns_error() {
+        let store = MemStore::<String>::new();
+        let result = store.delete("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn mem_store_load_nonexistent_returns_error() {
+        let store = MemStore::<String>::new();
+        let result = store.load("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn mem_store_ids_are_unique() {
+        let store = MemStore::<String>::new();
+        let id1 = store.save(&"a".to_string()).await.unwrap();
+        let id2 = store.save(&"b".to_string()).await.unwrap();
+        assert_ne!(id1, id2);
+    }
+
+    #[tokio::test]
+    async fn mem_store_with_struct() {
+        #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+        struct Record {
+            name: String,
+            value: u64,
+        }
+
+        let store = MemStore::<Record>::new();
+        let item = Record {
+            name: "test".to_string(),
+            value: 42,
+        };
+        let id = store.save(&item).await.unwrap();
+        let loaded = store.load(&id).await.unwrap();
+        assert_eq!(loaded, item);
+    }
+
+    #[test]
+    fn store_trait_is_object_safe() {
+        // Verify Store<String> can be used as a trait object
+        fn _accept_store(_s: &dyn Store<String>) {}
+        let store = MemStore::<String>::new();
+        _accept_store(&store);
+    }
+
+    #[test]
+    fn mem_store_default() {
+        let store = MemStore::<String>::default();
+        // Just verifying Default trait works
+        assert!(store.items.lock().unwrap().is_empty());
     }
 }

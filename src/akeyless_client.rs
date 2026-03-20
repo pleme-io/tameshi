@@ -89,6 +89,10 @@ pub enum AkeylessClientError {
     /// The requested auth method is not supported by this client.
     #[error("unsupported auth method: {0}")]
     UnsupportedAuthMethod(String),
+
+    /// TLS configuration error (bad cert, key, or CA file).
+    #[error("TLS config error: {0}")]
+    TlsConfigError(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +130,70 @@ impl Default for TlsConfig {
             verify_server: true,
         }
     }
+}
+
+/// Build a [`reqwest::Client`] configured from the given [`TlsConfig`].
+///
+/// - If `pinned_ca_path` is set, the PEM file is read and used as the only trusted CA
+///   (built-in root certificates are disabled).
+/// - If `client_cert_path` **and** `client_key_path` are set, both PEM files are read
+///   and a client identity is configured for mutual TLS.
+/// - If `verify_server` is `false`, server certificate verification is disabled
+///   (`danger_accept_invalid_certs`).
+pub fn build_tls_client(tls: &TlsConfig) -> Result<reqwest::Client, AkeylessClientError> {
+    let mut builder = reqwest::Client::builder();
+
+    // Pinned CA certificate — replace the system trust store.
+    if let Some(ref ca_path) = tls.pinned_ca_path {
+        let ca_pem = std::fs::read(ca_path).map_err(|e| {
+            AkeylessClientError::TlsConfigError(format!(
+                "failed to read pinned CA at {ca_path}: {e}"
+            ))
+        })?;
+        let ca_cert = reqwest::tls::Certificate::from_pem(&ca_pem).map_err(|e| {
+            AkeylessClientError::TlsConfigError(format!(
+                "invalid PEM in pinned CA at {ca_path}: {e}"
+            ))
+        })?;
+        builder = builder
+            .tls_built_in_root_certs(false)
+            .add_root_certificate(ca_cert);
+    }
+
+    // Client certificate + key for mTLS.
+    if let (Some(cert_path), Some(key_path)) =
+        (&tls.client_cert_path, &tls.client_key_path)
+    {
+        let cert_pem = std::fs::read(cert_path).map_err(|e| {
+            AkeylessClientError::TlsConfigError(format!(
+                "failed to read client cert at {cert_path}: {e}"
+            ))
+        })?;
+        let key_pem = std::fs::read(key_path).map_err(|e| {
+            AkeylessClientError::TlsConfigError(format!(
+                "failed to read client key at {key_path}: {e}"
+            ))
+        })?;
+
+        // reqwest::Identity::from_pem expects cert+key concatenated in one PEM blob.
+        let mut identity_pem = Vec::with_capacity(cert_pem.len() + key_pem.len());
+        identity_pem.extend_from_slice(&cert_pem);
+        identity_pem.extend_from_slice(&key_pem);
+
+        let identity = reqwest::Identity::from_pem(&identity_pem).map_err(|e| {
+            AkeylessClientError::TlsConfigError(format!("invalid client identity PEM: {e}"))
+        })?;
+        builder = builder.identity(identity);
+    }
+
+    // Optionally disable server certificate verification.
+    if !tls.verify_server {
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+
+    builder.build().map_err(|e| {
+        AkeylessClientError::TlsConfigError(format!("failed to build HTTP client: {e}"))
+    })
 }
 
 /// Configuration for the Akeyless client.
@@ -1581,5 +1649,88 @@ mod tests {
         };
         assert!(config.tls.pinned_ca_path.is_some());
         assert!(config.tls.verify_server);
+    }
+
+    // -----------------------------------------------------------------------
+    // build_tls_client tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_tls_client_default_config() {
+        let tls = TlsConfig::default();
+        let client = build_tls_client(&tls);
+        assert!(client.is_ok(), "default TlsConfig should produce a working client");
+    }
+
+    #[test]
+    fn build_tls_client_verify_disabled() {
+        let tls = TlsConfig {
+            verify_server: false,
+            ..TlsConfig::default()
+        };
+        let client = build_tls_client(&tls);
+        assert!(
+            client.is_ok(),
+            "verify_server=false should create client without cert verification"
+        );
+    }
+
+    #[test]
+    fn tls_config_serde_roundtrip_full() {
+        // Tests serialization including the verify_server=false case.
+        let configs = vec![
+            TlsConfig::default(),
+            TlsConfig {
+                pinned_ca_path: Some("/etc/ssl/ca.pem".to_string()),
+                client_cert_path: Some("/etc/ssl/client.pem".to_string()),
+                client_key_path: Some("/etc/ssl/client-key.pem".to_string()),
+                verify_server: false,
+            },
+            TlsConfig {
+                pinned_ca_path: None,
+                client_cert_path: None,
+                client_key_path: None,
+                verify_server: true,
+            },
+        ];
+        for tls in &configs {
+            let json = serde_json::to_string(tls).unwrap();
+            let deserialized: TlsConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.verify_server, tls.verify_server);
+            assert_eq!(deserialized.pinned_ca_path, tls.pinned_ca_path);
+            assert_eq!(deserialized.client_cert_path, tls.client_cert_path);
+            assert_eq!(deserialized.client_key_path, tls.client_key_path);
+        }
+    }
+
+    #[test]
+    fn build_tls_client_bad_ca_path() {
+        let tls = TlsConfig {
+            pinned_ca_path: Some("/nonexistent/ca.pem".to_string()),
+            ..TlsConfig::default()
+        };
+        let result = build_tls_client(&tls);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, AkeylessClientError::TlsConfigError(ref msg) if msg.contains("pinned CA")),
+            "expected TlsConfigError about pinned CA, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_tls_client_bad_client_cert_path() {
+        let tls = TlsConfig {
+            client_cert_path: Some("/nonexistent/client.pem".to_string()),
+            client_key_path: Some("/nonexistent/client-key.pem".to_string()),
+            ..TlsConfig::default()
+        };
+        let result = build_tls_client(&tls);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, AkeylessClientError::TlsConfigError(ref msg) if msg.contains("client cert")),
+            "expected TlsConfigError about client cert, got: {err}"
+        );
     }
 }

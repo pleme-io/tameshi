@@ -43,6 +43,14 @@ tags:
     description: Compliance reports (kensa)
   - name: certification-pipeline
     description: Product certification pipeline (kensa)
+  - name: heartbeat
+    description: Heartbeat proof chain for admission and compliance events
+  - name: collectors
+    description: Infrastructure layer hash collectors
+  - name: signing
+    description: Merkle root signing and verification
+  - name: compliance-query
+    description: Compliance state and distance queries
   - name: health
     description: Health and readiness probes
 
@@ -359,6 +367,313 @@ paths:
                 $ref: "#/components/schemas/ApiResponseCertifyResponse"
         "400":
           description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------------------
+  # Heartbeat Chain
+  # ---------------------------------------------------------------------------
+  /api/v1/heartbeat/chain:
+    get:
+      operationId: getHeartbeatChain
+      summary: Get heartbeat chain entries
+      description: |
+        Returns heartbeat proof chain entries within the specified sequence range.
+        Each entry is BLAKE3-linked to its predecessor, forming a tamper-evident log
+        of admission decisions, compliance assessments, and certification events.
+      tags: [heartbeat]
+      parameters:
+        - name: from_seq
+          in: query
+          required: false
+          description: Starting sequence number (inclusive)
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: to_seq
+          in: query
+          required: false
+          description: Ending sequence number (inclusive)
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of entries to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 100
+      responses:
+        "200":
+          description: Heartbeat chain entries in sequence order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HeartbeatEntry"
+        "400":
+          description: Invalid sequence range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/heartbeat/consistency-proof:
+    get:
+      operationId: getHeartbeatConsistencyProof
+      summary: Get consistency proof between two chain states
+      description: |
+        Generates a consistency proof demonstrating that the heartbeat chain at
+        sequence `from_seq` is a prefix of the chain at sequence `to_seq`. The
+        proof consists of BLAKE3 intermediate nodes that can be independently
+        verified without downloading the full chain.
+      tags: [heartbeat]
+      parameters:
+        - name: from_seq
+          in: query
+          required: true
+          description: Earlier sequence number
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: to_seq
+          in: query
+          required: true
+          description: Later sequence number
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        "200":
+          description: Consistency proof between the two chain states
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsistencyProof"
+        "400":
+          description: Invalid sequence range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/heartbeat/verify:
+    post:
+      operationId: verifyHeartbeatConsistencyProof
+      summary: Verify a consistency proof
+      description: |
+        Verifies that a consistency proof is valid by recomputing the expected
+        hashes from the proof nodes and comparing them against the provided
+        expected hashes.
+      tags: [heartbeat]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsistencyProofVerifyRequest"
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - verified
+                properties:
+                  verified:
+                    type: boolean
+                    description: Whether the consistency proof is valid
+                  error:
+                    type: string
+                    nullable: true
+                    description: Error message if verification failed
+        "400":
+          description: Invalid proof data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------------------
+  # Collectors -- Helm Rendered Hashing
+  # ---------------------------------------------------------------------------
+  /api/v1/collectors/helm/render:
+    post:
+      operationId: hashHelmRender
+      summary: Hash a rendered Helm chart
+      description: |
+        Renders a Helm chart with the specified values files and computes a
+        deterministic BLAKE3 hash of the rendered output. Returns a full
+        LayerSignature for the Helm layer.
+      tags: [collectors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelmRenderRequest"
+      responses:
+        "200":
+          description: Layer signature for the rendered Helm chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LayerSignature"
+        "400":
+          description: Invalid request (missing chart or values)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Helm render failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------------------
+  # Signing
+  # ---------------------------------------------------------------------------
+  /api/v1/signing/sign:
+    post:
+      operationId: signMerkleRoot
+      summary: Sign a Merkle root
+      description: |
+        Signs a BLAKE3 Merkle root using the specified algorithm. Supports local
+        Ed25519 signing and Akeyless DFC (Dynamic Fragment Cryptography) for
+        remote key management.
+      tags: [signing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignRequest"
+      responses:
+        "200":
+          description: Signed root with signature and signer metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignedRoot"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Signing operation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/signing/verify:
+    post:
+      operationId: verifySignedRoot
+      summary: Verify a signed root
+      description: |
+        Verifies the signature on a signed Merkle root. The algorithm and key
+        identity are embedded in the SignedRoot object.
+      tags: [signing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignedRoot"
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - verified
+                properties:
+                  verified:
+                    type: boolean
+                    description: Whether the signed root is valid
+        "400":
+          description: Invalid signed root
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------------------
+  # Compliance Query
+  # ---------------------------------------------------------------------------
+  /api/v1/compliance/state:
+    get:
+      operationId: getComplianceState
+      summary: Get current compliance state
+      description: |
+        Returns the current aggregate compliance state including status, distance
+        from target baseline, active frameworks, and the latest compliance hash.
+      tags: [compliance-query]
+      responses:
+        "200":
+          description: Current compliance state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplianceState"
+        "500":
+          description: Failed to compute compliance state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/compliance/distance:
+    get:
+      operationId: getComplianceDistance
+      summary: Get compliance distance from target baseline
+      description: |
+        Computes the gap between the current compliance state and the target
+        baseline for the specified framework. Returns the number of controls
+        required, satisfied, and the gap percentage.
+      tags: [compliance-query]
+      parameters:
+        - name: baseline
+          in: query
+          required: true
+          description: Target baseline level
+          schema:
+            type: string
+            enum: [low, moderate, high]
+        - name: framework
+          in: query
+          required: true
+          description: Compliance framework to measure against
+          schema:
+            type: string
+            enum: [nist, oscal, soc2, pci, fedramp, stig]
+      responses:
+        "200":
+          description: Compliance distance metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplianceDistance"
+        "400":
+          description: Invalid baseline or framework
           content:
             application/json:
               schema:
@@ -1717,6 +2032,263 @@ components:
         gate:
           type: string
           description: Name of the gate that made the decision
+
+    # =========================================================================
+    # Heartbeat Types
+    # =========================================================================
+    HeartbeatEntry:
+      type: object
+      description: Single entry in the heartbeat proof chain
+      required:
+        - sequence
+        - timestamp
+        - verifier
+        - event
+        - result
+        - resource
+        - signatureChecked
+        - entryHash
+        - previousHash
+      properties:
+        sequence:
+          type: integer
+          format: int64
+          description: Monotonically increasing sequence number
+        timestamp:
+          type: string
+          format: date-time
+          description: When the heartbeat event occurred
+        verifier:
+          $ref: "#/components/schemas/VerifierIdentity"
+        event:
+          $ref: "#/components/schemas/HeartbeatEvent"
+        result:
+          $ref: "#/components/schemas/VerificationOutcome"
+        resource:
+          type: string
+          description: Identifier of the resource involved (e.g. apps/v1/Deployment/my-app)
+        signatureChecked:
+          type: string
+          description: BLAKE3 signature hash that was checked during this event
+        entryHash:
+          $ref: "#/components/schemas/Blake3Hash"
+        previousHash:
+          $ref: "#/components/schemas/Blake3Hash"
+
+    VerifierIdentity:
+      type: object
+      description: Identity of the component that produced a heartbeat entry
+      required:
+        - component
+        - instance
+        - version
+      properties:
+        component:
+          type: string
+          description: Component name (e.g. sekiban, kensa, inshou)
+        instance:
+          type: string
+          description: Instance identifier (e.g. pod name, hostname)
+        version:
+          type: string
+          description: Component version
+
+    HeartbeatEvent:
+      type: string
+      enum:
+        - admission_decision
+        - gate_verification
+        - compliance_assessment
+        - certification
+        - gate_check
+        - binary_verification
+        - script_verification
+        - break_glass
+        - revocation
+      description: Type of event recorded in the heartbeat chain
+
+    VerificationOutcome:
+      type: string
+      enum: [allowed, denied, skipped, error]
+      description: Outcome of the verification or admission decision
+
+    ConsistencyProof:
+      type: object
+      description: Proof that a chain prefix is consistent with a later chain state
+      required:
+        - fromSeq
+        - toSeq
+        - fromHash
+        - toHash
+        - proofNodes
+        - verified
+      properties:
+        fromSeq:
+          type: integer
+          format: int64
+          description: Sequence number of the earlier chain state
+        toSeq:
+          type: integer
+          format: int64
+          description: Sequence number of the later chain state
+        fromHash:
+          $ref: "#/components/schemas/Blake3Hash"
+        toHash:
+          $ref: "#/components/schemas/Blake3Hash"
+        proofNodes:
+          type: array
+          items:
+            type: string
+          description: BLAKE3 intermediate hashes forming the consistency proof
+        verified:
+          type: boolean
+          description: Whether the proof has been verified server-side
+
+    ConsistencyProofVerifyRequest:
+      type: object
+      description: Request to verify a heartbeat consistency proof
+      required:
+        - proof
+        - expectedFromHash
+        - expectedToHash
+      properties:
+        proof:
+          $ref: "#/components/schemas/ConsistencyProof"
+        expectedFromHash:
+          $ref: "#/components/schemas/Blake3Hash"
+        expectedToHash:
+          $ref: "#/components/schemas/Blake3Hash"
+
+    # =========================================================================
+    # Collector Types
+    # =========================================================================
+    HelmRenderRequest:
+      type: object
+      description: Request to render and hash a Helm chart
+      required:
+        - chartPath
+        - releaseName
+        - namespace
+      properties:
+        chartPath:
+          type: string
+          description: Path to the Helm chart directory or packaged chart
+        valuesFiles:
+          type: array
+          items:
+            type: string
+          description: Paths to values files to apply during rendering
+        releaseName:
+          type: string
+          description: Helm release name to use during rendering
+        namespace:
+          type: string
+          description: Kubernetes namespace for the rendered output
+
+    # =========================================================================
+    # Signing Types
+    # =========================================================================
+    SignRequest:
+      type: object
+      description: Request to sign a Merkle root
+      required:
+        - root
+        - algorithm
+      properties:
+        root:
+          $ref: "#/components/schemas/Blake3Hash"
+        algorithm:
+          $ref: "#/components/schemas/SigningAlgorithm"
+        keyName:
+          type: string
+          nullable: true
+          description: Key name for remote signing (required for akeyless_dfc)
+
+    SignedRoot:
+      type: object
+      description: A signed Merkle root with signature metadata
+      required:
+        - root
+        - signature
+        - algorithm
+        - signerId
+        - signedAt
+      properties:
+        root:
+          $ref: "#/components/schemas/Blake3Hash"
+        signature:
+          type: string
+          description: Base64-encoded cryptographic signature
+        algorithm:
+          $ref: "#/components/schemas/SigningAlgorithm"
+        signerId:
+          type: string
+          description: Identity of the signer (key fingerprint or Akeyless key path)
+        signedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the root was signed
+
+    SigningAlgorithm:
+      type: string
+      enum: [ed25519_local, akeyless_dfc]
+      description: Algorithm used to sign a Merkle root
+
+    # =========================================================================
+    # Compliance Query Types
+    # =========================================================================
+    ComplianceState:
+      type: object
+      description: Aggregate compliance state across all active frameworks
+      required:
+        - status
+        - distance
+        - frameworks
+        - lastAssessedAt
+        - hash
+      properties:
+        status:
+          type: string
+          enum: [compliant, non_compliant, partially_compliant, unknown]
+          description: Overall compliance status
+        distance:
+          type: number
+          format: float
+          description: Aggregate distance from full compliance (0.0 = fully compliant, 1.0 = fully non-compliant)
+        frameworks:
+          type: array
+          items:
+            type: string
+          description: Active compliance frameworks being assessed
+        lastAssessedAt:
+          type: string
+          format: date-time
+          description: Timestamp of the most recent compliance assessment
+        hash:
+          $ref: "#/components/schemas/Blake3Hash"
+
+    ComplianceDistance:
+      type: object
+      description: Gap analysis between current state and target baseline for a framework
+      required:
+        - targetControls
+        - satisfied
+        - gap
+        - percentage
+      properties:
+        targetControls:
+          type: integer
+          description: Total number of controls required by the target baseline
+        satisfied:
+          type: integer
+          description: Number of controls currently satisfied
+        gap:
+          type: integer
+          description: Number of unsatisfied controls (targetControls - satisfied)
+        percentage:
+          type: number
+          format: float
+          description: Compliance percentage (0.0 to 100.0)
 
     # =========================================================================
     # Error & Wrapper Types

@@ -141,6 +141,130 @@ fn compute_composite(inputs: &[InputHash]) -> Blake3Hash {
     Blake3Hash::digest(&data)
 }
 
+/// Hash a Helm chart by running `helm template` and canonicalizing the rendered output.
+///
+/// This captures the *effective* manifest output rather than the raw chart inputs,
+/// ensuring that any templating logic, value overrides, or conditional blocks are
+/// reflected in the final hash.
+///
+/// # Process
+///
+/// 1. Runs `helm template` with the given chart path, values files, and namespace
+/// 2. Captures the rendered YAML from stdout
+/// 3. Canonicalizes the output using [`YamlCanonicalizer`] in Logical mode
+/// 4. Computes a BLAKE3 hash of the canonical output
+/// 5. Returns a [`LayerSignature`] including input hashes of each values file
+pub async fn hash_rendered_chart(
+    chart_path: &str,
+    values_files: &[String],
+    release_name: &str,
+    namespace: &str,
+) -> Result<LayerSignature> {
+    use crate::canonicalize::{CanonicalMode, Canonicalizer, YamlCanonicalizer};
+
+    let mut args = vec![
+        "template".to_string(),
+        release_name.to_string(),
+        chart_path.to_string(),
+        "--namespace".to_string(),
+        namespace.to_string(),
+    ];
+    for vf in values_files {
+        args.push("--values".to_string());
+        args.push(vf.clone());
+    }
+
+    let output = Command::new("helm")
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await?;
+
+    if !output.status.success() {
+        return Err(TameshiError::CommandFailed {
+            command: format!("helm template {} {}", release_name, chart_path),
+            code: output.status.code().unwrap_or(-1),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        });
+    }
+
+    let canonical = YamlCanonicalizer.canonicalize(&output.stdout, CanonicalMode::Logical);
+    let rendered_hash = Blake3Hash::digest(canonical.as_ref());
+
+    let mut inputs = Vec::new();
+    for vf in values_files {
+        if let Ok(data) = tokio::fs::read(vf).await {
+            inputs.push(InputHash {
+                name: vf.clone(),
+                hash: Blake3Hash::digest(&data),
+                size_bytes: Some(data.len() as u64),
+            });
+        }
+    }
+
+    debug!(
+        chart = chart_path,
+        release = release_name,
+        namespace = namespace,
+        values_files = values_files.len(),
+        "Hashed rendered Helm chart"
+    );
+
+    Ok(LayerSignature::new(
+        LayerType::Helm,
+        rendered_hash,
+        &format!("{}/{}", namespace, release_name),
+        inputs,
+    ))
+}
+
+/// Rendered Helm chart collector.
+///
+/// Unlike [`HelmCollector`] which hashes chart input files, this collector
+/// runs `helm template` and hashes the rendered output. This captures the
+/// effective manifest after value substitution and template evaluation.
+pub struct RenderedHelmCollector {
+    chart_path: String,
+    values_files: Vec<String>,
+    release_name: String,
+    namespace: String,
+}
+
+impl RenderedHelmCollector {
+    /// Create a new rendered Helm chart collector.
+    #[must_use]
+    pub fn new(
+        chart_path: &str,
+        values_files: Vec<String>,
+        release_name: &str,
+        namespace: &str,
+    ) -> Self {
+        Self {
+            chart_path: chart_path.to_string(),
+            values_files,
+            release_name: release_name.to_string(),
+            namespace: namespace.to_string(),
+        }
+    }
+}
+
+impl LayerCollector for RenderedHelmCollector {
+    async fn collect(&self) -> Result<LayerSignature> {
+        hash_rendered_chart(
+            &self.chart_path,
+            &self.values_files,
+            &self.release_name,
+            &self.namespace,
+        )
+        .await
+    }
+
+    fn layer_type(&self) -> LayerType {
+        LayerType::Helm
+    }
+}
+
 /// Helm chart collector.
 ///
 /// Wraps the standalone functions in a [`LayerCollector`] implementation.
@@ -183,5 +307,100 @@ impl LayerCollector for HelmCollector {
 
     fn layer_type(&self) -> LayerType {
         LayerType::Helm
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::canonicalize::{CanonicalMode, Canonicalizer, YamlCanonicalizer};
+
+    #[test]
+    fn rendered_helm_collector_layer_type() {
+        let collector = RenderedHelmCollector::new(
+            "./charts/myapp",
+            vec!["values.yaml".to_string()],
+            "myapp",
+            "default",
+        );
+        assert_eq!(collector.layer_type(), LayerType::Helm);
+    }
+
+    #[test]
+    fn rendered_helm_collector_new() {
+        let collector = RenderedHelmCollector::new(
+            "./charts/myapp",
+            vec!["values-prod.yaml".to_string(), "values-secrets.yaml".to_string()],
+            "my-release",
+            "production",
+        );
+        assert_eq!(collector.chart_path, "./charts/myapp");
+        assert_eq!(collector.values_files.len(), 2);
+        assert_eq!(collector.values_files[0], "values-prod.yaml");
+        assert_eq!(collector.values_files[1], "values-secrets.yaml");
+        assert_eq!(collector.release_name, "my-release");
+        assert_eq!(collector.namespace, "production");
+    }
+
+    #[test]
+    fn different_values_produce_different_rendered_hashes() {
+        // Simulate what hash_rendered_chart does: canonicalize rendered YAML then hash.
+        // Different rendered outputs must produce different hashes.
+        let rendered_a = b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\ndata:\n  replicas: \"3\"\n";
+        let rendered_b = b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\ndata:\n  replicas: \"5\"\n";
+
+        let canonical_a = YamlCanonicalizer.canonicalize(rendered_a, CanonicalMode::Logical);
+        let canonical_b = YamlCanonicalizer.canonicalize(rendered_b, CanonicalMode::Logical);
+
+        let hash_a = Blake3Hash::digest(canonical_a.as_ref());
+        let hash_b = Blake3Hash::digest(canonical_b.as_ref());
+
+        assert_ne!(
+            hash_a, hash_b,
+            "Different rendered values must produce different hashes"
+        );
+    }
+
+    #[test]
+    fn same_rendered_yaml_reordered_keys_same_hash() {
+        // Canonicalization should normalize key order, so reordered keys hash identically.
+        let rendered_a = b"kind: ConfigMap\napiVersion: v1\ndata:\n  key: value\n";
+        let rendered_b = b"apiVersion: v1\nkind: ConfigMap\ndata:\n  key: value\n";
+
+        let canonical_a = YamlCanonicalizer.canonicalize(rendered_a, CanonicalMode::Logical);
+        let canonical_b = YamlCanonicalizer.canonicalize(rendered_b, CanonicalMode::Logical);
+
+        let hash_a = Blake3Hash::digest(canonical_a.as_ref());
+        let hash_b = Blake3Hash::digest(canonical_b.as_ref());
+
+        assert_eq!(
+            hash_a, hash_b,
+            "Same content with reordered keys should hash identically after canonicalization"
+        );
+    }
+
+    #[test]
+    fn compute_composite_empty() {
+        let hash = compute_composite(&[]);
+        assert_eq!(hash, Blake3Hash::digest(b"empty-helm-chart"));
+    }
+
+    #[test]
+    fn compute_composite_deterministic() {
+        let inputs = vec![
+            InputHash {
+                name: "a".to_string(),
+                hash: Blake3Hash::digest(b"a"),
+                size_bytes: None,
+            },
+            InputHash {
+                name: "b".to_string(),
+                hash: Blake3Hash::digest(b"b"),
+                size_bytes: None,
+            },
+        ];
+        let h1 = compute_composite(&inputs);
+        let h2 = compute_composite(&inputs);
+        assert_eq!(h1, h2);
     }
 }

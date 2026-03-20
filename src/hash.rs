@@ -13,6 +13,20 @@ use std::str::FromStr;
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Blake3Hash(#[serde(with = "hex_bytes")] pub [u8; 32]);
 
+impl schemars::JsonSchema for Blake3Hash {
+    fn schema_name() -> String {
+        "Blake3Hash".to_string()
+    }
+
+    fn json_schema(_gen: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            format: Some("blake3-hash".to_string()),
+            ..Default::default()
+        })
+    }
+}
+
 impl AsRef<[u8]> for Blake3Hash {
     fn as_ref(&self) -> &[u8] {
         &self.0

@@ -27,6 +27,7 @@ rs_merkle = "1.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml_ng = "0.10"
+schemars = { version = "0.8", features = ["chrono"] }
 
 # Time and identifiers
 chrono = { version = "0.4", features = ["serde"] }
@@ -37,6 +38,9 @@ tokio = { version = "1.50", features = ["full"] }
 
 # HTTP client (for OCI registry, remote endpoints)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Object storage abstraction (S3, GCS, Azure, local) for heartbeat log forwarding
+object_store = { version = "0.13", features = ["aws"] }
 
 # Configuration (layered: defaults → YAML → envvars)
 figment = { version = "0.10", features = ["yaml", "env"] }
@@ -53,11 +57,48 @@ tempfile = "3.14"
 # Futures combinators (join_all for parallel collection)
 futures = "0.3"
 
+# HTTP server (mock Akeyless gateway for testing)
+axum = "0.8"
+
 [lints.clippy]
 pedantic = "warn"
 
 [dev-dependencies]
 tokio-test = "0.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.6"
+
+[[bench]]
+name = "hash"
+harness = false
+
+[[bench]]
+name = "merkle"
+harness = false
+
+[[bench]]
+name = "signature"
+harness = false
+
+[[bench]]
+name = "gating"
+harness = false
+
+[[bench]]
+name = "changeset"
+harness = false
+
+[[bench]]
+name = "compliance"
+harness = false
+
+[[bench]]
+name = "certification"
+harness = false
+
+[[bench]]
+name = "verify"
+harness = false
 
 [profile.release]
 opt-level = "z"

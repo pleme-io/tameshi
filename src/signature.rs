@@ -12,7 +12,7 @@ use std::str::FromStr;
 use crate::hash::Blake3Hash;
 
 /// Infrastructure layer types that produce signatures.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LayerType {
     /// Nix store closure
@@ -101,7 +101,7 @@ impl From<Vec<LayerSignature>> for MasterSignature {
 }
 
 /// Metadata about how a hash was produced.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SignatureMetadata {
     /// When the signature was computed.
     pub computed_at: DateTime<Utc>,
@@ -115,7 +115,7 @@ pub struct SignatureMetadata {
 }
 
 /// A single input that was hashed as part of a layer signature.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct InputHash {
     /// Human-readable identifier for the input.
     pub name: String,
@@ -127,7 +127,7 @@ pub struct InputHash {
 }
 
 /// A hash signature for a single infrastructure layer.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LayerSignature {
     /// Which infrastructure layer this signature covers.
     pub layer: LayerType,
@@ -187,7 +187,7 @@ impl LayerSignature {
 }
 
 /// The composed master signature for an environment.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MasterSignature {
     /// Merkle root of all layer signatures (before compliance).
     pub untested: Blake3Hash,

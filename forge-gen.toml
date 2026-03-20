@@ -1,0 +1,16 @@
+[spec]
+path = "spec/openapi.yaml"
+
+[output]
+dir = "generated"
+
+[mcp]
+targets = ["mcp-rust"]
+name = "tameshi"
+
+[completions]
+targets = ["skim-tab", "fish"]
+name = "tameshi"
+
+[docs]
+targets = ["markdown"]

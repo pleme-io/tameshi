@@ -16,10 +16,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::akeyless_client::{AkeylessClientError, TlsConfig, build_tls_client};
 use crate::hash::Blake3Hash;
 
 /// Algorithm used to sign the Merkle root.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SigningAlgorithm {
     /// Local Ed25519 key (development/testing).
@@ -44,12 +45,13 @@ impl std::fmt::Display for SigningAlgorithm {
 }
 
 /// A signed Merkle root with provenance metadata.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SignedRoot {
     /// The Merkle root that was signed.
     pub root: Blake3Hash,
     /// The cryptographic signature bytes.
     #[serde(with = "hex_sig")]
+    #[schemars(with = "String")]
     pub signature: Vec<u8>,
     /// Which algorithm was used to sign.
     pub algorithm: SigningAlgorithm,
@@ -198,6 +200,29 @@ impl AkeylessDfcSigner {
         }
     }
 
+    /// Create a new DFC signer with Akeyless API key credentials and custom TLS configuration.
+    ///
+    /// Uses [`build_tls_client`] to construct a [`reqwest::Client`] that respects
+    /// pinned CAs, mTLS client certificates, and server-verification toggles.
+    pub fn with_tls(
+        key_name: &str,
+        signer_id: &str,
+        endpoint: &str,
+        access_id: &str,
+        access_key: &str,
+        tls: &TlsConfig,
+    ) -> Result<Self, AkeylessClientError> {
+        let client = build_tls_client(tls)?;
+        Ok(Self {
+            key_name: key_name.to_string(),
+            signer_id: signer_id.to_string(),
+            client,
+            endpoint: endpoint.to_string(),
+            access_id: access_id.to_string(),
+            access_key: access_key.to_string(),
+        })
+    }
+
     /// Authenticate to Akeyless and return an access token.
     async fn authenticate(&self) -> crate::error::Result<String> {
         let body = serde_json::json!({
@@ -315,7 +340,7 @@ impl MerkleRootSigner for AkeylessDfcSigner {
 ///
 /// Allows deployments during attestation outages. Every break-glass event
 /// is cryptographically logged for CIRCIA compliance.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BreakGlassToken {
     /// Token type identifier.
     #[serde(rename = "type")]
@@ -332,6 +357,7 @@ pub struct BreakGlassToken {
     pub scope: Vec<String>,
     /// Cryptographic signature of the token.
     #[serde(with = "hex_sig")]
+    #[schemars(with = "String")]
     pub signature: Vec<u8>,
 }
 
@@ -738,5 +764,63 @@ mod tests {
             &signer,
         );
         assert!(!token.covers_namespace("production"));
+    }
+
+    // =========================================================================
+    // AkeylessDfcSigner::with_tls tests
+    // =========================================================================
+
+    #[test]
+    fn dfc_signer_with_tls_default() {
+        let tls = TlsConfig::default();
+        let signer = AkeylessDfcSigner::with_tls(
+            "prod-dfc-key",
+            "ci-pipeline",
+            "https://gw.akeyless.io",
+            "p-abc123",
+            "my-secret-key",
+            &tls,
+        );
+        assert!(signer.is_ok(), "with_tls with default TlsConfig should succeed");
+        let signer = signer.unwrap();
+        assert_eq!(signer.key_name, "prod-dfc-key");
+        assert_eq!(signer.signer_id, "ci-pipeline");
+        assert_eq!(signer.endpoint, "https://gw.akeyless.io");
+        assert_eq!(signer.access_id, "p-abc123");
+        assert_eq!(signer.access_key, "my-secret-key");
+    }
+
+    #[test]
+    fn dfc_signer_with_tls_verify_disabled() {
+        let tls = TlsConfig {
+            verify_server: false,
+            ..TlsConfig::default()
+        };
+        let signer = AkeylessDfcSigner::with_tls(
+            "key",
+            "signer",
+            "https://gw.example.com",
+            "id",
+            "key",
+            &tls,
+        );
+        assert!(signer.is_ok());
+    }
+
+    #[test]
+    fn dfc_signer_with_tls_bad_ca_path() {
+        let tls = TlsConfig {
+            pinned_ca_path: Some("/nonexistent/ca.pem".to_string()),
+            ..TlsConfig::default()
+        };
+        let result = AkeylessDfcSigner::with_tls(
+            "key",
+            "signer",
+            "https://gw.example.com",
+            "id",
+            "key",
+            &tls,
+        );
+        assert!(result.is_err());
     }
 }

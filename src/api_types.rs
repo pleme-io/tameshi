@@ -10,7 +10,7 @@ use crate::hash::Blake3Hash;
 use crate::signature::{LayerType, MasterSignature};
 
 /// Request to compute a master signature.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ComputeSignatureRequest {
     /// Which layers to collect and hash.
     pub layers: Vec<LayerType>,
@@ -21,7 +21,7 @@ pub struct ComputeSignatureRequest {
 }
 
 /// Response from a signature computation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ComputeSignatureResponse {
     /// The computed master signature.
     pub signature: MasterSignature,
@@ -30,7 +30,7 @@ pub struct ComputeSignatureResponse {
 }
 
 /// Request to verify a signature.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct VerifySignatureRequest {
     /// Expected signature (prefixed, e.g., "blake3:abc123...").
     pub expected: String,
@@ -42,7 +42,7 @@ pub struct VerifySignatureRequest {
 }
 
 /// Response from a signature verification.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct VerifySignatureResponse {
     /// Whether verification passed.
     pub verified: bool,
@@ -57,7 +57,7 @@ pub struct VerifySignatureResponse {
 }
 
 /// Per-layer verification result.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LayerVerificationResult {
     /// Layer type.
     pub layer: LayerType,
@@ -68,7 +68,7 @@ pub struct LayerVerificationResult {
 }
 
 /// Certification status for an environment.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CertificationStatus {
     /// Environment identifier.
     pub environment: String,
@@ -91,7 +91,7 @@ pub struct CertificationStatus {
 }
 
 /// Certification phase.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CertificationPhase {
     /// Not yet assessed.
@@ -105,7 +105,7 @@ pub enum CertificationPhase {
 }
 
 /// Per-layer certification status.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LayerCertificationStatus {
     /// Layer type.
     pub layer: LayerType,
@@ -119,12 +119,10 @@ pub struct LayerCertificationStatus {
 }
 
 /// Audit trail entry.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AuditEntry {
     /// When this entry was recorded.
     pub timestamp: DateTime<Utc>,
-    /// Environment.
-    pub environment: String,
     /// Action that was performed.
     pub action: AuditAction,
     /// The signature at the time of the action.
@@ -132,10 +130,16 @@ pub struct AuditEntry {
     /// Additional details.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
+    /// Kubernetes resource involved (e.g., apps/v1/Deployment/my-app).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource: Option<String>,
+    /// Whether the operation was allowed (for admission events).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<bool>,
 }
 
 /// Audit actions.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditAction {
     /// Signature was computed.
@@ -183,7 +187,7 @@ impl std::fmt::Display for AuditAction {
 }
 
 /// Gate decision — the result of a gating check.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GateDecision {
     /// Whether provisioning is allowed.
     pub allowed: bool,
@@ -362,15 +366,17 @@ mod tests {
     fn audit_entry_serde_roundtrip() {
         let entry = AuditEntry {
             timestamp: Utc::now(),
-            environment: "staging".to_string(),
             action: AuditAction::SignatureComputed,
             signature: "blake3:xxx".to_string(),
             details: Some("computed successfully".to_string()),
+            resource: Some("apps/v1/Deployment/my-app".to_string()),
+            allowed: Some(true),
         };
         let json = serde_json::to_string(&entry).unwrap();
         let deserialized: AuditEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.environment, "staging");
         assert_eq!(deserialized.action, AuditAction::SignatureComputed);
+        assert_eq!(deserialized.resource, Some("apps/v1/Deployment/my-app".to_string()));
+        assert_eq!(deserialized.allowed, Some(true));
     }
 
     #[test]

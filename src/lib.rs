@@ -45,6 +45,7 @@ pub mod changeset;
 pub mod ci;
 pub mod collectors;
 pub mod compliance;
+pub mod compliance_api;
 pub mod config;
 pub mod error;
 pub mod gating;
@@ -72,6 +73,7 @@ pub mod prelude {
     pub use crate::akeyless_client::{
         AkeylessClient, AkeylessClientError, AkeylessConfig, DynamicSecretInfo,
         HttpAkeylessClient, ItemAssociation, MockAkeylessClient, TargetInfo, TlsConfig,
+        build_tls_client,
     };
     pub use crate::collectors::akeyless::LiveAkeylessCollector;
     pub use crate::collectors::akeyless_target::{
@@ -83,15 +85,19 @@ pub mod prelude {
         AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation,
         compute_multi_target_hash, compute_target_attestation_hash,
     };
+    pub use crate::compliance_api::{
+        CertificationQueryStatus, CheckDefinition, ComplianceDistance, ComplianceQuery,
+        ComplianceState, ComplianceStatus, DynamicComplianceCheck, FrameworkState,
+    };
     pub use crate::config::ConfigLoader;
     pub use crate::hash::{AttestationHasher, Blake3Hash, Blake3Hasher, Sha256Hash, Sha256Hasher};
     pub use crate::merkle::{compose_merkle, compute_merkle_root, domain_separated_leaf};
     pub use crate::signature::{InputHash, LayerSignature, LayerType, MasterSignature};
     pub use crate::traits::{
         Clock, CommandRunner, DefaultGatingEngine, DefaultVerifier, FileSystem, FixedClock,
-        GatingEngine, HttpClient, MockCommandRunner, MockFileSystem, MockGatingEngine,
-        MockHttpClient, MockVerifier, ReqwestHttpClient, SignatureVerifier, SystemClock,
-        SystemCommandRunner,
+        GatingEngine, HttpClient, MemStore, MetricsRecorder, MockCommandRunner, MockFileSystem,
+        MockGatingEngine, MockHttpClient, MockVerifier, NoopMetrics, ReqwestHttpClient,
+        SignatureVerifier, Store, SystemClock, SystemCommandRunner,
     };
     pub use crate::selftest::{
         attest_framework, compute_framework_hash, framework_attestation_hash,

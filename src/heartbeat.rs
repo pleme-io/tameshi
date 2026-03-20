@@ -24,12 +24,13 @@
 //! ```
 
 use chrono::{DateTime, Utc};
+use object_store::ObjectStoreExt as _;
 use serde::{Deserialize, Serialize};
 
 use crate::hash::Blake3Hash;
 
 /// A single entry in the proof heartbeat chain.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HeartbeatEntry {
     /// Monotonically increasing sequence number.
     pub sequence: u64,
@@ -52,7 +53,7 @@ pub struct HeartbeatEntry {
 }
 
 /// Identity of the component that performed the verification.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct VerifierIdentity {
     /// Component name: "sekiban", "kensa", "inshou", "kanshi".
     pub component: String,
@@ -75,7 +76,7 @@ impl VerifierIdentity {
 }
 
 /// Types of verification events that produce heartbeat entries.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HeartbeatEvent {
     /// sekiban admission webhook decision.
@@ -115,7 +116,7 @@ impl std::fmt::Display for HeartbeatEvent {
 }
 
 /// Outcome of a verification event.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationOutcome {
     /// Verification passed — resource is attested.
@@ -144,7 +145,17 @@ impl std::fmt::Display for VerificationOutcome {
 /// Maintains an ordered sequence of [`HeartbeatEntry`] values linked by
 /// BLAKE3 hashes. Each new entry includes the hash of the previous entry,
 /// making the chain tamper-evident.
+///
+/// # Thread Safety
+///
+/// `HeartbeatChain` is thread-safe. Internal state is protected by a
+/// `RwLock`, allowing concurrent reads and exclusive writes. All public
+/// methods acquire the lock automatically.
 pub struct HeartbeatChain {
+    inner: std::sync::RwLock<HeartbeatChainInner>,
+}
+
+struct HeartbeatChainInner {
     entries: Vec<HeartbeatEntry>,
     next_sequence: u64,
     last_hash: Blake3Hash,
@@ -155,9 +166,11 @@ impl HeartbeatChain {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entries: Vec::with_capacity(1024),
-            next_sequence: 0,
-            last_hash: Blake3Hash::from([0u8; 32]),
+            inner: std::sync::RwLock::new(HeartbeatChainInner {
+                entries: Vec::with_capacity(1024),
+                next_sequence: 0,
+                last_hash: Blake3Hash::from([0u8; 32]),
+            }),
         }
     }
 
@@ -166,16 +179,17 @@ impl HeartbeatChain {
     /// The entry's `sequence`, `entry_hash`, and `previous_hash` are
     /// computed automatically. The caller provides the verification context.
     pub fn append(
-        &mut self,
+        &self,
         verifier: VerifierIdentity,
         event: HeartbeatEvent,
         result: VerificationOutcome,
         resource: &str,
         signature_checked: Blake3Hash,
-    ) -> &HeartbeatEntry {
-        let sequence = self.next_sequence;
+    ) -> HeartbeatEntry {
+        let mut inner = self.inner.write().expect("HeartbeatChain lock poisoned");
+        let sequence = inner.next_sequence;
         let timestamp = Utc::now();
-        let previous_hash = self.last_hash.clone();
+        let previous_hash = inner.last_hash.clone();
 
         let entry_hash = compute_entry_hash(
             sequence,
@@ -200,10 +214,10 @@ impl HeartbeatChain {
             previous_hash,
         };
 
-        self.last_hash = entry_hash;
-        self.next_sequence += 1;
-        self.entries.push(entry);
-        self.entries.last().unwrap()
+        inner.last_hash = entry_hash;
+        inner.next_sequence += 1;
+        inner.entries.push(entry.clone());
+        entry
     }
 
     /// Verify the integrity of the entire chain.
@@ -212,9 +226,10 @@ impl HeartbeatChain {
     /// `previous_hash` points to the correct predecessor.
     #[must_use]
     pub fn verify_integrity(&self) -> bool {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
         let mut expected_prev = Blake3Hash::from([0u8; 32]);
 
-        for entry in &self.entries {
+        for entry in &inner.entries {
             // Check previous hash linkage
             if entry.previous_hash != expected_prev {
                 return false;
@@ -246,48 +261,55 @@ impl HeartbeatChain {
     #[inline]
     #[must_use]
     pub fn len(&self) -> usize {
-        self.entries.len()
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        inner.entries.len()
     }
 
     /// Check if the chain is empty.
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        inner.entries.is_empty()
     }
 
     /// Get the last entry in the chain.
     #[inline]
     #[must_use]
-    pub fn last(&self) -> Option<&HeartbeatEntry> {
-        self.entries.last()
+    pub fn last(&self) -> Option<HeartbeatEntry> {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        inner.entries.last().cloned()
     }
 
     /// Get all entries in the chain.
     #[inline]
     #[must_use]
-    pub fn entries(&self) -> &[HeartbeatEntry] {
-        &self.entries
+    pub fn entries(&self) -> Vec<HeartbeatEntry> {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        inner.entries.clone()
     }
 
     /// Get the current chain head hash.
     #[inline]
     #[must_use]
-    pub fn head_hash(&self) -> &Blake3Hash {
-        &self.last_hash
+    pub fn head_hash(&self) -> Blake3Hash {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        inner.last_hash.clone()
     }
 
     /// Export the entire chain as JSON for CIRCIA evidence.
     #[must_use]
     pub fn export_json(&self) -> crate::error::Result<String> {
-        serde_json::to_string_pretty(&self.entries).map_err(|e| e.into())
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        serde_json::to_string_pretty(&inner.entries).map_err(|e| e.into())
     }
 
     /// Export the chain as compact JSONL (one entry per line).
     #[must_use]
     pub fn export_jsonl(&self) -> crate::error::Result<String> {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
         let mut output = String::new();
-        for entry in &self.entries {
+        for entry in &inner.entries {
             let line = serde_json::to_string(entry)?;
             output.push_str(&line);
             output.push('\n');
@@ -297,26 +319,169 @@ impl HeartbeatChain {
 
     /// Get entries within a time range.
     #[must_use]
-    pub fn entries_in_range(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<&HeartbeatEntry> {
-        self.entries.iter()
+    pub fn entries_in_range(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<HeartbeatEntry> {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        inner.entries.iter()
             .filter(|e| e.timestamp >= from && e.timestamp <= to)
+            .cloned()
             .collect()
     }
 
     /// Get entries by event type.
     #[must_use]
-    pub fn entries_by_event(&self, event: &HeartbeatEvent) -> Vec<&HeartbeatEntry> {
-        self.entries.iter()
+    pub fn entries_by_event(&self, event: &HeartbeatEvent) -> Vec<HeartbeatEntry> {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        inner.entries.iter()
             .filter(|e| &e.event == event)
+            .cloned()
             .collect()
     }
 
     /// Get the number of allowed vs denied outcomes.
     #[must_use]
     pub fn outcome_counts(&self) -> (usize, usize) {
-        let allowed = self.entries.iter().filter(|e| e.result == VerificationOutcome::Allowed).count();
-        let denied = self.entries.iter().filter(|e| e.result == VerificationOutcome::Denied).count();
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+        let allowed = inner.entries.iter().filter(|e| e.result == VerificationOutcome::Allowed).count();
+        let denied = inner.entries.iter().filter(|e| e.result == VerificationOutcome::Denied).count();
         (allowed, denied)
+    }
+}
+
+/// A CT-style consistency proof between two chain states.
+///
+/// Proves that the chain from `from_seq` to `to_seq` is append-only:
+/// no entries were deleted, reordered, or modified. The `proof_nodes`
+/// contain the entry hashes at each sequence in the range, and
+/// verification recomputes the chain linkage.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ConsistencyProof {
+    /// Starting sequence number (inclusive).
+    pub from_seq: u64,
+    /// Ending sequence number (inclusive).
+    pub to_seq: u64,
+    /// Entry hash at `from_seq`.
+    pub from_hash: Blake3Hash,
+    /// Entry hash at `to_seq`.
+    pub to_hash: Blake3Hash,
+    /// Entry hashes for each sequence from `from_seq` through `to_seq`.
+    pub proof_nodes: Vec<Blake3Hash>,
+    /// Whether the proof has been verified server-side.
+    #[serde(default)]
+    pub verified: bool,
+}
+
+impl HeartbeatChain {
+    /// Generate a consistency proof that the chain from `from_seq` to `to_seq`
+    /// is append-only (no entries were deleted or modified).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `from_seq > to_seq` or if either sequence number
+    /// is beyond the current chain length.
+    pub fn consistency_proof(
+        &self,
+        from_seq: u64,
+        to_seq: u64,
+    ) -> crate::error::Result<ConsistencyProof> {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+
+        if from_seq > to_seq {
+            return Err(crate::error::TameshiError::InvalidInput(format!(
+                "from_seq ({from_seq}) must be <= to_seq ({to_seq})"
+            )));
+        }
+
+        let len = inner.entries.len() as u64;
+        if to_seq >= len {
+            return Err(crate::error::TameshiError::InvalidInput(format!(
+                "to_seq ({to_seq}) is beyond chain length ({len})"
+            )));
+        }
+
+        let from_idx = from_seq as usize;
+        let to_idx = to_seq as usize;
+
+        let proof_nodes: Vec<Blake3Hash> = inner.entries[from_idx..=to_idx]
+            .iter()
+            .map(|e| e.entry_hash.clone())
+            .collect();
+
+        let from_hash = inner.entries[from_idx].entry_hash.clone();
+        let to_hash = inner.entries[to_idx].entry_hash.clone();
+
+        Ok(ConsistencyProof {
+            from_seq,
+            to_seq,
+            from_hash,
+            to_hash,
+            proof_nodes,
+            verified: false,
+        })
+    }
+
+    /// Verify a consistency proof.
+    ///
+    /// Recomputes the chain linkage from the proof nodes and verifies
+    /// that each entry's hash matches its content and links correctly
+    /// to the previous entry.
+    #[must_use]
+    pub fn verify_consistency_proof(&self, proof: &ConsistencyProof) -> bool {
+        let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
+
+        if proof.from_seq > proof.to_seq {
+            return false;
+        }
+
+        let len = inner.entries.len() as u64;
+        if proof.to_seq >= len {
+            return false;
+        }
+
+        let expected_count = (proof.to_seq - proof.from_seq + 1) as usize;
+        if proof.proof_nodes.len() != expected_count {
+            return false;
+        }
+
+        let from_idx = proof.from_seq as usize;
+        let to_idx = proof.to_seq as usize;
+
+        // Verify that proof_nodes match the actual entry hashes
+        for (i, entry) in inner.entries[from_idx..=to_idx].iter().enumerate() {
+            if entry.entry_hash != proof.proof_nodes[i] {
+                return false;
+            }
+        }
+
+        // Verify the chain linkage within the range
+        for window in inner.entries[from_idx..=to_idx].windows(2) {
+            // Recompute the second entry's hash and check linkage
+            let recomputed = compute_entry_hash(
+                window[1].sequence,
+                &window[1].timestamp,
+                &window[1].verifier,
+                &window[1].event,
+                &window[1].result,
+                &window[1].resource,
+                &window[1].signature_checked,
+                &window[1].previous_hash,
+            );
+            if recomputed != window[1].entry_hash {
+                return false;
+            }
+            if window[1].previous_hash != window[0].entry_hash {
+                return false;
+            }
+        }
+
+        // Verify the from/to hashes match
+        if proof.from_hash != inner.entries[from_idx].entry_hash {
+            return false;
+        }
+        if proof.to_hash != inner.entries[to_idx].entry_hash {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -544,6 +709,177 @@ fn default_flush_interval() -> u64 {
     5000
 }
 
+// =============================================================================
+// S3 Log Forwarding
+// =============================================================================
+
+/// Configuration for S3-compatible log forwarding.
+///
+/// **Security:** The `Debug` impl redacts `secret_access_key` to prevent
+/// accidental credential leakage in logs or error messages.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct S3EmitterConfig {
+    /// S3-compatible endpoint URL (e.g., `"https://s3.amazonaws.com"`).
+    pub endpoint: String,
+    /// Bucket name.
+    pub bucket: String,
+    /// Key prefix for heartbeat logs (e.g., `"tameshi/heartbeats/"`).
+    pub key_prefix: String,
+    /// AWS access key ID.
+    pub access_key_id: String,
+    /// AWS secret access key.
+    pub secret_access_key: String,
+    /// AWS region.
+    pub region: String,
+    /// Optional session token for IAM role assumption (IRSA, STS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_token: Option<String>,
+}
+
+impl std::fmt::Debug for S3EmitterConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("S3EmitterConfig")
+            .field("endpoint", &self.endpoint)
+            .field("bucket", &self.bucket)
+            .field("key_prefix", &self.key_prefix)
+            .field("access_key_id", &self.access_key_id)
+            .field("secret_access_key", &"[REDACTED]")
+            .field("region", &self.region)
+            .field("session_token", &self.session_token.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
+}
+
+/// Emits heartbeat chain entries to S3-compatible storage via the
+/// [`object_store`] crate, which handles AWS Signature V4 (including
+/// session tokens for IRSA/STS) automatically.
+pub struct S3Emitter {
+    store: Box<dyn object_store::ObjectStore>,
+    config: S3EmitterConfig,
+}
+
+impl S3Emitter {
+    /// Create a new S3 emitter backed by a real `AmazonS3` client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `object_store` S3 builder fails (e.g.,
+    /// missing or invalid configuration values).
+    pub fn new(config: S3EmitterConfig) -> crate::error::Result<Self> {
+        use object_store::aws::AmazonS3Builder;
+
+        let mut builder = AmazonS3Builder::new()
+            .with_bucket_name(&config.bucket)
+            .with_region(&config.region)
+            .with_access_key_id(&config.access_key_id)
+            .with_secret_access_key(&config.secret_access_key);
+
+        if !config.endpoint.is_empty() {
+            builder = builder
+                .with_endpoint(&config.endpoint)
+                .with_virtual_hosted_style_request(false); // path-style for MinIO/custom
+        }
+
+        if let Some(token) = &config.session_token {
+            builder = builder.with_token(token);
+        }
+
+        let store = builder.build().map_err(|e| {
+            crate::error::TameshiError::CollectorError {
+                layer: "s3".to_string(),
+                message: format!("failed to build S3 client: {e}"),
+            }
+        })?;
+
+        Ok(Self {
+            store: Box::new(store),
+            config,
+        })
+    }
+
+    /// Create an `S3Emitter` with a custom [`ObjectStore`] backend (for testing).
+    #[must_use]
+    pub fn with_store(store: Box<dyn object_store::ObjectStore>, config: S3EmitterConfig) -> Self {
+        Self { store, config }
+    }
+
+    /// Upload the full chain as a JSON file.
+    ///
+    /// Serializes the chain's entries as pretty-printed JSON and PUTs to
+    /// `{key_prefix}chain-{timestamp}.json`.
+    /// Returns the S3 object key on success.
+    pub async fn upload_chain(
+        &self,
+        chain: &HeartbeatChain,
+    ) -> crate::error::Result<String> {
+        let now = Utc::now();
+        let key = self.chain_key(&now);
+        let body = chain.export_json()?;
+        let path = object_store::path::Path::from(key.as_str());
+
+        self.store
+            .put(&path, object_store::PutPayload::from(body.into_bytes()))
+            .await
+            .map_err(|e| crate::error::TameshiError::CollectorError {
+                layer: "s3".to_string(),
+                message: format!("S3 PUT failed: {e}"),
+            })?;
+
+        Ok(key)
+    }
+
+    /// Upload a single entry as JSONL.
+    ///
+    /// Serializes the entry as a single JSON line and PUTs to
+    /// `{key_prefix}entries/{sequence:08}.jsonl`.
+    /// Returns the S3 object key on success.
+    pub async fn upload_entry(
+        &self,
+        entry: &HeartbeatEntry,
+    ) -> crate::error::Result<String> {
+        let key = self.entry_key(entry);
+        let mut body = serde_json::to_vec(entry)?;
+        body.push(b'\n');
+        let path = object_store::path::Path::from(key.as_str());
+
+        self.store
+            .put(&path, object_store::PutPayload::from_bytes(body.into()))
+            .await
+            .map_err(|e| crate::error::TameshiError::CollectorError {
+                layer: "s3".to_string(),
+                message: format!("S3 PUT failed: {e}"),
+            })?;
+
+        Ok(key)
+    }
+
+    /// Generate the S3 object key for a chain export.
+    #[must_use]
+    pub fn chain_key(&self, timestamp: &DateTime<Utc>) -> String {
+        format!(
+            "{}chain-{}.json",
+            self.config.key_prefix,
+            timestamp.format("%Y%m%dT%H%M%SZ")
+        )
+    }
+
+    /// Generate the S3 object key for a single entry.
+    #[must_use]
+    pub fn entry_key(&self, entry: &HeartbeatEntry) -> String {
+        format!(
+            "{}entries/{:08}.jsonl",
+            self.config.key_prefix, entry.sequence
+        )
+    }
+}
+
+impl HeartbeatEmitter for S3Emitter {
+    async fn emit(&self, entry: &HeartbeatEntry) -> crate::error::Result<()> {
+        self.upload_entry(entry).await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -570,7 +906,7 @@ mod tests {
 
     #[test]
     fn chain_append_increments_sequence() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::AdmissionDecision,
@@ -593,7 +929,7 @@ mod tests {
 
     #[test]
     fn chain_links_previous_hashes() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
 
         chain.append(
             test_verifier(),
@@ -618,7 +954,7 @@ mod tests {
 
     #[test]
     fn chain_first_entry_has_zero_previous() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::GateCheck,
@@ -637,7 +973,7 @@ mod tests {
 
     #[test]
     fn chain_verify_integrity_valid() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         for i in 0..10 {
             chain.append(
                 test_verifier(),
@@ -652,7 +988,7 @@ mod tests {
 
     #[test]
     fn chain_detect_tampered_entry() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::AdmissionDecision,
@@ -669,14 +1005,14 @@ mod tests {
         );
 
         // Tamper with the first entry
-        chain.entries[0].resource = "ns/Deploy/EVIL".to_string();
+        chain.inner.write().expect("lock").entries[0].resource = "ns/Deploy/EVIL".to_string();
 
         assert!(!chain.verify_integrity(), "Tampered chain should fail verification");
     }
 
     #[test]
     fn chain_detect_broken_link() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::AdmissionDecision,
@@ -693,15 +1029,15 @@ mod tests {
         );
 
         // Break the link
-        chain.entries[1].previous_hash = Blake3Hash::digest(b"wrong");
+        chain.inner.write().expect("lock").entries[1].previous_hash = Blake3Hash::digest(b"wrong");
 
         assert!(!chain.verify_integrity(), "Broken link should fail verification");
     }
 
     #[test]
     fn chain_head_hash_updates() {
-        let mut chain = HeartbeatChain::new();
-        let initial = chain.head_hash().clone();
+        let chain = HeartbeatChain::new();
+        let initial = chain.head_hash();
 
         chain.append(
             test_verifier(),
@@ -711,7 +1047,7 @@ mod tests {
             test_signature(),
         );
 
-        assert_ne!(chain.head_hash(), &initial);
+        assert_ne!(chain.head_hash(), initial);
     }
 
     #[test]
@@ -757,7 +1093,7 @@ mod tests {
 
     #[test]
     fn heartbeat_entry_serde_roundtrip() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::ComplianceAssessment,
@@ -767,9 +1103,9 @@ mod tests {
         );
 
         let entry = chain.last().unwrap();
-        let json = serde_json::to_string(entry).unwrap();
+        let json = serde_json::to_string(&entry).unwrap();
         let deserialized: HeartbeatEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(entry, &deserialized);
+        assert_eq!(entry, deserialized);
     }
 
     #[test]
@@ -840,7 +1176,7 @@ mod tests {
 
     #[tokio::test]
     async fn noop_emitter_succeeds() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::GateCheck,
@@ -849,7 +1185,8 @@ mod tests {
             test_signature(),
         );
         let emitter = NoopEmitter;
-        let result = emitter.emit(chain.last().unwrap()).await;
+        let entry = chain.last().unwrap();
+        let result = emitter.emit(&entry).await;
         assert!(result.is_ok());
     }
 
@@ -859,7 +1196,7 @@ mod tests {
         let path = dir.path().join("heartbeat.jsonl");
         let emitter = FileEmitter::new(&path);
 
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::AdmissionDecision,
@@ -868,7 +1205,8 @@ mod tests {
             test_signature(),
         );
 
-        emitter.emit(chain.last().unwrap()).await.unwrap();
+        let entry = chain.last().unwrap();
+        emitter.emit(&entry).await.unwrap();
 
         let content = tokio::fs::read_to_string(&path).await.unwrap();
         assert!(!content.is_empty());
@@ -882,7 +1220,7 @@ mod tests {
         let path = dir.path().join("heartbeat.jsonl");
         let emitter = FileEmitter::new(&path);
 
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         for i in 0..3 {
             chain.append(
                 test_verifier(),
@@ -891,7 +1229,8 @@ mod tests {
                 &format!("resource-{i}"),
                 test_signature(),
             );
-            emitter.emit(chain.last().unwrap()).await.unwrap();
+            let entry = chain.last().unwrap();
+            emitter.emit(&entry).await.unwrap();
         }
 
         let content = tokio::fs::read_to_string(&path).await.unwrap();
@@ -936,7 +1275,7 @@ mod tests {
 
     #[test]
     fn chain_1000_entries_integrity() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         for i in 0..1000 {
             chain.append(
                 test_verifier(),
@@ -967,7 +1306,7 @@ mod tests {
 
     #[test]
     fn chain_monotonic_sequence() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         for _ in 0..50 {
             chain.append(
                 test_verifier(),
@@ -988,7 +1327,7 @@ mod tests {
 
     #[test]
     fn chain_monotonic_timestamps() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         for _ in 0..10 {
             chain.append(
                 test_verifier(),
@@ -1009,7 +1348,7 @@ mod tests {
 
     #[test]
     fn export_json_valid() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         for i in 0..3 {
             chain.append(
                 test_verifier(),
@@ -1028,7 +1367,7 @@ mod tests {
 
     #[test]
     fn export_jsonl_line_count() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         for i in 0..5 {
             chain.append(
                 test_verifier(),
@@ -1049,7 +1388,7 @@ mod tests {
 
     #[test]
     fn entries_in_range_filters() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         // Append a few entries -- timestamps are set to Utc::now() in append()
         let before = Utc::now();
         chain.append(
@@ -1087,7 +1426,7 @@ mod tests {
 
     #[test]
     fn entries_by_event_filters() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         chain.append(
             test_verifier(),
             HeartbeatEvent::AdmissionDecision,
@@ -1135,7 +1474,7 @@ mod tests {
 
     #[test]
     fn outcome_counts_correct() {
-        let mut chain = HeartbeatChain::new();
+        let chain = HeartbeatChain::new();
         // 3 allowed
         for _ in 0..3 {
             chain.append(
@@ -1168,5 +1507,301 @@ mod tests {
         let (allowed, denied) = chain.outcome_counts();
         assert_eq!(allowed, 3);
         assert_eq!(denied, 2);
+    }
+
+    // =========================================================================
+    // ConsistencyProof tests
+    // =========================================================================
+
+    fn build_chain(n: usize) -> HeartbeatChain {
+        let chain = HeartbeatChain::new();
+        for i in 0..n {
+            chain.append(
+                test_verifier(),
+                HeartbeatEvent::AdmissionDecision,
+                VerificationOutcome::Allowed,
+                &format!("resource-{i}"),
+                Blake3Hash::digest(format!("sig-{i}").as_bytes()),
+            );
+        }
+        chain
+    }
+
+    #[test]
+    fn consistency_proof_valid() {
+        let chain = build_chain(10);
+        let proof = chain.consistency_proof(2, 7).unwrap();
+        assert_eq!(proof.from_seq, 2);
+        assert_eq!(proof.to_seq, 7);
+        assert_eq!(proof.proof_nodes.len(), 6);
+        assert!(chain.verify_consistency_proof(&proof));
+    }
+
+    #[test]
+    fn consistency_proof_full_chain() {
+        let chain = build_chain(5);
+        let proof = chain.consistency_proof(0, 4).unwrap();
+        assert_eq!(proof.proof_nodes.len(), 5);
+        assert!(chain.verify_consistency_proof(&proof));
+    }
+
+    #[test]
+    fn consistency_proof_detects_tamper() {
+        let chain = build_chain(10);
+        let proof = chain.consistency_proof(2, 7).unwrap();
+
+        // Tamper with an entry in the proof range
+        chain.inner.write().expect("lock").entries[4].resource = "TAMPERED".to_string();
+
+        assert!(
+            !chain.verify_consistency_proof(&proof),
+            "Tampered chain should fail consistency proof verification"
+        );
+    }
+
+    #[test]
+    fn consistency_proof_detects_hash_tamper() {
+        let chain = build_chain(10);
+        let proof = chain.consistency_proof(2, 7).unwrap();
+
+        // Tamper with an entry hash directly
+        chain.inner.write().expect("lock").entries[5].entry_hash = Blake3Hash::digest(b"forged-hash");
+
+        assert!(
+            !chain.verify_consistency_proof(&proof),
+            "Forged entry hash should fail consistency proof verification"
+        );
+    }
+
+    #[test]
+    fn consistency_proof_empty_range() {
+        let chain = build_chain(5);
+        let proof = chain.consistency_proof(3, 3).unwrap();
+        assert_eq!(proof.from_seq, 3);
+        assert_eq!(proof.to_seq, 3);
+        assert_eq!(proof.proof_nodes.len(), 1);
+        assert_eq!(proof.from_hash, proof.to_hash);
+        assert!(chain.verify_consistency_proof(&proof));
+    }
+
+    #[test]
+    fn consistency_proof_invalid_range() {
+        let chain = build_chain(5);
+        let result = chain.consistency_proof(4, 2);
+        assert!(
+            result.is_err(),
+            "from_seq > to_seq should return an error"
+        );
+    }
+
+    #[test]
+    fn consistency_proof_out_of_bounds() {
+        let chain = build_chain(5);
+        let result = chain.consistency_proof(0, 10);
+        assert!(
+            result.is_err(),
+            "to_seq beyond chain length should return an error"
+        );
+    }
+
+    #[test]
+    fn consistency_proof_serde_roundtrip() {
+        let chain = build_chain(5);
+        let proof = chain.consistency_proof(1, 3).unwrap();
+        let json = serde_json::to_string(&proof).unwrap();
+        let deserialized: ConsistencyProof = serde_json::from_str(&json).unwrap();
+        assert_eq!(proof.from_seq, deserialized.from_seq);
+        assert_eq!(proof.to_seq, deserialized.to_seq);
+        assert_eq!(proof.from_hash, deserialized.from_hash);
+        assert_eq!(proof.to_hash, deserialized.to_hash);
+        assert_eq!(proof.proof_nodes.len(), deserialized.proof_nodes.len());
+        assert!(chain.verify_consistency_proof(&deserialized));
+    }
+
+    // =========================================================================
+    // S3Emitter tests
+    // =========================================================================
+
+    fn test_s3_config() -> S3EmitterConfig {
+        S3EmitterConfig {
+            endpoint: "https://s3.us-east-1.amazonaws.com".to_string(),
+            bucket: "tameshi-heartbeats".to_string(),
+            key_prefix: "tameshi/heartbeats/".to_string(),
+            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            region: "us-east-1".to_string(),
+            session_token: None,
+        }
+    }
+
+    fn in_memory_emitter() -> (std::sync::Arc<object_store::memory::InMemory>, S3Emitter) {
+        let store = std::sync::Arc::new(object_store::memory::InMemory::new());
+        let emitter = S3Emitter::with_store(Box::new(std::sync::Arc::clone(&store)), test_s3_config());
+        (store, emitter)
+    }
+
+    #[test]
+    fn s3_emitter_config_serde() {
+        let config = test_s3_config();
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: S3EmitterConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.endpoint, config.endpoint);
+        assert_eq!(deserialized.bucket, config.bucket);
+        assert_eq!(deserialized.key_prefix, config.key_prefix);
+        assert_eq!(deserialized.access_key_id, config.access_key_id);
+        assert_eq!(deserialized.secret_access_key, config.secret_access_key);
+        assert_eq!(deserialized.region, config.region);
+        assert_eq!(deserialized.session_token, None);
+    }
+
+    #[test]
+    fn s3_emitter_config_serde_with_session_token() {
+        let mut config = test_s3_config();
+        config.session_token = Some("FwoGZX...EXAMPLE".to_string());
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: S3EmitterConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.session_token, Some("FwoGZX...EXAMPLE".to_string()));
+    }
+
+    #[test]
+    fn s3_emitter_config_debug_redacts_secrets() {
+        let mut config = test_s3_config();
+        config.session_token = Some("secret-token".to_string());
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("wJalrXUtnFEMI"), "secret_access_key must be redacted");
+        assert!(!debug.contains("secret-token"), "session_token must be redacted");
+        assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn s3_emitter_chain_key_format() {
+        let (_, emitter) = in_memory_emitter();
+        let ts = chrono::DateTime::parse_from_rfc3339("2026-03-20T15:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let key = emitter.chain_key(&ts);
+        assert_eq!(key, "tameshi/heartbeats/chain-20260320T153000Z.json");
+    }
+
+    #[test]
+    fn s3_emitter_entry_key_format() {
+        let (_, emitter) = in_memory_emitter();
+        let chain = HeartbeatChain::new();
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::AdmissionDecision,
+            VerificationOutcome::Allowed,
+            "test",
+            test_signature(),
+        );
+        let entry = chain.last().unwrap();
+        let key = emitter.entry_key(&entry);
+        assert_eq!(key, "tameshi/heartbeats/entries/00000000.jsonl");
+
+        // Append more to get a higher sequence
+        for _ in 0..41 {
+            chain.append(
+                test_verifier(),
+                HeartbeatEvent::GateCheck,
+                VerificationOutcome::Allowed,
+                "test",
+                test_signature(),
+            );
+        }
+        let entry42 = chain.last().unwrap();
+        assert_eq!(entry42.sequence, 41);
+        let key42 = emitter.entry_key(&entry42);
+        assert_eq!(key42, "tameshi/heartbeats/entries/00000041.jsonl");
+    }
+
+    #[test]
+    fn s3_emitter_new_builds_client() {
+        let config = test_s3_config();
+        let emitter = S3Emitter::new(config.clone()).unwrap();
+        // Verify the config is stored correctly.
+        assert_eq!(emitter.config.endpoint, config.endpoint);
+        assert_eq!(emitter.config.bucket, config.bucket);
+        assert_eq!(emitter.config.key_prefix, config.key_prefix);
+        assert_eq!(emitter.config.region, config.region);
+    }
+
+    #[tokio::test]
+    async fn s3_emitter_uploads_chain() {
+        let (store, emitter) = in_memory_emitter();
+        let chain = HeartbeatChain::new();
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::AdmissionDecision,
+            VerificationOutcome::Allowed,
+            "ns/Deploy/app",
+            test_signature(),
+        );
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::GateVerification,
+            VerificationOutcome::Allowed,
+            "ns/Deploy/app",
+            test_signature(),
+        );
+
+        let key = emitter.upload_chain(&chain).await.unwrap();
+        assert!(key.starts_with("tameshi/heartbeats/chain-"));
+        assert!(key.ends_with(".json"));
+
+        // Verify the data was actually written and is valid JSON.
+        let path = object_store::path::Path::from(key.as_str());
+        let result = store.get(&path).await.unwrap();
+        let bytes = result.bytes().await.unwrap();
+        let entries: Vec<HeartbeatEntry> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].resource, "ns/Deploy/app");
+    }
+
+    #[tokio::test]
+    async fn s3_emitter_uploads_entry() {
+        let (store, emitter) = in_memory_emitter();
+        let chain = HeartbeatChain::new();
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::ComplianceAssessment,
+            VerificationOutcome::Allowed,
+            "kensa/assessment",
+            test_signature(),
+        );
+        let entry = chain.last().unwrap();
+        let key = emitter.upload_entry(&entry).await.unwrap();
+        assert_eq!(key, "tameshi/heartbeats/entries/00000000.jsonl");
+
+        // Verify the data was actually written.
+        let path = object_store::path::Path::from(key.as_str());
+        let result = store.get(&path).await.unwrap();
+        let bytes = result.bytes().await.unwrap();
+        let line = std::str::from_utf8(&bytes).unwrap().trim();
+        let deserialized: HeartbeatEntry = serde_json::from_str(line).unwrap();
+        assert_eq!(deserialized.resource, "kensa/assessment");
+        assert_eq!(deserialized.sequence, 0);
+    }
+
+    #[tokio::test]
+    async fn s3_emitter_emit_trait() {
+        let (store, emitter) = in_memory_emitter();
+        let chain = HeartbeatChain::new();
+        chain.append(
+            test_verifier(),
+            HeartbeatEvent::GateCheck,
+            VerificationOutcome::Allowed,
+            "emit-test",
+            test_signature(),
+        );
+        let entry = chain.last().unwrap();
+
+        // Use the HeartbeatEmitter trait method.
+        emitter.emit(&entry).await.unwrap();
+
+        // Verify via store.
+        let path = object_store::path::Path::from("tameshi/heartbeats/entries/00000000.jsonl");
+        let result = store.get(&path).await.unwrap();
+        let bytes = result.bytes().await.unwrap();
+        assert!(!bytes.is_empty());
     }
 }
