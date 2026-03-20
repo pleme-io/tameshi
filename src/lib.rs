@@ -38,6 +38,7 @@
 pub mod akeyless_client;
 pub mod alerts;
 pub mod api_types;
+pub mod canonicalize;
 pub mod certification;
 pub mod changeset;
 pub mod ci;
@@ -47,10 +48,12 @@ pub mod config;
 pub mod error;
 pub mod gating;
 pub mod hash;
+pub mod heartbeat;
 pub mod merkle;
 pub mod reporting;
 pub mod selftest;
 pub mod signature;
+pub mod signing;
 pub mod traits;
 pub mod verify;
 
@@ -60,6 +63,10 @@ pub mod verify;
 /// use tameshi::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::canonicalize::{
+        CanonicalMode, Canonicalizer, JsonCanonicalizer, RawCanonicalizer, YamlCanonicalizer,
+        canonical_hash, canonicalizer_for,
+    };
     pub use crate::akeyless_client::{
         AkeylessClient, AkeylessClientError, AkeylessConfig, DynamicSecretInfo,
         HttpAkeylessClient, ItemAssociation, MockAkeylessClient, TargetInfo,
