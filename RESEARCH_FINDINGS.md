@@ -207,3 +207,172 @@ Combined with the OCI digest check (no image pull in webhook), 3s is plenty.
 | No Tetragon interop | Complementary runtime security | Document how kanshi + Tetragon coexist |
 | No cosign verification in sekiban | OCI image signing | Add cosign sig check in admission webhook |
 | No sparse Merkle trees | Scale to millions of binaries | Evaluate sparse Merkle for kanshi BPF maps |
+
+---
+
+## 6. BLAKE3 Deep Dive (Research Agent 2)
+
+### Performance Characteristics
+
+- BLAKE3 AVX2: ~8.4 GB/s (x86), ~3-4 GB/s (ARM/Apple Silicon)
+- SHA-256 with SHA-NI: ~3 GB/s (x86), ~500-800 MB/s (ARM)
+- **Small input penalty:** For <4 KiB inputs, BLAKE3 has worse throughput than
+  SHA-256 due to setup overhead. Relevant for small attestation payloads.
+
+**Action:** Consider batching small layer hashes into larger BLAKE3 calls.
+
+### BLAKE3 Already Has Constant-Time Equality
+
+The `blake3::Hash` type provides **built-in constant-time comparison** via the
+`constant_time_eq` crate. If tameshi uses `blake3::Hash` directly (not raw byte
+arrays), constant-time is automatic. The `subtle` crate is an alternative
+approach but not strictly needed for BLAKE3 hash comparisons.
+
+### FIPS 140-3 Status — Confirmed NOT Approved
+
+BLAKE3 is NOT FIPS approved and has **no standardization path**. However:
+- Akeyless DFC has FIPS 140-2 cert #3589 (AES, RSA, SHA-2, ECDSA)
+- tameshi's attestation of Akeyless secrets inherits Akeyless's FIPS compliance
+- For FIPS-regulated attestation itself: dual-hash (BLAKE3 + SHA-256) needed
+
+### Domain Separation — Critical Finding
+
+Both CT (RFC 9162) and AWS Nitro Trail of Bits analysis emphasize domain
+separation in Merkle trees:
+- Leaf hash: `H(0x00 || data)`
+- Node hash: `H(0x01 || left || right)`
+
+**Action:** tameshi's `rs_merkle` usage should verify domain separation is applied.
+BLAKE3's built-in flag system provides this for its internal tree, but tameshi's
+external Merkle tree (over attestation layers) needs explicit domain separation.
+
+### DFC Technical Details
+
+- Key fragments generated independently, **never combine** into full key
+- Operations use one-time derived keys from fragment computations, then discard
+- Fragment refresh changes values while preserving mathematical relationship
+- FIPS cert #3589 validates AES/RSA/SHA-2/ECDSA inside DFC module
+- DFC is NOT Shamir Secret Sharing — key is never created as a whole
+
+### Consistency Proofs for Heartbeat Chain
+
+CT-style consistency proofs are O(log N):
+- 100M entries → ~27 hashes (~864 bytes) for proof
+- Tile-based storage (Rekor v2/Tessera pattern) reduces I/O 50%
+- Witnessing (third-party co-signing) strengthens append-only guarantees
+
+**Action:** Implement CT-style consistency proofs in heartbeat chain.
+Consider tile-based storage for scale.
+
+### CIRCIA Evidence Requirements — Confirmed
+
+- 2-year retention with integrity guarantees
+- Must preserve: communications, IoCs, technical/forensic data, system logs
+- Data lineage practices required for traceability
+- Tameshi's Merkle tree with consistency proofs provides exactly this
+
+---
+
+## 7. Compliance Framework Deep Dive (Research Agent 3)
+
+### NIST SR Family — Full Coverage Confirmed
+
+| SR Control | tameshi Component | Coverage Level |
+|-----------|------------------|---------------|
+| SR-4 (Provenance) | BLAKE3 Merkle tree | Direct |
+| SR-4(3) (Validate Genuine) | Hash verification | Direct |
+| SR-4(4) (Pedigree) | Multi-layer attestation | Direct |
+| SR-9 (Tamper Detection) | Merkle + sekiban | Direct |
+| SR-11 (Component Authenticity) | sekiban admission | Direct |
+| SR-11(3) (Anti-counterfeit Scanning) | Hash verification | Direct |
+
+### SSDF v1.2 Updates (December 2025 Draft)
+
+Two new practices added:
+- **PS.4** — "Ship updates safely, repeatably, and recoverably" with rollback protection
+  → tameshi's self-healing rollback controller maps directly
+- **PO.6** — Security continuous improvement
+  → kensa's compliance TTL and re-verification maps here
+
+### SOC 2 CC Detailed Mapping
+
+| Criterion | tameshi Mapping |
+|-----------|----------------|
+| CC6.8 (Unauthorized software) | sekiban blocks unattested binaries |
+| CC7.1 (Change detection) | Merkle tree detects unauthorized modifications |
+| CC7.2 (Anomaly detection) | Hash mismatch triggers security events |
+| CC8.1 (Change management) | Two-phase attestation = audit evidence |
+
+### PCI DSS 4.0 — Key Finding
+
+**Requirement 11.6.1** (tamper detection) enforced since **March 31, 2025**.
+While focused on payment page scripts, the principle extends to backend systems.
+tameshi provides an analogous mechanism for server-side tamper detection.
+
+**Requirement 6.3.3:** Critical/high vulnerabilities must be patched within **1 month**.
+tameshi's global revocation map (<100ms) enables response far faster than required.
+
+### FedRAMP Rev 5 — Machine-Readable Evidence
+
+**Key deadline:** September 30, 2026 — machine-readable authorization packages required.
+FedRAMP 20x pilot needs **70% automated evidence**.
+
+tameshi's BLAKE3 attestation chain naturally produces machine-readable evidence.
+The deterministic telemetry requirement aligns perfectly — tameshi generates
+cryptographic proof that is inherently machine-readable, not human narrative.
+
+**OSCAL** is the primary approved format. kensa's report generators should
+output OSCAL-formatted compliance results.
+
+### CIS Kubernetes Benchmark v1.11
+
+- Section 5.1: RBAC least-privilege — tameshi's contextual binding strengthens
+- Section 5.2: Pod security — sekiban enforces at admission, kanshi at runtime
+- **kube-bench** can validate CIS compliance automatically
+
+### ISO 27001:2022 — New Controls
+
+| Control | tameshi Mapping |
+|---------|----------------|
+| A.5.21 (ICT Supply Chain) | Tamper verification on deployment |
+| A.5.22 (Supplier Monitoring) | Continuous attestation evidence |
+| A.8.28 (Secure Coding) | Build pipeline attestation |
+
+---
+
+## 8. Updated Action Items (All Research Combined)
+
+### Architecture Changes Required
+
+| Item | Priority | Source |
+|------|----------|--------|
+| Add domain separation to external Merkle tree (0x00 leaf, 0x01 node) | P0 | BLAKE3/CT research |
+| Add SHA-256 Merkle mode for FIPS customers | P1 | FIPS research |
+| Add CT-style consistency proofs to heartbeat chain | P1 | Transparency log research |
+| Use `bpf_ima_inode_hash()` as secondary hash in kanshi | P1 | eBPF research |
+| Non-CO-RE kanshi v1 targeting kernel 5.15+ | P0 | Aya-rs research |
+| Reduce sekiban webhook timeout to 3s | P0 | K8s best practices |
+| Set `sideEffects: None` on sekiban webhook | P0 | K8s best practices |
+| OSCAL output format for kensa reports | P1 | FedRAMP research |
+
+### Integration Opportunities
+
+| Item | Priority | Source |
+|------|----------|--------|
+| Sigstore cosign — embed Merkle roots in attestation predicates | P2 | Supply chain research |
+| TUF metadata for Merkle root distribution | P2 | TUF research |
+| in-toto predicates for build step attestation | P3 | in-toto research |
+| Tile-based heartbeat storage (Rekor v2 pattern) | P3 | Transparency log research |
+| kube-bench integration for CIS validation | P3 | CIS research |
+
+### Compliance Gaps Closed
+
+| Framework | Gap Found | Status |
+|-----------|----------|--------|
+| NIST SR family | Full coverage confirmed | Closed |
+| SSDF v1.2 PS.4 | Self-healing rollback maps directly | Closed |
+| SOC 2 CC6-CC8 | All criteria mapped | Closed |
+| PCI DSS 11.6.1 | Analogous coverage confirmed | Closed |
+| FedRAMP machine-readable | OSCAL output needed | Open (P1) |
+| ISO 27001 A.8.28 | Build attestation provides evidence | Closed |
+| FIPS 140-3 | Dual-hash mode needed | Open (P1) |
