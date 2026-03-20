@@ -1487,6 +1487,88 @@ mod tests {
         _accept_store(&store);
     }
 
+    #[tokio::test]
+    async fn mem_store_1000_items() {
+        let store = MemStore::<String>::new();
+        let mut ids = Vec::with_capacity(1000);
+        for i in 0..1000 {
+            let id = store.save(&format!("item-{i}")).await.unwrap();
+            ids.push(id);
+        }
+        let items = store.list().await.unwrap();
+        assert_eq!(items.len(), 1000, "Store should hold 1000 items");
+
+        // Verify a sample of items load correctly
+        for (i, id) in ids.iter().enumerate().step_by(100) {
+            let loaded = store.load(id).await.unwrap();
+            assert_eq!(loaded, format!("item-{i}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn mem_store_concurrent_access_arc() {
+        use std::sync::Arc;
+
+        let store = Arc::new(MemStore::<String>::new());
+        let mut handles = Vec::new();
+
+        // Spawn 10 tasks each saving 10 items
+        for batch in 0..10 {
+            let store = Arc::clone(&store);
+            handles.push(tokio::spawn(async move {
+                for i in 0..10 {
+                    store.save(&format!("batch-{batch}-item-{i}")).await.unwrap();
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        let items = store.list().await.unwrap();
+        assert_eq!(items.len(), 100, "All 100 items should be saved from concurrent tasks");
+    }
+
+    #[tokio::test]
+    async fn mem_store_as_dyn_trait_object() {
+        let store: Box<dyn Store<String>> = Box::new(MemStore::<String>::new());
+        let id = store.save(&"dynamic-dispatch".to_string()).await.unwrap();
+        let loaded = store.load(&id).await.unwrap();
+        assert_eq!(loaded, "dynamic-dispatch");
+
+        let items = store.list().await.unwrap();
+        assert_eq!(items.len(), 1);
+
+        store.delete(&id).await.unwrap();
+        let items = store.list().await.unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mem_store_save_same_value_twice_creates_separate_entries() {
+        let store = MemStore::<String>::new();
+        let id1 = store.save(&"duplicate".to_string()).await.unwrap();
+        let id2 = store.save(&"duplicate".to_string()).await.unwrap();
+        assert_ne!(id1, id2, "Saving the same value twice should produce different IDs");
+
+        let items = store.list().await.unwrap();
+        assert_eq!(items.len(), 2, "Both entries should exist");
+        assert!(items.iter().all(|x| x == "duplicate"));
+    }
+
+    #[tokio::test]
+    async fn mem_store_overwrite_via_internal_id_collision() {
+        // Since MemStore uses incrementing counter, IDs never collide,
+        // but verify that saving many items doesn't cause counter wraparound issues
+        let store = MemStore::<u64>::new();
+        for i in 0u64..500 {
+            store.save(&i).await.unwrap();
+        }
+        let items = store.list().await.unwrap();
+        assert_eq!(items.len(), 500);
+    }
+
     #[test]
     fn mem_store_default() {
         let store = MemStore::<String>::default();

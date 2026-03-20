@@ -44,6 +44,7 @@ struct CacheEntry {
 
 impl<C: LayerCollector> CachedCollector<C> {
     /// Create a new cached collector with the specified TTL.
+    #[must_use]
     pub fn new(inner: C, ttl: Duration) -> Self {
         Self {
             inner,
@@ -209,6 +210,110 @@ mod tests {
         // Empty stats should return 0.0
         let empty = CacheStats::default();
         assert!((empty.hit_rate() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn cache_ttl_expiry_triggers_miss() {
+        let mock = MockCollector::new(LayerType::Helm);
+        let cached = CachedCollector::new(mock, Duration::from_millis(5));
+
+        // First call: miss
+        let _ = cached.collect().await.unwrap();
+        assert!(cached.is_cached());
+
+        // Wait for TTL to expire
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!cached.is_cached());
+
+        // Second call after expiry: miss again
+        let _ = cached.collect().await.unwrap();
+        let stats = cached.stats();
+        assert_eq!(stats.misses, 2, "Should have 2 misses (initial + after expiry)");
+        assert_eq!(stats.hits, 0);
+    }
+
+    #[tokio::test]
+    async fn cache_miss_collect_hit_sequence() {
+        let mock = MockCollector::new(LayerType::Nix);
+        let cached = CachedCollector::new(mock, Duration::from_secs(60));
+
+        // Step 1: Initially not cached
+        assert!(!cached.is_cached());
+
+        // Step 2: First collect is a miss
+        let sig1 = cached.collect().await.unwrap();
+        let stats = cached.stats();
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.hits, 0);
+
+        // Step 3: Now cached
+        assert!(cached.is_cached());
+
+        // Step 4: Second collect is a hit
+        let sig2 = cached.collect().await.unwrap();
+        assert_eq!(sig1.hash, sig2.hash);
+        let stats = cached.stats();
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.hits, 1);
+
+        // Step 5: Third collect is another hit
+        let sig3 = cached.collect().await.unwrap();
+        assert_eq!(sig1.hash, sig3.hash);
+        let stats = cached.stats();
+        assert_eq!(stats.hits, 2);
+    }
+
+    #[tokio::test]
+    async fn cache_invalidate_clears_entry_and_forces_recollect() {
+        let mock = MockCollector::new(LayerType::Oci);
+        let cached = CachedCollector::new(mock, Duration::from_secs(60));
+
+        // Collect and verify cached
+        let _ = cached.collect().await.unwrap();
+        assert!(cached.is_cached());
+
+        // Invalidate
+        cached.invalidate();
+        assert!(!cached.is_cached());
+        let stats = cached.stats();
+        assert_eq!(stats.invalidations, 1);
+
+        // Next collect should be a miss
+        let _ = cached.collect().await.unwrap();
+        let stats = cached.stats();
+        assert_eq!(stats.misses, 2, "Post-invalidation collect should be a miss");
+        assert_eq!(stats.hits, 0);
+    }
+
+    #[tokio::test]
+    async fn cache_stats_accuracy_many_operations() {
+        let mock = MockCollector::new(LayerType::Tofu);
+        let cached = CachedCollector::new(mock, Duration::from_secs(60));
+
+        // 1 miss
+        let _ = cached.collect().await.unwrap();
+        // 9 hits
+        for _ in 0..9 {
+            let _ = cached.collect().await.unwrap();
+        }
+        // 2 invalidations
+        cached.invalidate();
+        cached.invalidate();
+        // 1 more miss (after invalidation)
+        let _ = cached.collect().await.unwrap();
+        // 5 more hits
+        for _ in 0..5 {
+            let _ = cached.collect().await.unwrap();
+        }
+
+        let stats = cached.stats();
+        assert_eq!(stats.misses, 2, "Expected 2 misses");
+        assert_eq!(stats.hits, 14, "Expected 14 hits (9 + 5)");
+        assert_eq!(stats.invalidations, 2, "Expected 2 invalidations");
+
+        // Hit rate = 14 / (14 + 2) = 87.5%
+        let rate = stats.hit_rate();
+        assert!((rate - 87.5).abs() < f64::EPSILON, "Expected 87.5%, got {rate}");
     }
 
     #[tokio::test]

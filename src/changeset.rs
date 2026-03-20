@@ -59,6 +59,7 @@ pub struct ResourceId {
 
 impl ResourceId {
     /// Canonical string representation for hashing.
+    #[inline]
     #[must_use]
     pub fn canonical(&self) -> String {
         format!(
@@ -104,6 +105,7 @@ pub struct CertifiedChangeset {
 /// For UPDATE: hash the diff between old and new
 /// For PATCH: hash the patch body
 /// For DELETE: hash the object being deleted
+#[inline]
 #[must_use]
 pub fn hash_changeset(
     operation: &Operation,
@@ -130,6 +132,7 @@ pub fn hash_changeset(
 ///
 /// The result proves this specific change was made to a certified environment
 /// by an identified actor while compliance was verified.
+#[inline]
 #[must_use]
 pub fn compute_certification_hash(
     changeset_hash: &Blake3Hash,
@@ -193,6 +196,7 @@ pub fn certify_changeset(
 }
 
 /// Verify a certified changeset by recomputing its certification hash.
+#[inline]
 #[must_use]
 pub fn verify_changeset(changeset: &CertifiedChangeset) -> bool {
     let recomputed = compute_certification_hash(
@@ -357,6 +361,137 @@ mod tests {
             &changeset_hash, None, None, &env_sig, Some(&compliance), "user",
         );
         assert_ne!(h1, h2, "compliance signature should change certification hash");
+    }
+
+    #[test]
+    fn hash_changeset_determinism_1000_iterations() {
+        let op = Operation::Patch;
+        let resource = ResourceId {
+            group: "apps".to_string(),
+            version: "v1".to_string(),
+            kind: "StatefulSet".to_string(),
+            namespace: "kube-system".to_string(),
+            name: "etcd".to_string(),
+        };
+        let first = hash_changeset(&op, &resource, b"patch-body");
+        for _ in 0..1000 {
+            let h = hash_changeset(&op, &resource, b"patch-body");
+            assert_eq!(first, h, "hash_changeset must be deterministic across 1000 iterations");
+        }
+    }
+
+    #[test]
+    fn certified_changeset_serde_roundtrip_all_fields() {
+        let resource = ResourceId {
+            group: "apps".to_string(),
+            version: "v1".to_string(),
+            kind: "Deployment".to_string(),
+            namespace: "staging".to_string(),
+            name: "backend".to_string(),
+        };
+        let env_sig = Blake3Hash::digest(b"env-production");
+        let compliance = Blake3Hash::digest(b"nist-compliant");
+        let before = Blake3Hash::digest(b"old-state");
+        let after = Blake3Hash::digest(b"new-state");
+
+        let changeset = certify_changeset(
+            Operation::Update,
+            resource,
+            b"the deployment patch",
+            Some(&before),
+            Some(&after),
+            &env_sig,
+            Some(&compliance),
+            "system:serviceaccount:ci:deployer",
+        );
+
+        // Serialize -> Deserialize
+        let json = serde_json::to_string_pretty(&changeset).unwrap();
+        let deserialized: CertifiedChangeset = serde_json::from_str(&json).unwrap();
+
+        // All fields preserved
+        assert_eq!(deserialized.operation, Operation::Update);
+        assert_eq!(deserialized.resource.kind, "Deployment");
+        assert_eq!(deserialized.resource.namespace, "staging");
+        assert_eq!(deserialized.changeset_hash, changeset.changeset_hash);
+        assert_eq!(deserialized.before_state_hash, Some(before));
+        assert_eq!(deserialized.after_state_hash, Some(after));
+        assert_eq!(deserialized.environment_signature, env_sig);
+        assert_eq!(deserialized.compliance_signature, Some(compliance));
+        assert_eq!(deserialized.initiated_by, "system:serviceaccount:ci:deployer");
+        assert_eq!(deserialized.certification_hash, changeset.certification_hash);
+
+        // Deserialized changeset still verifies
+        assert!(verify_changeset(&deserialized));
+    }
+
+    #[test]
+    fn certify_changeset_create_no_before_state() {
+        let resource = ResourceId {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "Namespace".to_string(),
+            namespace: "".to_string(),
+            name: "new-namespace".to_string(),
+        };
+        let env_sig = Blake3Hash::digest(b"env");
+        let after = Blake3Hash::digest(b"new-ns-manifest");
+        let changeset = certify_changeset(
+            Operation::Create,
+            resource,
+            b"namespace manifest",
+            None,
+            Some(&after),
+            &env_sig,
+            None,
+            "admin",
+        );
+        assert!(verify_changeset(&changeset));
+        assert!(changeset.before_state_hash.is_none());
+        assert!(changeset.after_state_hash.is_some());
+        assert!(changeset.compliance_signature.is_none());
+    }
+
+    #[test]
+    fn certify_changeset_patch_with_compliance() {
+        let resource = ResourceId {
+            group: "networking.k8s.io".to_string(),
+            version: "v1".to_string(),
+            kind: "NetworkPolicy".to_string(),
+            namespace: "prod".to_string(),
+            name: "deny-all".to_string(),
+        };
+        let env_sig = Blake3Hash::digest(b"prod-env");
+        let compliance = Blake3Hash::digest(b"soc2-certified");
+        let before = Blake3Hash::digest(b"before");
+        let after = Blake3Hash::digest(b"after");
+
+        let changeset = certify_changeset(
+            Operation::Patch,
+            resource,
+            b"json-patch-body",
+            Some(&before),
+            Some(&after),
+            &env_sig,
+            Some(&compliance),
+            "kubectl",
+        );
+        assert!(verify_changeset(&changeset));
+        assert_eq!(changeset.operation, Operation::Patch);
+    }
+
+    #[test]
+    fn changeset_different_initiator_different_hash() {
+        let changeset_hash = Blake3Hash::digest(b"change");
+        let env_sig = Blake3Hash::digest(b"env");
+
+        let h1 = compute_certification_hash(
+            &changeset_hash, None, None, &env_sig, None, "admin",
+        );
+        let h2 = compute_certification_hash(
+            &changeset_hash, None, None, &env_sig, None, "attacker",
+        );
+        assert_ne!(h1, h2, "Different initiators must produce different certification hashes");
     }
 
     #[test]

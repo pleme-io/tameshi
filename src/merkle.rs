@@ -152,6 +152,7 @@ fn layer_leaves(sorted: &[&LayerSignature]) -> Vec<[u8; 32]> {
 /// regardless of the order they were collected.
 ///
 /// Uses `rs_merkle` internally with `Blake3Algorithm` as the hasher.
+#[inline]
 #[must_use]
 pub fn compute_merkle_root(layers: &[LayerSignature]) -> Blake3Hash {
     if layers.is_empty() {
@@ -684,6 +685,84 @@ mod tests {
 
         assert_ne!(internal, fake_as_leaf,
             "internal node must not collide with leaf containing the same byte pattern");
+    }
+
+    #[test]
+    fn compose_merkle_with_11_layers() {
+        let layer_types = [
+            LayerType::Nix,
+            LayerType::Oci,
+            LayerType::Helm,
+            LayerType::Tofu,
+            LayerType::Kubernetes,
+            LayerType::Kindling,
+            LayerType::Tatara,
+            LayerType::FluxCD,
+            LayerType::ArgoCD,
+            LayerType::Akeyless,
+            LayerType::AkeylessTarget,
+        ];
+        let layers: Vec<LayerSignature> = layer_types
+            .iter()
+            .enumerate()
+            .map(|(i, lt)| {
+                let data = format!("layer-{i}");
+                make_layer(lt.clone(), data.as_bytes())
+            })
+            .collect();
+        let master = compose_merkle(&layers, "test-11");
+        assert_eq!(master.layers.len(), 11);
+        assert!(master.verify_untested());
+        assert_eq!(master.environment, "test-11");
+
+        // Root should match compute_merkle_root
+        let root = compute_merkle_root(&layers);
+        assert_eq!(root, master.untested);
+
+        // build_merkle_tree produces a valid tree structure
+        let tree = build_merkle_tree(&layers);
+        assert!(tree.left.is_some());
+        assert!(tree.right.is_some());
+    }
+
+    #[test]
+    fn merkle_duplicate_layers_distinct_hashes() {
+        // Two layers of the same LayerType but different data produce different trees
+        let layers_a = vec![
+            make_layer(LayerType::Nix, b"nix-v1"),
+            make_layer(LayerType::Nix, b"nix-v2"),
+        ];
+        let layers_b = vec![
+            make_layer(LayerType::Nix, b"nix-v1"),
+            make_layer(LayerType::Nix, b"nix-v3"),
+        ];
+        let root_a = compute_merkle_root(&layers_a);
+        let root_b = compute_merkle_root(&layers_b);
+        assert_ne!(root_a, root_b, "Different layer data must produce different roots");
+    }
+
+    #[test]
+    fn merkle_duplicate_layers_same_data_same_root() {
+        // Exact same duplicate layers produce the same root
+        let layers = vec![
+            make_layer(LayerType::Nix, b"same"),
+            make_layer(LayerType::Nix, b"same"),
+        ];
+        let root1 = compute_merkle_root(&layers);
+        let root2 = compute_merkle_root(&layers);
+        assert_eq!(root1, root2);
+    }
+
+    #[test]
+    fn domain_separated_leaf_prefix_byte() {
+        // Verify the prefix byte 0x00 is actually used
+        let data = Blake3Hash::digest(b"prefix-test");
+        let ds = domain_separated_leaf(&data.0);
+        // Manual verification: hash(0x00 || data) should equal ds
+        let mut buf = vec![0x00u8];
+        buf.extend_from_slice(&data.0);
+        let expected: [u8; 32] = blake3::hash(&buf).into();
+        assert_eq!(ds, expected);
     }
 
     #[test]

@@ -41,6 +41,7 @@ pub struct LayerVerification {
 /// 1. Untested signature matches Merkle root recomputation
 /// 2. If compliance is present, secure signature is valid
 /// 3. Gating signature matches expected
+#[inline]
 #[must_use]
 pub fn verify_master(master: &MasterSignature, expected: &Blake3Hash) -> VerificationResult {
     let actual = master.gating_signature().clone();
@@ -70,6 +71,7 @@ pub fn verify_master(master: &MasterSignature, expected: &Blake3Hash) -> Verific
 }
 
 /// Verify that a master signature's untested hash matches the expected value.
+#[inline]
 pub fn verify_untested(master: &MasterSignature, expected: &Blake3Hash) -> Result<()> {
     if master.untested != *expected {
         return Err(TameshiError::VerificationFailed {
@@ -87,6 +89,7 @@ pub fn verify_untested(master: &MasterSignature, expected: &Blake3Hash) -> Resul
 }
 
 /// Verify the full secure signature (untested + compliance).
+#[inline]
 pub fn verify_secure(master: &MasterSignature, expected: &Blake3Hash) -> Result<()> {
     let gating = master.gating_signature();
     if *gating != *expected {
@@ -111,6 +114,7 @@ pub fn verify_secure(master: &MasterSignature, expected: &Blake3Hash) -> Result<
 }
 
 /// Verify that a prefixed signature string matches the master.
+#[inline]
 pub fn verify_prefixed(master: &MasterSignature, prefixed: &str) -> Result<()> {
     let expected = Blake3Hash::from_prefixed(prefixed).map_err(|e| {
         TameshiError::InvalidInput(format!("invalid prefixed hash '{}': {}", prefixed, e))

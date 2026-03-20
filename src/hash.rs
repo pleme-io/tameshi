@@ -761,6 +761,68 @@ mod tests {
     }
 
     #[test]
+    fn blake3_from_hex_uppercase() {
+        let h = Blake3Hash::digest(b"case-test");
+        let hex_lower = h.to_hex();
+        let hex_upper = hex_lower.to_uppercase();
+        // const_hex::decode handles uppercase hex
+        let parsed = Blake3Hash::from_hex(&hex_upper);
+        assert!(parsed.is_ok(), "Uppercase hex should parse successfully");
+        assert_eq!(h, parsed.unwrap());
+    }
+
+    #[test]
+    fn blake3_from_hex_mixed_case() {
+        let h = Blake3Hash::digest(b"mixed-case");
+        let hex = h.to_hex();
+        // Alternate upper/lower chars
+        let mixed: String = hex
+            .chars()
+            .enumerate()
+            .map(|(i, c)| if i % 2 == 0 { c.to_uppercase().next().unwrap() } else { c })
+            .collect();
+        let parsed = Blake3Hash::from_hex(&mixed);
+        assert!(parsed.is_ok(), "Mixed-case hex should parse successfully");
+        assert_eq!(h, parsed.unwrap());
+    }
+
+    #[test]
+    fn blake3_combine_not_commutative_documented() {
+        // combine() is NOT commutative: combine(a,b) != combine(b,a).
+        // This is by design -- Merkle node ordering matters for
+        // deterministic tree construction.
+        let a = Blake3Hash::digest(b"left");
+        let b = Blake3Hash::digest(b"right");
+        let ab = Blake3Hash::combine(&a, &b);
+        let ba = Blake3Hash::combine(&b, &a);
+        assert_ne!(ab, ba, "combine() must not be commutative");
+    }
+
+    #[test]
+    fn sha256_from_hex_uppercase() {
+        let h = Sha256Hash::digest(b"sha256-upper");
+        let hex_upper = h.to_hex().to_uppercase();
+        let parsed = Sha256Hash::from_hex(&hex_upper);
+        assert!(parsed.is_ok());
+        assert_eq!(h, parsed.unwrap());
+    }
+
+    #[test]
+    fn blake3_from_hex_empty_string() {
+        let result = Blake3Hash::from_hex("");
+        assert!(result.is_err(), "Empty string should fail to parse as hex");
+    }
+
+    #[test]
+    fn blake3_from_prefixed_without_prefix() {
+        // from_prefixed should also accept bare hex (no "blake3:" prefix)
+        let h = Blake3Hash::digest(b"bare-hex");
+        let hex = h.to_hex();
+        let parsed = Blake3Hash::from_prefixed(&hex).unwrap();
+        assert_eq!(h, parsed);
+    }
+
+    #[test]
     fn sha256_wrong_length_hex_errors() {
         let result = Sha256Hash::from_hex("abcd");
         assert!(result.is_err());

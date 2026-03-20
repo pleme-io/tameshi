@@ -57,6 +57,7 @@ impl Default for GatingPolicy {
 ///
 /// Uses [`SystemClock`](crate::traits::SystemClock) for signature age checks.
 /// For deterministic testing, use [`evaluate_gate_with_clock`] instead.
+#[inline]
 #[must_use]
 pub fn evaluate_gate(
     policy: &GatingPolicy,
@@ -67,6 +68,7 @@ pub fn evaluate_gate(
 }
 
 /// Evaluate a gating decision with an injected clock for deterministic testing.
+#[inline]
 #[must_use]
 pub fn evaluate_gate_with_clock(
     policy: &GatingPolicy,
@@ -530,6 +532,108 @@ mod tests {
             &client,
         ).await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn gate_expired_signature_max_age_exceeded() {
+        use crate::traits::FixedClock;
+
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            max_signature_age_secs: Some(30), // 30 seconds
+            ..Default::default()
+        };
+
+        // Clock 31 seconds in the future -- just barely expired
+        let expired_time = master.computed_at + chrono::Duration::seconds(31);
+        let clock = FixedClock::new(expired_time);
+        let decision = evaluate_gate_with_clock(&policy, &master, &expected, &clock);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("stale"));
+        assert!(decision.reason.contains("31"));
+        assert!(decision.reason.contains("30"));
+    }
+
+    #[test]
+    fn gate_exactly_at_max_age_boundary() {
+        use crate::traits::FixedClock;
+
+        let (master, expected) = make_master("test");
+        let policy = GatingPolicy {
+            max_signature_age_secs: Some(60),
+            ..Default::default()
+        };
+
+        // Clock exactly at 60 seconds -- should pass (not strictly greater)
+        let boundary_time = master.computed_at + chrono::Duration::seconds(60);
+        let clock = FixedClock::new(boundary_time);
+        let decision = evaluate_gate_with_clock(&policy, &master, &expected, &clock);
+        assert!(decision.allowed, "Signature at exactly max_age should be allowed");
+    }
+
+    #[test]
+    fn gate_fail_open_is_not_default() {
+        let policy = GatingPolicy::default();
+        assert!(!policy.fail_open, "Default policy must NOT be fail_open (secure by default)");
+        assert!(policy.require_compliance, "Default policy must require compliance");
+        assert!(policy.max_signature_age_secs.is_some(), "Default policy must set max age");
+        assert_eq!(policy.max_signature_age_secs, Some(3600), "Default max age should be 1 hour");
+    }
+
+    #[test]
+    fn gate_100_required_layers_all_missing() {
+        let (master, expected) = make_master("test");
+        let required: Vec<String> = (0..100).map(|i| format!("layer-{i}")).collect();
+        let policy = GatingPolicy {
+            required_layers: required,
+            require_compliance: false,
+            max_signature_age_secs: None,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(!decision.allowed);
+        assert!(decision.reason.contains("Required layer"));
+    }
+
+    #[test]
+    fn gate_100_required_layers_all_present() {
+        // Build a master with 100 unique layer types (using the same type but different hash)
+        // Since required_layers checks layer.to_string(), we need actual matching types
+        let all_types = vec![
+            LayerType::Nix,
+            LayerType::Oci,
+        ];
+        let layers: Vec<LayerSignature> = all_types
+            .iter()
+            .map(|lt| LayerSignature::new(lt.clone(), Blake3Hash::digest(lt.to_string().as_bytes()), "test", vec![]))
+            .collect();
+        let compliance = Blake3Hash::digest(b"compliance-passed");
+        let master = merkle::compose_merkle(&layers, "test").with_compliance(compliance);
+        let expected = master.gating_signature().clone();
+
+        let required: Vec<String> = all_types.iter().map(|lt| lt.to_string()).collect();
+        let policy = GatingPolicy {
+            required_layers: required,
+            require_compliance: true,
+            max_signature_age_secs: None,
+            ..Default::default()
+        };
+        let decision = evaluate_gate(&policy, &master, &expected);
+        assert!(decision.allowed, "All required layers present should pass gate");
+    }
+
+    #[test]
+    fn gate_fail_open_field_serializes() {
+        let policy = GatingPolicy {
+            fail_open: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&policy).unwrap();
+        assert!(json.contains("\"fail_open\":true"));
+
+        let policy2 = GatingPolicy::default();
+        let json2 = serde_json::to_string(&policy2).unwrap();
+        assert!(json2.contains("\"fail_open\":false"));
     }
 
     #[test]

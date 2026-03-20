@@ -276,6 +276,58 @@ mod tests {
     }
 
     #[test]
+    fn figment_config_loader_loads_from_yaml() {
+        let dir = tempfile::tempdir().unwrap();
+        let yaml_path = dir.path().join("figment-test.yaml");
+        std::fs::write(
+            &yaml_path,
+            "host: figment-host\nport: 7777\ndebug: true\n",
+        )
+        .unwrap();
+
+        let loader = FigmentConfigLoader::new(
+            "TAMESHI_FIG_TEST",
+            &[yaml_path.to_str().unwrap()],
+        );
+        let config: TestConfig = loader.load().unwrap();
+        assert_eq!(config.host, "figment-host");
+        assert_eq!(config.port, 7777);
+        assert!(config.debug);
+    }
+
+    #[test]
+    fn missing_config_file_returns_defaults() {
+        let config: TestConfig =
+            load_config("TAMESHI_MISSING_CFG", &[
+                "/absolutely/nonexistent/path1.yaml",
+                "/absolutely/nonexistent/path2.yaml",
+            ]).unwrap();
+        // Should get the Default values (all zero/empty for TestConfig)
+        assert_eq!(config.host, "");
+        assert_eq!(config.port, 0);
+        assert!(!config.debug);
+    }
+
+    #[test]
+    fn load_config_from_explicit_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let yaml_path = dir.path().join("explicit.yaml");
+        std::fs::write(&yaml_path, "host: explicit\nport: 6000\n").unwrap();
+
+        let config: TestConfig =
+            load_config_from("TAMESHI_EXPLICIT", Some(yaml_path.to_str().unwrap())).unwrap();
+        assert_eq!(config.host, "explicit");
+        assert_eq!(config.port, 6000);
+    }
+
+    #[test]
+    fn load_config_from_none_returns_defaults() {
+        let config: TestConfig = load_config_from("TAMESHI_NONE_PATH", None).unwrap();
+        assert_eq!(config.host, "");
+        assert_eq!(config.port, 0);
+    }
+
+    #[test]
     fn first_existing_yaml_wins() {
         let dir = tempfile::tempdir().unwrap();
         let yaml1 = dir.path().join("first.yaml");
