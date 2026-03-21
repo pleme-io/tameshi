@@ -130,10 +130,15 @@ async fn hash_store_path(path: &str) -> Result<Blake3Hash> {
         .await?;
 
     if !output.status.success() {
-        // Fall back to hashing the path string if we can't dump
-        // (e.g., path doesn't exist locally but is in the closure query)
-        debug!(path = path, "nix-store --dump failed, hashing path string");
-        return Ok(Blake3Hash::digest(path.as_bytes()));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(TameshiError::CollectorError {
+            layer: "nix".to_string(),
+            message: format!(
+                "nix-store --dump failed for '{}': {} — refusing path-based fallback \
+                 (security: content hash required)",
+                path, stderr
+            ),
+        });
     }
 
     Ok(Blake3Hash::digest(&output.stdout))
@@ -189,5 +194,75 @@ impl LayerCollector for NixCollector {
 
     fn layer_type(&self) -> LayerType {
         LayerType::Nix
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn nix_collector_fails_on_unavailable_nix_store() {
+        // hash_store_path calls nix-store --dump on a non-existent path.
+        // With the path-based fallback removed, this MUST return an error,
+        // not silently hash the path string.
+        let result = hash_store_path("/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-does-not-exist").await;
+        assert!(
+            result.is_err(),
+            "hash_store_path must fail when nix-store --dump fails, not fall back to path hashing"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, TameshiError::CollectorError { .. }),
+            "Expected CollectorError, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn nix_collector_error_message_mentions_security() {
+        let result = hash_store_path("/nix/store/nonexistent-path-for-security-test").await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("security") || err_msg.contains("content hash required"),
+            "Error message must explain security rationale for refusing fallback, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn compute_composite_hash_empty() {
+        let hash = compute_composite_hash(&[]);
+        assert_eq!(hash, Blake3Hash::digest(b"empty-nix-closure"));
+    }
+
+    #[test]
+    fn compute_composite_hash_deterministic() {
+        let inputs = vec![
+            InputHash {
+                name: "a".to_string(),
+                hash: Blake3Hash::digest(b"a"),
+                size_bytes: None,
+            },
+            InputHash {
+                name: "b".to_string(),
+                hash: Blake3Hash::digest(b"b"),
+                size_bytes: None,
+            },
+        ];
+        let h1 = compute_composite_hash(&inputs);
+        let h2 = compute_composite_hash(&inputs);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn nix_collector_layer_type() {
+        let collector = NixCollector::for_path("/nix/store/test");
+        assert_eq!(collector.layer_type(), LayerType::Nix);
+    }
+
+    #[test]
+    fn nix_collector_system_profile_layer_type() {
+        let collector = NixCollector::system_profile();
+        assert_eq!(collector.layer_type(), LayerType::Nix);
     }
 }

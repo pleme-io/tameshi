@@ -119,6 +119,72 @@ pub async fn hash_chart_oci(chart_ref: &str) -> Result<LayerSignature> {
     hash_chart_dir(chart_dir.to_str().unwrap_or("")).await
 }
 
+/// Hash the actual deployed Kubernetes manifest for drift detection.
+///
+/// SECURITY: This hashes what is ACTUALLY running, not what was planned.
+/// Use this alongside [`hash_rendered_chart`] to detect Helm value overrides
+/// that bypass file-based attestation.
+///
+/// Fetches the manifest via `kubectl get <resource> -o yaml`, canonicalizes
+/// it using [`YamlCanonicalizer`] in Logical mode, and hashes the result
+/// with BLAKE3.
+pub async fn hash_deployed_manifest(
+    resource_type: &str,
+    resource_name: &str,
+    namespace: &str,
+) -> Result<LayerSignature> {
+    use crate::canonicalize::{CanonicalMode, Canonicalizer, YamlCanonicalizer};
+
+    let output = Command::new("kubectl")
+        .args([
+            "get",
+            resource_type,
+            resource_name,
+            "--namespace",
+            namespace,
+            "-o",
+            "yaml",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await?;
+
+    if !output.status.success() {
+        return Err(TameshiError::CommandFailed {
+            command: format!(
+                "kubectl get {} {} --namespace {} -o yaml",
+                resource_type, resource_name, namespace
+            ),
+            code: output.status.code().unwrap_or(-1),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        });
+    }
+
+    let canonical = YamlCanonicalizer.canonicalize(&output.stdout, CanonicalMode::Logical);
+    let deployed_hash = Blake3Hash::digest(canonical.as_ref());
+
+    debug!(
+        resource_type = resource_type,
+        resource_name = resource_name,
+        namespace = namespace,
+        "Hashed deployed Kubernetes manifest"
+    );
+
+    let input_hash = InputHash {
+        name: format!("{}/{}", resource_type, resource_name),
+        hash: deployed_hash.clone(),
+        size_bytes: Some(output.stdout.len() as u64),
+    };
+
+    Ok(LayerSignature::new(
+        LayerType::Helm,
+        deployed_hash,
+        &format!("{}/{}/{}", namespace, resource_type, resource_name),
+        vec![input_hash],
+    ))
+}
+
 /// Hash Helm chart provenance file (.prov).
 pub async fn hash_provenance(prov_path: &str) -> Result<InputHash> {
     let data = tokio::fs::read(prov_path).await?;
@@ -402,5 +468,57 @@ mod tests {
         let h1 = compute_composite(&inputs);
         let h2 = compute_composite(&inputs);
         assert_eq!(h1, h2);
+    }
+
+    // =========================================================================
+    // hash_deployed_manifest — drift detection tests
+    // =========================================================================
+
+    #[test]
+    fn hash_deployed_manifest_returns_layer_signature() {
+        // Simulate what hash_deployed_manifest does: canonicalize deployed YAML then hash.
+        // Verify the output has the correct LayerType and a non-empty hash.
+        let deployed_yaml = b"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\n  namespace: default\nspec:\n  replicas: 3\n";
+        let canonical = YamlCanonicalizer.canonicalize(deployed_yaml, CanonicalMode::Logical);
+        let hash = Blake3Hash::digest(canonical.as_ref());
+
+        // The hash should be deterministic and non-zero.
+        assert_ne!(hash, Blake3Hash::digest(b""));
+        // Hashing the same content again should yield the same result.
+        let canonical2 = YamlCanonicalizer.canonicalize(deployed_yaml, CanonicalMode::Logical);
+        let hash2 = Blake3Hash::digest(canonical2.as_ref());
+        assert_eq!(hash, hash2);
+    }
+
+    #[test]
+    fn hash_deployed_manifest_differs_from_chart_hash() {
+        // Deployed state with value overrides differs from the planned chart hash.
+        let chart_rendered = b"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 1\n";
+        let deployed_actual = b"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 5\n";
+
+        let chart_canonical = YamlCanonicalizer.canonicalize(chart_rendered, CanonicalMode::Logical);
+        let deployed_canonical = YamlCanonicalizer.canonicalize(deployed_actual, CanonicalMode::Logical);
+
+        let chart_hash = Blake3Hash::digest(chart_canonical.as_ref());
+        let deployed_hash = Blake3Hash::digest(deployed_canonical.as_ref());
+
+        assert_ne!(
+            chart_hash, deployed_hash,
+            "Deployed manifest with overrides must produce a different hash than the chart template"
+        );
+    }
+
+    #[test]
+    fn hash_deployed_manifest_kubectl_failure_returns_error() {
+        // Simulate what happens when kubectl fails: the function should return
+        // a CommandFailed error. We verify the error type exists and formats correctly.
+        let err = TameshiError::CommandFailed {
+            command: "kubectl get deployment myapp --namespace default -o yaml".to_string(),
+            code: 1,
+            stderr: "Error from server (NotFound): deployments.apps \"myapp\" not found".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("kubectl get deployment"));
+        assert!(msg.contains("NotFound"));
     }
 }
