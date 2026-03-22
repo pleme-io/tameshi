@@ -8,4 +8,5 @@
 pub mod index;
 pub mod ledger;
 pub mod query;
+pub mod storage;
 pub mod types;

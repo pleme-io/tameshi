@@ -419,7 +419,7 @@ pub trait MerkleLedgerStore: Send + Sync {
 /// In-memory implementation of `MerkleLedgerStore`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InMemoryLedgerStore {
-    entries: std::sync::Mutex<Vec<MerkleLedgerEntry>>,
+    pub(crate) entries: std::sync::Mutex<Vec<MerkleLedgerEntry>>,
     #[serde(skip)]
     index: std::sync::Mutex<LedgerIndex>,
 }
