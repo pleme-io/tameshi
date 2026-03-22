@@ -107,6 +107,8 @@ pub enum HeartbeatEvent {
     IacTestTeardown,
     /// Complete IaC test suite finished.
     IacTestSuiteComplete,
+    /// AI Threat Intelligence analysis completed.
+    AiThreatAnalysis,
 }
 
 impl std::fmt::Display for HeartbeatEvent {
@@ -126,6 +128,7 @@ impl std::fmt::Display for HeartbeatEvent {
             Self::IacTestVerify => write!(f, "iac_test_verify"),
             Self::IacTestTeardown => write!(f, "iac_test_teardown"),
             Self::IacTestSuiteComplete => write!(f, "iac_test_suite_complete"),
+            Self::AiThreatAnalysis => write!(f, "ai_threat_analysis"),
         }
     }
 }
@@ -1170,6 +1173,12 @@ mod tests {
             HeartbeatEvent::ScriptVerification,
             HeartbeatEvent::BreakGlass,
             HeartbeatEvent::Revocation,
+            HeartbeatEvent::IacTestInit,
+            HeartbeatEvent::IacTestApply,
+            HeartbeatEvent::IacTestVerify,
+            HeartbeatEvent::IacTestTeardown,
+            HeartbeatEvent::IacTestSuiteComplete,
+            HeartbeatEvent::AiThreatAnalysis,
         ];
         for event in &events {
             let json = serde_json::to_string(event).unwrap();

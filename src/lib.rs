@@ -35,6 +35,7 @@
 //! # }
 //! ```
 
+pub mod ai_threat;
 pub mod akeyless_client;
 pub mod alerts;
 pub mod api_types;
@@ -71,6 +72,12 @@ pub mod verify;
 /// use tameshi::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::ai_threat::{
+        AiAnalysisSummary, AiDecision, AiDeploymentContext, AiFailMode, AiThreatClient,
+        AiThreatError, AnalysisFeedback, AnalyzeProvenanceRequest, AnalyzeProvenanceResponse,
+        DemoAiThreatClient, FailableAiThreatClient, FeedbackLabel, HttpAiThreatClient,
+        MockAiThreatClient, ModelHealthStatus, RecommendedAction, Urgency,
+    };
     pub use crate::certification_artifact::{
         ArtifactProofPaths, CertificationArtifact, CertificationArtifactBuilder,
         compose_certification_artifact, verify_certification_artifact,
