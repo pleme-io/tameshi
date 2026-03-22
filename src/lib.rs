@@ -49,7 +49,9 @@ pub mod compliance;
 pub mod compliance_api;
 pub mod config;
 pub mod error;
+pub mod forensics;
 pub mod gating;
+pub mod global;
 pub mod hash;
 pub mod heartbeat;
 pub mod iac_attestation;
@@ -124,4 +126,20 @@ pub mod prelude {
     pub use crate::compliance::registry::{PluginRegistry, PluginRegistryBuilder};
     pub use crate::compliance::plugin_orchestrator::{ComplianceOrchestrator, FullComplianceReport};
     pub use crate::sdlc::{SdlcPhase, SdlcCheckpoint, SdlcChain};
+    pub use crate::forensics::ledger::{
+        InMemoryLedgerStore, MerkleLedger, MerkleLedgerStore,
+    };
+    pub use crate::forensics::index::LedgerIndex;
+    pub use crate::forensics::query::{blast_radius, compute_evidence_hash, provenance, timeline};
+    pub use crate::forensics::types::{
+        ActiveArtifact, AffectedNodeDetail, BlastRadiusReport, CoResidentArtifact,
+        DeploymentContext, LedgerEntryRef, MerkleLedgerEntry, ProvenanceSnapshot, RevokeRequest,
+        RevokeResult, TimeRange, TimelineEvent,
+    };
+    pub use crate::global::{
+        ArtifactDelta, ArtifactLocation, ClusterBlastRadius, ClusterRootEntry,
+        ClusterRootReport, ClusterStatus, GlobalBlastRadiusReport, GlobalStateClient,
+        GlobalStateRoot, MockGlobalStateClient, NodeBlastRadius, compute_cluster_root,
+        compute_global_root,
+    };
 }
