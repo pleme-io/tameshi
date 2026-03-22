@@ -10,7 +10,7 @@ use std::fmt;
 use std::str::FromStr;
 
 /// A BLAKE3 hash value (32 bytes).
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Blake3Hash(#[serde(with = "hex_bytes")] pub [u8; 32]);
 
 impl schemars::JsonSchema for Blake3Hash {
