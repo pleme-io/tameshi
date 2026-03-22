@@ -47,6 +47,11 @@ pub enum LayerType {
     /// InSpec compliance result JSON.
     #[serde(rename = "inspec_result")]
     InSpecResult,
+    /// Android/GrapheneOS device attestation (Titan M2 hardware-backed).
+    Android,
+    /// App-level integrity on a mobile device.
+    #[serde(rename = "device_app")]
+    DeviceApp,
 }
 
 impl fmt::Display for LayerType {
@@ -66,6 +71,8 @@ impl fmt::Display for LayerType {
             Self::PangeaSynthesis => write!(f, "pangea_synthesis"),
             Self::RSpecResult => write!(f, "rspec_result"),
             Self::InSpecResult => write!(f, "inspec_result"),
+            Self::Android => write!(f, "android"),
+            Self::DeviceApp => write!(f, "device_app"),
         }
     }
 }
@@ -89,6 +96,8 @@ impl FromStr for LayerType {
             "pangea_synthesis" | "pangeasynthesis" | "pangea" => Ok(Self::PangeaSynthesis),
             "rspec_result" | "rspecresult" | "rspec" => Ok(Self::RSpecResult),
             "inspec_result" | "inspecresult" => Ok(Self::InSpecResult),
+            "android" | "grapheneos" | "device" => Ok(Self::Android),
+            "device_app" | "deviceapp" | "app_integrity" => Ok(Self::DeviceApp),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
