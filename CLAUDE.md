@@ -6,7 +6,7 @@ Core library for the Unified Theory of Infrastructure Proof. Provides cryptograp
 
 ```bash
 cargo check
-cargo test          # 925 tests (862 lib + 22 e2e + 19 proptest + 13 spec + 9 doc)
+cargo test          # 1427 tests (1289 lib + 95 e2e + 19 proptest + 13 spec + 11 doc)
 cargo build --release
 ```
 
@@ -14,12 +14,12 @@ cargo build --release
 
 | Category | Count | What It Covers |
 |----------|------:|----------------|
-| Unit (lib) | 862 | All modules, every trait method, every type variant, every error path |
-| End-to-end (tests/) | 22 | Full attestation pipelines: collect -> compose -> sign -> verify -> gate |
+| Unit (lib) | 1289 | All modules, every trait method, every type variant, every error path |
+| End-to-end (tests/) | 95 | Full attestation pipelines, forensics integration, artifact matrix, chaos tests |
 | Property-based (proptest) | 19 | Hash determinism, collision resistance, Merkle ordering, combine non-commutativity |
 | Specification (spec) | 13 | OpenAPI schema serde roundtrips, API type compatibility |
-| Documentation (doc-tests) | 9 | Inline code examples compile and produce correct results |
-| **Total** | **925** | |
+| Documentation (doc-tests) | 11 | Inline code examples compile and produce correct results |
+| **Total** | **1427** | |
 
 ## OpenAPI-First Development Flow
 
@@ -45,7 +45,7 @@ See `docs/openapi-development-flow.md` for the full workflow.
 
 ```
 src/
-  lib.rs                        -- 21 module declarations + prelude (61 re-exports)
+  lib.rs                        -- 23 module declarations + prelude (75+ re-exports)
   hash.rs                       -- Blake3Hash, Sha256Hash, AttestationHasher trait, blake3_file, blake3_file_async
   signature.rs                  -- LayerType (14 variants), LayerSignature, MasterSignature, InputHash
   merkle.rs                     -- Blake3Algorithm (RFC 9162 domain separation), compose_merkle, compute_merkle_root, domain_separated_leaf
@@ -69,6 +69,13 @@ src/
   canonicalize.rs               -- CanonicalMode, Canonicalizer, JsonCanonicalizer, RawCanonicalizer, YamlCanonicalizer, canonical_hash, canonicalizer_for
   testing.rs                    -- testing utilities, MockAkeylessGateway
   traits.rs                     -- 10 core abstraction traits (see below)
+  forensics/
+    mod.rs                      -- re-exports
+    types.rs                    -- MerkleLedgerEntry, DeploymentContext, BlastRadiusReport, TimelineEvent, ProvenanceSnapshot, ActiveArtifact, RevokeRequest, RevokeResult, CoResidentArtifact, AffectedNodeDetail, TimeRange, LedgerEntryRef
+    ledger.rs                   -- MerkleLedger (RwLock thread-safe append-only chain), MerkleLedgerStore trait, InMemoryLedgerStore, compute_ledger_entry_hash, verify_integrity, consistency_proof
+    index.rs                    -- LedgerIndex (5 BTreeMap indexes: by_hash, by_node, by_namespace, by_time, by_binary)
+    query.rs                    -- blast_radius, timeline, provenance, compute_evidence_hash
+  global.rs                     -- GlobalStateRoot, ClusterRootEntry, ClusterStatus, ClusterRootReport, ArtifactDelta, ArtifactLocation, GlobalBlastRadiusReport, ClusterBlastRadius, NodeBlastRadius, compute_cluster_root, compute_global_root, GlobalStateClient trait, MockGlobalStateClient
   collectors/
     traits.rs                   -- LayerCollector trait (async fn collect -> LayerSignature)
     mock.rs                     -- MockCollector
@@ -133,6 +140,9 @@ spec/
 | `HeartbeatEmitter` | `heartbeat.rs` | `emit_chain()`, `emit_entry()` | Audit trail persistence |
 | `IacTestAttester` | `iac_attestation.rs` | `attest_phase()`, `attest_suite() -> Blake3Hash` | IaC test attestation |
 | `ConfigLoader` | `config.rs` | `load()`, `reload()` | Configuration management |
+| `MerkleLedgerStore` | `forensics/ledger.rs` | `append()`, `entries()`, `verify_integrity()` | Persistent forensic ledger |
+| `GlobalStateClient` | `global.rs` | `report_root()`, `get_global_state()`, `get_blast_radius()` | Master server communication |
+| `ForensicsWriter` | `forensics/ledger.rs` | `write_entry()`, `flush()` | Forensic ledger write abstraction |
 
 ## Key Types
 
@@ -188,6 +198,29 @@ spec/
 - **`IacTestSuiteReport`** -- suite_name + platform + environment + phases + all_passed + suite_hash + completed_at. `compute_suite_hash()` produces composite BLAKE3 from phase hashes. `verify_passed()` checks the Verify phase specifically. `suite_hash` can feed directly into `compose_certification_artifact()` as the `control_hash`.
 - **`MockIacTestAttester`** -- Records phases and suites in `Mutex<Vec<_>>` for test assertions.
 
+### Forensic Ledger
+
+- **`MerkleLedger`** -- Thread-safe (`RwLock`) append-only BLAKE3-chained ledger. Records every `CertificationArtifact` deployment. Methods: `append()`, `append_with_clock()`, `verify_integrity()`, `len()`, `entries()`, `entries_in_range()`, `consistency_proof()`, `head_hash()`.
+- **`MerkleLedgerEntry`** -- sequence + timestamp + certification_artifact + signed_root + deployment_context + entry_hash + previous_hash.
+- **`DeploymentContext`** -- cluster + namespace + node + pod + container + image_ref + binary_paths + optional sdlc_chain_hash + optional compliance_report_hash.
+- **`MerkleLedgerStore`** trait -- pluggable persistence for the ledger. `InMemoryLedgerStore` for testing.
+- **`LedgerIndex`** -- 5 BTreeMap indexes over ledger entries (by_hash, by_node, by_namespace, by_time, by_binary). Methods: `insert()`, `query_by_hash()`, `query_by_node()`, `query_by_namespace()`, `query_by_time_range()`, `query_by_binary()`.
+- **`blast_radius()`** -- Given a compromised hash + time range, returns `BlastRadiusReport` with affected nodes, co-resident artifacts, chain integrity check, and deterministic evidence hash.
+- **`timeline()`** -- Chronological reconstruction of events for a hash, optionally filtered by node.
+- **`provenance()`** -- Point-in-time snapshot of active artifacts on a node.
+- **`compute_evidence_hash()`** -- Deterministic BLAKE3 hash of a `BlastRadiusReport`.
+- **`BlastRadiusReport`** -- query_hash + total_affected + time_range + affected_nodes + co_resident_artifacts + chain_integrity + evidence_hash.
+
+### Global State
+
+- **`GlobalStateRoot`** -- root_hash + cluster_roots (BTreeMap) + computed_at + sequence + previous_root.
+- **`ClusterRootEntry`** -- cluster_id + cluster_root + signed_root + node_count + artifact_count + last_reported + status.
+- **`ClusterStatus`** -- enum: `Active`, `Stale`, `Offline`, `Revoked`.
+- **`compute_cluster_root()`** -- Deterministic BLAKE3 hash from sorted composed_root hashes.
+- **`compute_global_root()`** -- Deterministic BLAKE3 hash from BTreeMap of cluster roots.
+- **`GlobalStateClient`** trait -- async communication with master server. `MockGlobalStateClient` for testing.
+- **`GlobalBlastRadiusReport`** -- Aggregates blast radius across all clusters.
+
 ### Collectors
 
 | Collector | Layer Type | What It Hashes |
@@ -210,15 +243,15 @@ spec/
 
 ### schemars Integration
 
-All API-facing types derive `schemars::JsonSchema`: `Blake3Hash`, `LayerType`, `LayerSignature`, `MasterSignature`, `SignedRoot`, `SigningAlgorithm`, `CertificationArtifact`, `ArtifactProofPaths`, `HeartbeatEntry`, `HeartbeatEvent`, `VerificationOutcome`, `VerifierIdentity`, `ConsistencyProof`, `ComplianceState`, `ComplianceStatus`, `ComplianceDistance`, `FrameworkState`, `CertificationQueryStatus`, `DynamicComplianceCheck`, `CheckDefinition`, `GateDecision`, `CertificationStatus`, `AuditEntry`, `IacTestPhase`, `IacTestPhaseResult`, `IacTestSuiteReport`, `BreakGlassToken`.
+All API-facing types derive `schemars::JsonSchema`: `Blake3Hash`, `LayerType`, `LayerSignature`, `MasterSignature`, `SignedRoot`, `SigningAlgorithm`, `CertificationArtifact`, `ArtifactProofPaths`, `HeartbeatEntry`, `HeartbeatEvent`, `VerificationOutcome`, `VerifierIdentity`, `ConsistencyProof`, `ComplianceState`, `ComplianceStatus`, `ComplianceDistance`, `FrameworkState`, `CertificationQueryStatus`, `DynamicComplianceCheck`, `CheckDefinition`, `GateDecision`, `CertificationStatus`, `AuditEntry`, `IacTestPhase`, `IacTestPhaseResult`, `IacTestSuiteReport`, `BreakGlassToken`, `MerkleLedgerEntry`, `DeploymentContext`, `BlastRadiusReport`, `TimelineEvent`, `ProvenanceSnapshot`, `ActiveArtifact`, `RevokeRequest`, `RevokeResult`, `CoResidentArtifact`, `AffectedNodeDetail`, `TimeRange`, `GlobalStateRoot`, `ClusterRootEntry`, `ClusterStatus`, `ClusterRootReport`, `ArtifactDelta`, `ArtifactLocation`, `GlobalBlastRadiusReport`, `ClusterBlastRadius`, `NodeBlastRadius`.
 
 ## Testing
 
 ```bash
-cargo test                           # all 925 tests
+cargo test                           # all 1427 tests
 cargo test hash                      # hash module (42 tests)
 cargo test merkle                    # merkle tree
-cargo test signing                   # signing + MockDfcSigner + BreakGlassToken
+cargo test signing                   # signing + MockDfcSigner + BreakGlassToken + FailableDfcSigner
 cargo test certification_artifact    # 3-leaf Merkle artifact
 cargo test heartbeat                 # heartbeat chain + consistency proofs
 cargo test compliance_api            # compliance query types
@@ -228,9 +261,12 @@ cargo test collectors::pangea        # Pangea synthesis hashing
 cargo test collectors::rspec         # RSpec result hashing
 cargo test collectors::inspec_result # InSpec result hashing
 cargo test gating                    # gate policy evaluation
+cargo test forensics                 # forensic ledger, index, query, blast radius
+cargo test global                    # global state root, cluster root computation
+cargo test --test forensics_integration  # e2e forensics + chaos tests (21 tests)
 ```
 
-Mock types: `MockCollector`, `MockCommandRunner`, `MockFileSystem`, `MockHttpClient`, `MockGatingEngine`, `MockVerifier`, `MockIacTestAttester`, `MockDfcSigner`, `MockAkeylessClient`, `MockAkeylessGateway`, `FixedClock`, `NoopMetrics`, `MemStore<T>`.
+Mock types: `MockCollector`, `MockCommandRunner`, `MockFileSystem`, `MockHttpClient`, `MockGatingEngine`, `MockVerifier`, `MockIacTestAttester`, `MockDfcSigner`, `FailableDfcSigner` (chaos testing), `MockAkeylessClient`, `MockAkeylessGateway`, `MockGlobalStateClient`, `InMemoryLedgerStore`, `FixedClock`, `NoopMetrics`, `MemStore<T>`.
 
 ## Dependencies
 
@@ -256,7 +292,7 @@ Mock types: `MockCollector`, `MockCommandRunner`, `MockFileSystem`, `MockHttpCli
 ## Ecosystem
 
 ```
-tameshi (this repo, 925 tests)
+tameshi (this repo, 1427 tests)
      +---> sekiban  (K8s admission webhook, 315 tests)
      +---> kensa   (compliance engine, 377 tests)
      +---> inshou  (Nix gate CLI, 366 tests)
@@ -265,7 +301,7 @@ tameshi (this repo, 925 tests)
      +---> iac-test-runner (K8s IaC test orchestrator, 180 tests)
 ```
 
-Total ecosystem test count: **2,287 tests**.
+Total ecosystem test count: **2,789 tests**.
 
 ## Proof Document
 

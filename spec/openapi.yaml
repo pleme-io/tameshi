@@ -53,6 +53,8 @@ tags:
     description: Compliance state and distance queries
   - name: forensics
     description: Forensic blast radius analysis, timeline provenance, and incident response
+  - name: global
+    description: Global state root aggregation across federated clusters
   - name: health
     description: Health and readiness probes
 
@@ -844,6 +846,261 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RevokeResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Revocation partially failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------------------
+  # Global -- Federated State Root, Cross-Cluster Blast Radius
+  # ---------------------------------------------------------------------------
+  /api/v1/global/state-root:
+    get:
+      operationId: getGlobalStateRoot
+      summary: Get the current global state root
+      description: |
+        Returns the global state root aggregating all cluster roots. The root
+        hash is a BLAKE3 Merkle root computed from all cluster roots in
+        deterministic BTreeMap order.
+      tags: [global]
+      responses:
+        "200":
+          description: Global state root
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalStateRootResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/global/blast-radius:
+    get:
+      operationId: getGlobalBlastRadius
+      summary: Global blast radius for a compromised hash
+      description: |
+        Aggregates blast radius reports from all clusters for a given
+        compromised BLAKE3 hash. Returns per-cluster and per-node breakdowns,
+        total affected counts, and first/last seen timestamps globally.
+      tags: [global]
+      parameters:
+        - name: hash
+          in: query
+          required: true
+          description: BLAKE3 hash (prefixed) of the compromised artifact
+          schema:
+            type: string
+            pattern: "^blake3:[a-f0-9]{64}$"
+        - name: from
+          in: query
+          required: false
+          description: Start of time range (ISO 8601). Defaults to 24h ago.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: End of time range (ISO 8601). Defaults to now.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Global blast radius report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalBlastRadiusResponse"
+        "400":
+          description: Invalid hash format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/global/clusters:
+    get:
+      operationId: listGlobalClusters
+      summary: List all clusters reporting to the global state
+      description: |
+        Returns a list of all clusters that have reported their state root,
+        including liveness status, node count, and artifact count.
+      tags: [global]
+      responses:
+        "200":
+          description: List of cluster root entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClusterRootEntry"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/global/clusters/{id}/state:
+    get:
+      operationId: getClusterState
+      summary: Get a specific cluster's state
+      description: |
+        Returns the full state entry for a specific cluster, including its
+        signed root, node count, artifact count, and liveness status.
+      tags: [global]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique cluster identifier
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cluster state entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterRootEntry"
+        "404":
+          description: Cluster not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/global/clusters/{id}/report:
+    post:
+      operationId: reportClusterRoot
+      summary: Report a cluster's state root
+      description: |
+        Accepts a cluster root report from a local cluster, including its
+        signed Merkle root, node count, artifact count, and optional delta
+        of changed artifacts since the last report.
+      tags: [global]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique cluster identifier (must match report body)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClusterRootReport"
+      responses:
+        "200":
+          description: Report accepted, returns updated global state root
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalStateRootResponse"
+        "400":
+          description: Invalid report or cluster ID mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/global/history:
+    get:
+      operationId: getGlobalHistory
+      summary: Get global state root history
+      description: |
+        Returns the history of global state root changes, ordered by
+        sequence number. Each entry includes the root hash, cluster
+        composition, and timestamp.
+      tags: [global]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of history entries to return. Defaults to 100.
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+        - name: from_sequence
+          in: query
+          required: false
+          description: Return entries starting from this sequence number.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: List of historical global state roots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GlobalStateRootResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/global/revoke-everywhere:
+    post:
+      operationId: globalRevokeEverywhere
+      summary: Revoke a compromised hash across all clusters
+      description: |
+        Broadcasts a revocation command to all active clusters, updating
+        their kanshi BPF allow-maps to block execution of the compromised
+        binary. Returns aggregate results from all clusters.
+      tags: [global]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+      responses:
+        "200":
+          description: Global revocation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalRevokeResponse"
         "400":
           description: Invalid request
           content:
@@ -2833,3 +3090,326 @@ components:
           type: integer
           format: int64
           description: Sequence number of the Revocation event in the HeartbeatChain
+
+    # =========================================================================
+    # Global Types
+    # =========================================================================
+    GlobalStateRootResponse:
+      type: object
+      description: Global state root aggregating all cluster roots
+      required:
+        - root_hash
+        - cluster_roots
+        - computed_at
+        - sequence
+        - previous_root
+      properties:
+        root_hash:
+          $ref: "#/components/schemas/Blake3Hash"
+        cluster_roots:
+          type: object
+          description: Per-cluster state, keyed by cluster_id
+          additionalProperties:
+            $ref: "#/components/schemas/ClusterRootEntry"
+        computed_at:
+          type: string
+          format: date-time
+          description: When this global root was computed
+        sequence:
+          type: integer
+          format: int64
+          description: Monotonically increasing sequence number
+        previous_root:
+          $ref: "#/components/schemas/Blake3Hash"
+
+    ClusterRootEntry:
+      type: object
+      description: A single cluster's contribution to the global state root
+      required:
+        - cluster_id
+        - cluster_root
+        - signed_root
+        - node_count
+        - artifact_count
+        - last_reported
+        - status
+      properties:
+        cluster_id:
+          type: string
+          description: Unique cluster identifier (e.g. plo-us-east, edge-fleet-07)
+        cluster_root:
+          $ref: "#/components/schemas/Blake3Hash"
+        signed_root:
+          $ref: "#/components/schemas/SignedRoot"
+        node_count:
+          type: integer
+          description: Number of nodes reporting attestations
+        artifact_count:
+          type: integer
+          format: int64
+          description: Total number of CertificationArtifacts across all nodes
+        last_reported:
+          type: string
+          format: date-time
+          description: Last time this cluster reported its root
+        status:
+          $ref: "#/components/schemas/ClusterStatus"
+
+    ClusterStatus:
+      type: string
+      description: Cluster liveness status
+      enum: [active, stale, offline, revoked]
+
+    GlobalBlastRadiusResponse:
+      type: object
+      description: Global blast radius report aggregating across all clusters
+      required:
+        - query_hash
+        - total_clusters_affected
+        - total_nodes_affected
+        - total_pods_affected
+        - clusters_not_affected
+        - cluster_reports
+      properties:
+        query_hash:
+          $ref: "#/components/schemas/Blake3Hash"
+        total_clusters_affected:
+          type: integer
+          description: Total clusters containing the compromised artifact
+        total_nodes_affected:
+          type: integer
+          description: Total nodes across all affected clusters
+        total_pods_affected:
+          type: integer
+          description: Total pods across all affected clusters
+        clusters_not_affected:
+          type: array
+          items:
+            type: string
+          description: Clusters confirmed NOT affected
+        cluster_reports:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClusterBlastRadius"
+        global_first_seen:
+          type: string
+          format: date-time
+          description: Earliest attestation of this hash across all clusters
+        global_last_seen:
+          type: string
+          format: date-time
+          description: Most recent attestation of this hash across all clusters
+
+    ClusterBlastRadius:
+      type: object
+      description: Per-cluster blast radius detail
+      required:
+        - cluster_id
+        - nodes_affected
+        - pods_affected
+        - first_seen
+        - last_seen
+        - node_details
+      properties:
+        cluster_id:
+          type: string
+          description: Cluster identifier
+        nodes_affected:
+          type: integer
+          description: Number of affected nodes in this cluster
+        pods_affected:
+          type: integer
+          description: Number of affected pods in this cluster
+        first_seen:
+          type: string
+          format: date-time
+          description: First attestation in this cluster
+        last_seen:
+          type: string
+          format: date-time
+          description: Most recent attestation in this cluster
+        node_details:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeBlastRadius"
+
+    NodeBlastRadius:
+      type: object
+      description: Per-node blast radius detail
+      required:
+        - node
+        - pods
+        - binary_paths
+        - first_execution
+        - last_execution
+        - execution_count
+      properties:
+        node:
+          type: string
+          description: Node identifier
+        pods:
+          type: array
+          items:
+            type: string
+          description: Affected pods on this node
+        binary_paths:
+          type: array
+          items:
+            type: string
+          description: Binary paths containing the compromised artifact
+        first_execution:
+          type: string
+          format: date-time
+          description: First execution on this node
+        last_execution:
+          type: string
+          format: date-time
+          description: Most recent execution on this node
+        execution_count:
+          type: integer
+          format: int64
+          description: Total execution count
+
+    ClusterRootReport:
+      type: object
+      description: Report sent by a local cluster to the master server
+      required:
+        - cluster_id
+        - cluster_root
+        - signed_root
+        - node_count
+        - artifact_count
+        - reported_at
+      properties:
+        cluster_id:
+          type: string
+          description: Unique cluster identifier
+        cluster_root:
+          $ref: "#/components/schemas/Blake3Hash"
+        signed_root:
+          $ref: "#/components/schemas/SignedRoot"
+        node_count:
+          type: integer
+          description: Number of nodes reporting attestations
+        artifact_count:
+          type: integer
+          format: int64
+          description: Total number of CertificationArtifacts across all nodes
+        reported_at:
+          type: string
+          format: date-time
+          description: When this report was generated
+        artifact_delta:
+          $ref: "#/components/schemas/ArtifactDelta"
+
+    ArtifactDelta:
+      type: object
+      description: Delta of artifacts since last report (bandwidth optimization)
+      required:
+        - added
+        - removed
+      properties:
+        added:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactLocation"
+          description: Artifacts added since last report
+        removed:
+          type: array
+          items:
+            $ref: "#/components/schemas/Blake3Hash"
+          description: Composed root hashes of artifacts removed since last report
+
+    ArtifactLocation:
+      type: object
+      description: Location of an artifact in the global fleet
+      required:
+        - cluster_id
+        - node
+        - namespace
+        - pod
+        - binary_path
+        - composed_root
+      properties:
+        cluster_id:
+          type: string
+          description: Cluster where the artifact resides
+        node:
+          type: string
+          description: Node within the cluster
+        namespace:
+          type: string
+          description: Kubernetes namespace
+        pod:
+          type: string
+          description: Pod name
+        binary_path:
+          type: string
+          description: Path to the binary on disk
+        composed_root:
+          $ref: "#/components/schemas/Blake3Hash"
+
+    GlobalRevokeResponse:
+      type: object
+      description: Aggregate result of revoking a hash across all clusters
+      required:
+        - total_clusters_revoked
+        - total_nodes_affected
+        - total_bpf_maps_updated
+        - cluster_results
+      properties:
+        total_clusters_revoked:
+          type: integer
+          description: Number of clusters where revocation was applied
+        total_nodes_affected:
+          type: integer
+          description: Total nodes across all clusters where hash was revoked
+        total_bpf_maps_updated:
+          type: integer
+          description: Total BPF maps updated across all clusters
+        cluster_results:
+          type: array
+          items:
+            $ref: "#/components/schemas/RevokeResponse"
+          description: Per-cluster revocation results
+
+    StorageTier:
+      type: string
+      description: Storage tier for ledger data lifecycle
+      enum: [hot, warm, cold, archive]
+
+    StorageStats:
+      type: object
+      description: Statistics about ledger storage usage across tiers
+      required:
+        - total_entries
+        - hot_entries
+        - warm_entries
+        - cold_entries
+        - archive_entries
+        - total_bytes
+      properties:
+        total_entries:
+          type: integer
+          format: int64
+          description: Total number of ledger entries across all tiers
+        hot_entries:
+          type: integer
+          format: int64
+          description: Entries in the hot tier (in-memory, fast access)
+        warm_entries:
+          type: integer
+          format: int64
+          description: Entries in the warm tier (local SSD)
+        cold_entries:
+          type: integer
+          format: int64
+          description: Entries in the cold tier (S3/object storage)
+        archive_entries:
+          type: integer
+          format: int64
+          description: Entries in the archive tier (Glacier/deep archive)
+        total_bytes:
+          type: integer
+          format: int64
+          description: Total storage consumed across all tiers in bytes
