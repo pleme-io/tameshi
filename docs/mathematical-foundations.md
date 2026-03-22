@@ -1330,11 +1330,11 @@ Every theorem in this document is verified by automated tests in the tameshi eco
 | Thm 3.3 (proof soundness) | 256+ | `merkle.rs` | proptest `merkle_proof_validity` (256 random trees, every leaf verified) |
 | Thm 4.1 (binding) | 287+ | `certification_artifact.rs` | 31 unit + 256 proptest (`certification_artifact_collision_resistance`, `tamper_detection`) |
 | Thm 5.1 (order-independence) | 3 | `merkle.rs` | `merkle_root_order_independent`, `compose_merkle_creates_master` |
-| Thm 6.1 (global determinism) | 8 | `global.rs` | `compute_global_root_deterministic`, `cluster_roots_deterministic` |
-| Thm 6.2 (hierarchical tamper) | 4 | `global.rs` | `modified_artifact_changes_global_root` |
-| Thm 7.1 (chain integrity) | 13 | `forensics/ledger.rs` | `chain_detect_tampered_entry`, `chain_1000_entries_integrity` |
+| Thm 6.1 (global determinism) | 8 | `global.rs` | `compute_global_root_deterministic`, `compute_cluster_root_deterministic` |
+| Thm 6.2 (hierarchical tamper) | 4 | `global.rs` | `global_root_changes_when_any_cluster_root_changes`, `compute_global_root_changes_when_cluster_changes` |
+| Thm 7.1 (chain integrity) | 13 | `heartbeat.rs`, `forensics/ledger.rs` | `chain_detect_tampered_entry`, `chain_1000_entries_integrity`, `test_verify_integrity_tampered_entry_hash` |
 | Thm 8.1 (consistency) | 8 | `heartbeat.rs` | `consistency_proof_valid`, `consistency_proof_detects_tamper` |
-| Thm 9.1 (two-phase binding) | 4 | `signature.rs` | `master_signature_composition` |
+| Thm 9.1 (two-phase binding) | 4 | `signature.rs` | `master_signature_with_compliance`, `master_signature_untested_only` |
 | Thm 10.1 (split-knowledge) | 4 | `signing.rs` | `mock_dfc_wrong_fragment_a_verify_fails`, `mock_dfc_wrong_fragment_b_verify_fails` |
 | Thm 11.1 (reduction) | structural | — | Proved by construction; all tamper detection tests (Thms 3.1, 4.1, 6.2, 7.1) serve as witnesses that the reduction holds |
 | Thm 11.2 (ledger reduction) | structural | — | Combination of chain integrity tests (Thm 7.1) + signing tests (Thm 10.1) |

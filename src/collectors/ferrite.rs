@@ -54,6 +54,7 @@ pub struct PomsHashes {
 }
 
 /// Collector that produces a [`LayerSignature`] from a Ferrite PoMS artifact.
+#[derive(Debug)]
 pub struct FerriteCollector {
     pub artifact: PomsArtifact,
 }
