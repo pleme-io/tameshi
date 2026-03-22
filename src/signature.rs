@@ -47,6 +47,9 @@ pub enum LayerType {
     /// InSpec compliance result JSON.
     #[serde(rename = "inspec_result")]
     InSpecResult,
+    /// Ferrite Proof of Memory Safety (PoMS).
+    #[serde(rename = "ferrite_poms")]
+    FerritePoms,
 }
 
 impl fmt::Display for LayerType {
@@ -66,6 +69,7 @@ impl fmt::Display for LayerType {
             Self::PangeaSynthesis => write!(f, "pangea_synthesis"),
             Self::RSpecResult => write!(f, "rspec_result"),
             Self::InSpecResult => write!(f, "inspec_result"),
+            Self::FerritePoms => write!(f, "ferrite_poms"),
         }
     }
 }
@@ -89,6 +93,7 @@ impl FromStr for LayerType {
             "pangea_synthesis" | "pangeasynthesis" | "pangea" => Ok(Self::PangeaSynthesis),
             "rspec_result" | "rspecresult" | "rspec" => Ok(Self::RSpecResult),
             "inspec_result" | "inspecresult" => Ok(Self::InSpecResult),
+            "ferrite_poms" | "ferritepoms" | "ferrite" | "poms" => Ok(Self::FerritePoms),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
@@ -365,6 +370,7 @@ mod tests {
             LayerType::PangeaSynthesis,
             LayerType::RSpecResult,
             LayerType::InSpecResult,
+            LayerType::FerritePoms,
         ];
         for lt in types {
             let s = lt.to_string();
@@ -509,7 +515,7 @@ mod tests {
             LayerType::Tatara, LayerType::FluxCD, LayerType::ArgoCD,
             LayerType::Akeyless, LayerType::AkeylessTarget,
             LayerType::PangeaSynthesis, LayerType::RSpecResult,
-            LayerType::InSpecResult,
+            LayerType::InSpecResult, LayerType::FerritePoms,
         ];
         for i in 0..types.len() {
             for j in 0..types.len() {

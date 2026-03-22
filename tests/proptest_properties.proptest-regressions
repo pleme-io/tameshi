@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 56c9ed3dc87c67341f06f76463af2df6eb1aac903da4e8f75b7405d9a661704e # shrinks to layers = [LayerSignature { layer: Tofu, hash: Blake3(2d3adedff11b61f1), metadata: SignatureMetadata { computed_at: 2026-03-20T03:32:19.340138Z, collector_version: "0.1.0", source: "proptest", environment: None }, inputs: [] }, LayerSignature { layer: Tofu, hash: Blake3(48fc721fbbc172e0), metadata: SignatureMetadata { computed_at: 2026-03-20T03:32:19.340217Z, collector_version: "0.1.0", source: "proptest", environment: None }, inputs: [] }]

@@ -424,13 +424,14 @@ mod tests {
             LayerType::PangeaSynthesis,
             LayerType::RSpecResult,
             LayerType::InSpecResult,
+            LayerType::FerritePoms,
         ];
-        assert_eq!(all.len(), 14);
+        assert_eq!(all.len(), 15);
         // Verify all are distinct
         let mut deduped = all.clone();
         deduped.sort();
         deduped.dedup();
-        assert_eq!(deduped.len(), 14);
+        assert_eq!(deduped.len(), 15);
     }
 
     // -----------------------------------------------------------------------

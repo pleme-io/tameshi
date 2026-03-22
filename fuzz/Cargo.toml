@@ -1,0 +1,54 @@
+[package]
+name = "tameshi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tameshi = { path = ".." }
+serde_json = "1.0"
+arbitrary = { version = "1", features = ["derive"] }
+
+[[bin]]
+name = "merkle_tree"
+path = "fuzz_targets/merkle_tree.rs"
+doc = false
+
+[[bin]]
+name = "hash_computation"
+path = "fuzz_targets/hash_computation.rs"
+doc = false
+
+[[bin]]
+name = "signature_verification"
+path = "fuzz_targets/signature_verification.rs"
+doc = false
+
+[[bin]]
+name = "gating_policy"
+path = "fuzz_targets/gating_policy.rs"
+doc = false
+
+[[bin]]
+name = "hex_parsing"
+path = "fuzz_targets/hex_parsing.rs"
+doc = false
+
+[[bin]]
+name = "changeset_computation"
+path = "fuzz_targets/changeset_computation.rs"
+doc = false
+
+[[bin]]
+name = "serde_roundtrip"
+path = "fuzz_targets/serde_roundtrip.rs"
+doc = false
+
+[[bin]]
+name = "compliance_dimension"
+path = "fuzz_targets/compliance_dimension.rs"
+doc = false

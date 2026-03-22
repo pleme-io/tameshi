@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  notify-downstream:
+    name: Notify downstream repos
+    runs-on: ubuntu-latest
+    needs: publish
+    strategy:
+      matrix:
+        repo: [sekiban, kensa, inshou]
+    steps:
+      - name: Trigger downstream CI
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DISPATCH_TOKEN }}
+          repository: pleme-io/${{ matrix.repo }}
+          event-type: tameshi-release
+          client-payload: '{"version": "${{ github.ref_name }}"}'

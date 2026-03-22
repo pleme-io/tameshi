@@ -4,6 +4,8 @@
 
 This document provides a rigorous, constructive proof that the tameshi attestation ecosystem achieves the following theorem. Every claim is backed by test evidence, cryptographic analysis, and explicit reference to the implementation.
 
+**Companion document:** See `mathematical-foundations.md` for formal mathematical proofs (15 theorems, 7 corollaries, security reductions, complexity analysis) that establish the cryptographic properties this document relies on. The mathematical foundations document treats the ecosystem components as *consequences* of the underlying mathematical guarantees.
+
 ---
 
 ## 1. Theorem Statement

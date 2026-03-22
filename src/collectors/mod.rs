@@ -10,6 +10,7 @@
 pub mod akeyless;
 pub mod akeyless_target;
 pub mod argocd;
+pub mod ferrite;
 pub mod fluxcd;
 pub mod generic;
 pub mod helm;
@@ -25,5 +26,6 @@ pub mod tatara;
 pub mod tofu;
 pub mod traits;
 
+pub use ferrite::FerriteCollector;
 pub use mock::MockCollector;
 pub use traits::LayerCollector;

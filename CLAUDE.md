@@ -303,6 +303,10 @@ tameshi (this repo, 1427 tests)
 
 Total ecosystem test count: **2,789 tests**.
 
-## Proof Document
+## Documentation
 
-See `docs/unified-theory-of-infrastructure-proof.md` for the formal proof that the system achieves its stated security properties, with full test evidence, cryptographic property analysis, attack surface enumeration, and regulatory alignment mapping.
+| Document | Purpose |
+|----------|---------|
+| `docs/mathematical-foundations.md` | Formal mathematical proofs: 15 theorems, 7 corollaries, security reductions, complexity analysis. All Merkle tree properties, hash chain integrity, split-knowledge security, and ecosystem components derived as consequences. |
+| `docs/unified-theory-of-infrastructure-proof.md` | Constructive proof with test evidence: 3,288 tests mapped to security properties, attack surface analysis, regulatory alignment (NIST 800-53, CIRCIA, SLSA, FedRAMP). |
+| `docs/compliance-coverage-comparison.md` | Quantitative comparison: ~14,800 controls vs commercial platforms (AWS Security Hub, Prisma Cloud, Wiz, Chef Automate). |

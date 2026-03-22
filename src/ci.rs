@@ -31,7 +31,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::akeyless_client::{AkeylessClient, AkeylessConfig, HttpAkeylessClient};
+use crate::akeyless_client::{AkeylessClient, AkeylessConfig, HttpAkeylessClient, TlsConfig};
 use crate::certification::{
     BuildAttestation, ChartAttestation, DependencyHash, ImageAttestation,
     SourceAttestation,
@@ -273,6 +273,7 @@ pub async fn akeyless_attestation(
         access_key: access_key.map(String::from),
         k8s_token_path: None,
         k8s_auth_config_name: None,
+        tls: TlsConfig::default(),
     };
     let client = HttpAkeylessClient::new(config, ReqwestHttpClient::new());
     let paths: Vec<String> = secret_paths.iter().map(|s| s.to_string()).collect();
@@ -305,6 +306,7 @@ pub async fn akeyless_target_attestation(
         access_key: access_key.map(String::from),
         k8s_token_path: None,
         k8s_auth_config_name: None,
+        tls: TlsConfig::default(),
     };
     let client = HttpAkeylessClient::new(config, ReqwestHttpClient::new());
     let names: Vec<String> = target_names.iter().map(|s| s.to_string()).collect();
@@ -337,6 +339,7 @@ pub async fn akeyless_target_attestation_with_client<H: crate::traits::HttpClien
         access_key: access_key.map(String::from),
         k8s_token_path: None,
         k8s_auth_config_name: None,
+        tls: TlsConfig::default(),
     };
     let client = HttpAkeylessClient::new(config, http_client);
     let names: Vec<String> = target_names.iter().map(|s| s.to_string()).collect();
@@ -370,6 +373,7 @@ pub async fn akeyless_attestation_with_client<H: crate::traits::HttpClient>(
         access_key: access_key.map(String::from),
         k8s_token_path: None,
         k8s_auth_config_name: None,
+        tls: TlsConfig::default(),
     };
     let client = HttpAkeylessClient::new(config, http_client);
     let paths: Vec<String> = secret_paths.iter().map(|s| s.to_string()).collect();
@@ -566,10 +570,10 @@ mod tests {
         assert_eq!(att.auth_method, AkeylessAuthMethod::ApiKey);
         assert_eq!(att.secrets_accessed.len(), 1);
         assert_eq!(att.secrets_accessed[0].path, "/prod/db-password");
-        // Value hash should be of the secret value, not the path
+        // Value hash is now salted: BLAKE3(gateway_url:path:value)
         assert_eq!(
             att.secrets_accessed[0].value_hash,
-            Blake3Hash::digest(b"my-db-password")
+            Blake3Hash::digest(b"https://gw.test.com:/prod/db-password:my-db-password")
         );
     }
 
