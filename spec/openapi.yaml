@@ -51,6 +51,8 @@ tags:
     description: Merkle root signing and verification
   - name: compliance-query
     description: Compliance state and distance queries
+  - name: forensics
+    description: Forensic blast radius analysis, timeline provenance, and incident response
   - name: health
     description: Health and readiness probes
 
@@ -674,6 +676,182 @@ paths:
                 $ref: "#/components/schemas/ComplianceDistance"
         "400":
           description: Invalid baseline or framework
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ---------------------------------------------------------------------------
+  # Forensics -- Blast Radius, Timeline, Provenance, Revocation
+  # ---------------------------------------------------------------------------
+  /api/v1/forensics/blast-radius:
+    get:
+      operationId: getBlastRadius
+      summary: Query blast radius for a compromised hash
+      description: |
+        Searches the MerkleLedger for every deployment that contained the specified
+        BLAKE3 hash. Returns affected nodes, pods, namespaces, temporal range, and
+        co-resident artifacts that shared the same Merkle root. Designed for CIRCIA
+        72-hour incident response.
+      tags: [forensics]
+      parameters:
+        - name: hash
+          in: query
+          required: true
+          description: BLAKE3 hash of the compromised artifact (prefixed, e.g. blake3:abc...)
+          schema:
+            $ref: "#/components/schemas/Blake3Hash"
+        - name: from
+          in: query
+          required: false
+          description: Start of the time window (default 72 hours ago)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: End of the time window (default now)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Blast radius report for the compromised hash
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlastRadiusResponse"
+        "400":
+          description: Invalid hash format or time range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Hash not found in ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/forensics/timeline:
+    get:
+      operationId: getForensicsTimeline
+      summary: Get chronological event stream for a hash
+      description: |
+        Returns a chronological list of every verification event that involved the
+        specified BLAKE3 hash. Each event includes the timestamp, decision, node,
+        pod, binary path, composed root, and ledger sequence number.
+      tags: [forensics]
+      parameters:
+        - name: hash
+          in: query
+          required: true
+          description: BLAKE3 hash to trace through the ledger
+          schema:
+            $ref: "#/components/schemas/Blake3Hash"
+        - name: from
+          in: query
+          required: false
+          description: Start of the time window (default 72 hours ago)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: End of the time window (default now)
+          schema:
+            type: string
+            format: date-time
+        - name: node
+          in: query
+          required: false
+          description: Filter events to a specific node
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Timeline of verification events for the hash
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineResponse"
+        "400":
+          description: Invalid hash format or time range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/forensics/provenance:
+    get:
+      operationId: getForensicsProvenance
+      summary: Get point-in-time artifact stack for a node
+      description: |
+        Returns all CertificationArtifacts that were active on the specified node
+        at the given timestamp, including their full Merkle trees, signed roots,
+        and deployment contexts.
+      tags: [forensics]
+      parameters:
+        - name: node
+          in: query
+          required: true
+          description: Node name to query
+          schema:
+            type: string
+        - name: at
+          in: query
+          required: true
+          description: Point-in-time timestamp
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Active artifacts on the node at the given timestamp
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvenanceResponse"
+        "400":
+          description: Missing or invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/forensics/revoke:
+    post:
+      operationId: revokeHash
+      summary: Emergency revocation of a compromised hash
+      description: |
+        Revokes a compromised BLAKE3 hash across all nodes. Updates kanshi BPF
+        allow-maps to block execution of the compromised binary and records a
+        Revocation event in the HeartbeatChain for audit purposes.
+      tags: [forensics]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+      responses:
+        "200":
+          description: Revocation result with affected node count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Revocation partially failed
           content:
             application/json:
               schema:
@@ -2349,3 +2527,309 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/CertifyResponse"
+
+    # =========================================================================
+    # Forensics & Incident Response Types
+    # =========================================================================
+    BlastRadiusResponse:
+      type: object
+      description: |
+        Blast radius report for a compromised BLAKE3 hash. Enumerates every node,
+        pod, namespace, and time window where the hash appeared in any
+        CertificationArtifact, plus co-resident artifacts sharing the same Merkle root.
+      required:
+        - query_hash
+        - total_affected
+        - time_range
+        - affected_nodes
+        - co_resident_artifacts
+        - chain_integrity
+        - evidence_hash
+      properties:
+        query_hash:
+          $ref: "#/components/schemas/Blake3Hash"
+        total_affected:
+          type: integer
+          description: Total number of affected nodes
+        time_range:
+          type: object
+          required:
+            - first_seen
+            - last_seen
+          properties:
+            first_seen:
+              type: string
+              format: date-time
+              description: Earliest timestamp the hash was observed in the ledger
+            last_seen:
+              type: string
+              format: date-time
+              description: Most recent timestamp the hash was observed in the ledger
+        affected_nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedNode"
+          description: List of nodes where the compromised hash was active
+        co_resident_artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoResidentArtifact"
+          description: Other artifacts that shared the same Merkle root as the compromised hash
+        merkle_proof:
+          type: object
+          nullable: true
+          description: Inclusion proof for the compromised hash in its Merkle tree
+          properties:
+            leaf_index:
+              type: integer
+              description: Index of the compromised hash leaf in the Merkle tree
+            proof_nodes:
+              type: array
+              items:
+                $ref: "#/components/schemas/Blake3Hash"
+              description: BLAKE3 intermediate hashes forming the inclusion proof
+        chain_integrity:
+          type: boolean
+          description: Whether the ledger hash chain is intact for the queried range
+        evidence_hash:
+          $ref: "#/components/schemas/Blake3Hash"
+
+    AffectedNode:
+      type: object
+      description: A node where the compromised hash was active during the queried window
+      required:
+        - node
+        - cluster
+        - first_execution
+        - last_execution
+        - execution_count
+        - pods
+        - namespaces
+      properties:
+        node:
+          type: string
+          description: Node name
+        cluster:
+          type: string
+          description: Cluster name (e.g. plo, zek)
+        first_execution:
+          type: string
+          format: date-time
+          description: Earliest execution of the compromised hash on this node
+        last_execution:
+          type: string
+          format: date-time
+          description: Most recent execution of the compromised hash on this node
+        execution_count:
+          type: integer
+          description: Total number of verification events involving this hash on this node
+        pods:
+          type: array
+          items:
+            type: string
+          description: Pod names that ran the compromised hash
+        namespaces:
+          type: array
+          items:
+            type: string
+          description: Namespaces containing pods that ran the compromised hash
+
+    CoResidentArtifact:
+      type: object
+      description: An artifact that shared the same Merkle root as the compromised hash
+      required:
+        - composed_root
+        - artifact_hash
+        - control_hash
+        - intent_hash
+        - binary_path
+      properties:
+        composed_root:
+          $ref: "#/components/schemas/Blake3Hash"
+        artifact_hash:
+          $ref: "#/components/schemas/Blake3Hash"
+        control_hash:
+          $ref: "#/components/schemas/Blake3Hash"
+        intent_hash:
+          $ref: "#/components/schemas/Blake3Hash"
+        binary_path:
+          type: string
+          description: Nix store path or binary path of the co-resident artifact
+
+    TimelineResponse:
+      type: object
+      description: Chronological list of verification events for a specific hash
+      required:
+        - events
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineEvent"
+          description: Ordered list of verification events
+
+    TimelineEvent:
+      type: object
+      description: A single verification event in the forensics timeline
+      required:
+        - timestamp
+        - event_type
+        - decision
+        - node
+        - pod
+        - binary_path
+        - composed_root
+        - sequence
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: When the verification event occurred
+        event_type:
+          $ref: "#/components/schemas/HeartbeatEvent"
+        decision:
+          $ref: "#/components/schemas/VerificationOutcome"
+        node:
+          type: string
+          description: Node where the event occurred
+        pod:
+          type: string
+          description: Pod that triggered the event
+        binary_path:
+          type: string
+          description: Path of the binary being verified
+        composed_root:
+          $ref: "#/components/schemas/Blake3Hash"
+        sequence:
+          type: integer
+          format: int64
+          description: Ledger sequence number for this event
+
+    ProvenanceResponse:
+      type: object
+      description: Point-in-time snapshot of all active artifacts on a node
+      required:
+        - node
+        - timestamp
+        - active_artifacts
+      properties:
+        node:
+          type: string
+          description: Node name queried
+        timestamp:
+          type: string
+          format: date-time
+          description: Point-in-time that was queried
+        active_artifacts:
+          type: array
+          items:
+            type: object
+            required:
+              - certification_artifact
+              - signed_root
+              - deployment_context
+            properties:
+              certification_artifact:
+                type: object
+                description: Full CertificationArtifact (3-leaf Merkle binding provenance, compliance, intent)
+                required:
+                  - artifact_hash
+                  - control_hash
+                  - intent_hash
+                  - composed_root
+                properties:
+                  artifact_hash:
+                    $ref: "#/components/schemas/Blake3Hash"
+                  control_hash:
+                    $ref: "#/components/schemas/Blake3Hash"
+                  intent_hash:
+                    $ref: "#/components/schemas/Blake3Hash"
+                  composed_root:
+                    $ref: "#/components/schemas/Blake3Hash"
+              signed_root:
+                $ref: "#/components/schemas/SignedRoot"
+              deployment_context:
+                type: object
+                description: Deployment context at the queried timestamp
+                required:
+                  - cluster
+                  - namespace
+                  - node
+                  - pod
+                  - container
+                  - image_ref
+                  - binary_paths
+                properties:
+                  cluster:
+                    type: string
+                    description: Kubernetes cluster name
+                  namespace:
+                    type: string
+                    description: Kubernetes namespace
+                  node:
+                    type: string
+                    description: Node name
+                  pod:
+                    type: string
+                    description: Pod name
+                  container:
+                    type: string
+                    description: Container name
+                  image_ref:
+                    type: string
+                    description: Full container image reference
+                  binary_paths:
+                    type: array
+                    items:
+                      type: string
+                    description: Nix store paths or binary paths within the container
+                  sdlc_chain_hash:
+                    $ref: "#/components/schemas/Blake3Hash"
+                  compliance_report_hash:
+                    $ref: "#/components/schemas/Blake3Hash"
+          description: All CertificationArtifacts active on the node at the queried time
+
+    RevokeRequest:
+      type: object
+      description: Request to revoke a compromised hash across all nodes
+      required:
+        - hash
+        - reason
+        - severity
+        - operator
+      properties:
+        hash:
+          $ref: "#/components/schemas/Blake3Hash"
+        reason:
+          type: string
+          description: CVE identifier or reason for revocation (e.g. CVE-2026-XXXX)
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: Severity of the incident
+        operator:
+          type: string
+          description: Identity of the operator performing the revocation (e.g. email)
+
+    RevokeResponse:
+      type: object
+      description: Result of a hash revocation operation
+      required:
+        - revoked
+        - affected_nodes
+        - bpf_maps_updated
+        - heartbeat_entry_sequence
+      properties:
+        revoked:
+          type: boolean
+          description: Whether the revocation was successfully applied
+        affected_nodes:
+          type: integer
+          description: Number of nodes where the hash was revoked
+        bpf_maps_updated:
+          type: boolean
+          description: Whether kanshi BPF allow-maps were updated on all affected nodes
+        heartbeat_entry_sequence:
+          type: integer
+          format: int64
+          description: Sequence number of the Revocation event in the HeartbeatChain
