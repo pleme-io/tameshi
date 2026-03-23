@@ -53,17 +53,21 @@ pub mod compliance_api;
 pub mod config;
 pub mod error;
 pub mod forensics;
+pub mod fragment_extension;
 pub mod gating;
 pub mod global;
 pub mod hash;
 pub mod heartbeat;
 pub mod iac_attestation;
 pub mod merkle;
+pub mod node_salt;
 pub mod reporting;
 pub mod sdlc;
 pub mod selftest;
+pub mod shamir_dfc;
 pub mod signature;
 pub mod signing;
+pub mod sparse_merkle;
 pub mod testing;
 pub mod traits;
 pub mod verify;
@@ -111,9 +115,11 @@ pub mod prelude {
         ComplianceState, ComplianceStatus, DynamicComplianceCheck, FrameworkState,
     };
     pub use crate::config::ConfigLoader;
+    pub use crate::fragment_extension::reconstruct_key_extended;
     pub use crate::hash::{AttestationHasher, Blake3Hash, Blake3Hasher, Sha256Hash, Sha256Hasher};
     pub use crate::merkle::{compose_merkle, compute_merkle_root, domain_separated_leaf};
     pub use crate::signature::{InputHash, LayerSignature, LayerType, MasterSignature};
+    pub use crate::sparse_merkle::{SmtProof, SparseMerkleTree};
     pub use crate::traits::{
         Clock, CommandRunner, DefaultGatingEngine, DefaultVerifier, FileSystem, FixedClock,
         GatingEngine, HttpClient, MemStore, MetricsRecorder, MockCommandRunner, MockFileSystem,
