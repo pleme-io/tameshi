@@ -884,4 +884,42 @@ proptest! {
         let broken = entries[idx + 1].previous_hash != entries[idx].entry_hash;
         prop_assert!(broken, "Swapping entries at index {} must break chain linkage", idx);
     }
+
+    // Property 20: Compliance cannot be retrofitted (Cor 9.1.1)
+    // Publishing untested hash U then adding compliance C produces secure hash S = H(U||C).
+    // An attacker who publishes U cannot later substitute a different compliance C' and
+    // claim the result was the original S. Different C => different S, even with same U.
+    #[test]
+    fn compliance_cannot_be_retrofitted(
+        layers in prop::collection::vec(arb_layer_sig(), 1..5),
+        c1_data in prop::collection::vec(any::<u8>(), 1..256),
+        c2_data in prop::collection::vec(any::<u8>(), 1..256),
+    ) {
+        prop_assume!(c1_data != c2_data);
+        let master = compose_merkle(&layers, "proptest");
+        let published_untested = master.untested.clone();
+
+        // Two different compliance hashes applied to the SAME published untested
+        let c1 = Blake3Hash::digest(&c1_data);
+        let c2 = Blake3Hash::digest(&c2_data);
+        let s1 = master.clone().with_compliance(c1);
+        let s2 = master.with_compliance(c2);
+
+        // The secure hashes must differ — cannot retrofit a different compliance
+        prop_assert_ne!(
+            s1.secure.as_ref().unwrap(),
+            s2.secure.as_ref().unwrap(),
+            "Different compliance on same untested must produce different secure hashes"
+        );
+
+        // Both must share the same untested root (it was already published)
+        prop_assert_eq!(
+            &s1.untested, &published_untested,
+            "Untested root must be preserved after compliance"
+        );
+        prop_assert_eq!(
+            &s2.untested, &published_untested,
+            "Untested root must be preserved after compliance"
+        );
+    }
 }

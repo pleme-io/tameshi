@@ -1334,7 +1334,7 @@ Every theorem in this document is verified by automated tests in the tameshi eco
 | Thm 6.2 (hierarchical tamper) | 10k+ | `global.rs`, proptest | proptest `hierarchical_tamper_detection` (10k) | — | — |
 | Thm 7.1 (chain integrity) | 30k+ | `heartbeat.rs`, proptest | proptest `chain_integrity_random_tampering` (10k), `chain_deletion_detection` (10k), `chain_reorder_detection` (10k) | `chain_linkage_invariant`, `chain_tamper_detection` | `Tameshi.Chain` (inductive) |
 | Thm 8.1 (consistency) | 10k+ | `heartbeat.rs`, proptest | proptest `consistency_proof_after_extend` (10k) | — | — |
-| Thm 9.1 (two-phase binding) | 20k+ | `signature.rs`, proptest | proptest `two_phase_binding_different_compliance` (10k), `two_phase_binding_different_untested` (10k) | — | — |
+| Thm 9.1 (two-phase binding) | 30k+ | `signature.rs`, proptest | proptest `two_phase_binding_different_compliance` (10k), `two_phase_binding_different_untested` (10k), `compliance_cannot_be_retrofitted` (10k, Cor 9.1.1) | — | — |
 | Thm 10.1 (split-knowledge) | 20k+ | `signing.rs`, proptest | proptest `split_knowledge_fragment_change` (10k), `split_knowledge_both_fragments_needed` (10k) | `xor_bijection`, `split_knowledge_key_changes` | `Tameshi.Signing` |
 | Thm 11.1 (reduction) | — | — | Proved by construction; meta-theorem | — | `Tameshi.Reduction` |
 | Thm 11.2 (ledger reduction) | structural | — | Combination of chain + signing evidence | — | Part of `Tameshi.Chain` |
