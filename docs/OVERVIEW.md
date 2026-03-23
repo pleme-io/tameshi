@@ -569,6 +569,95 @@ No changes to the Merkle tree code, the chain code, or the eBPF code.
 
 ---
 
+## Hiding the Tree: DFC Fragment Extension
+
+A natural question: if the Merkle root is a single 32-byte value that
+encodes everything about the system's state, is it safe to store it in
+the open? Can someone who sees the root learn what's inside it?
+
+### What is already proved and tested
+
+**The root reveals nothing about the leaves.** BLAKE3 is a one-way
+function. Given only the composed root, recovering the artifact hash,
+the compliance hash, or the PoMS hash requires inverting BLAKE3, which
+requires approximately 2^256 operations. This is the preimage resistance
+property that underlies every hash function in modern cryptography.
+
+**Selective disclosure works.** Corollary 4.1.2 in the mathematical
+foundations proves that you can reveal one leaf (e.g., "this binary was
+memory-safe") to an auditor without revealing the other two leaves
+(e.g., the exact Nix closure or compliance assessment). The
+`verify_proof_path` function implements this, and the proptest
+`selective_disclosure_hides_other_leaves` verifies across 10,000 random
+artifacts that the proof path does not contain raw sibling leaf values.
+
+**DFC signing already uses split-knowledge.** The `MockDfcSigner`
+reconstructs the signing key from two XOR'd fragments. Neither fragment
+alone reveals the key. This is proved in F* (`Tameshi.Signing`,
+Theorem 10.1) and verified by Kani (`signing_proofs`, 2 harnesses).
+
+### What is proved in theory (F*) but not yet implemented in Rust
+
+The F* module `Tameshi.FragmentedSovereignty` proves that the DFC
+scheme can be **extended by one fragment** — the Merkle root itself —
+without weakening any security property:
+
+| Theorem | What It Proves | Status |
+|---------|---------------|--------|
+| `lemma_root_binds_key` | Different Merkle roots produce different signing keys | Proved in F* |
+| `lemma_fragments_still_independent` | The original DFC fragments remain independent | Proved in F* (no `admit()`) |
+| `lemma_wrong_root_fails_verify` | Tampered artifact invalidates the signature | Proved in F* (no `admit()`) |
+| `lemma_selective_disclosure_composable` | Inclusion proofs work independently of signing | Proved in F* (definitional) |
+| `theorem_fragment_extension` | All four properties hold simultaneously | Proved in F* |
+
+In this model, the signing key becomes:
+```
+key = BLAKE3(XOR(XOR(fragment_a, fragment_b), composed_root))
+```
+
+This means: even if an attacker has both DFC fragments, they cannot
+sign a different attestation because the Merkle root is part of the key.
+And even if an attacker has the Merkle root, they cannot sign without
+the DFC fragments. **No single entity holds enough information to forge
+an attestation.**
+
+### What is designed but not yet built
+
+These capabilities are described in architecture documents but do not
+have running code yet:
+
+- **Shamir Secret Sharing** of the Merkle root into N fragments with
+  K-of-N threshold reconstruction
+- **Pedersen commitments** in the BPF map (replacing raw hashes)
+- **Encrypted heartbeat chain** entries via DFC
+- **ZK-SNARK** verification in the kernel
+
+These are research directions, not shipping features.
+
+### Performance of what exists today
+
+The Merkle proof operations that support selective disclosure are
+benchmarked (criterion, Apple M4 Pro):
+
+| Operation | 4 leaves | 11 leaves | 64 leaves | 128 leaves |
+|-----------|---------|----------|----------|-----------|
+| Root computation | 1.1 us | 3.9 us | 18.9 us | 35.8 us |
+| Proof generation | 2.3 us | 4.8 us | 20.9 us | 39.4 us |
+| **Proof verification** | **1.2 us** | **1.8 us** | **2.6 us** | **3.0 us** |
+
+Proof verification scales logarithmically: doubling the tree size adds
+approximately 0.4 microseconds. For the standard 15-layer attestation
+(typical production), verification takes under 2 microseconds. The
+3-leaf CertificationArtifact composition takes 6.9 microseconds.
+
+All of these are well under the 50-microsecond threshold for
+latency-sensitive gateway operations.
+
+> **Benchmark source:** `benches/merkle.rs`, `benches/certification.rs`.
+> Run with `cargo bench`.
+
+---
+
 ## What This All Means
 
 The traditional approach to infrastructure security is layers of

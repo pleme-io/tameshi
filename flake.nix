@@ -84,7 +84,8 @@
                   Tameshi.Reduction.fst \
                   Tameshi.DomainSeparation.fst \
                   Tameshi.NonInterference.fst \
-                  Tameshi.Refinement.fst
+                  Tameshi.Refinement.fst \
+                  Tameshi.FragmentedSovereignty.fst
               '');
             };
 
