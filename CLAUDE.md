@@ -6,7 +6,7 @@ Core library for the Unified Theory of Infrastructure Proof. Provides cryptograp
 
 ```bash
 cargo check
-cargo test          # 1427 tests (1289 lib + 95 e2e + 19 proptest + 13 spec + 11 doc)
+cargo test          # 1446 tests (1289 lib + 95 e2e + 38 proptest + 13 spec + 11 doc)
 cargo build --release
 ```
 
@@ -16,10 +16,10 @@ cargo build --release
 |----------|------:|----------------|
 | Unit (lib) | 1289 | All modules, every trait method, every type variant, every error path |
 | End-to-end (tests/) | 95 | Full attestation pipelines, forensics integration, artifact matrix, chaos tests |
-| Property-based (proptest) | 19 | Hash determinism, collision resistance, Merkle ordering, combine non-commutativity |
+| Property-based (proptest) | 38 | Hash determinism, collision resistance, Merkle ordering, combine non-commutativity |
 | Specification (spec) | 13 | OpenAPI schema serde roundtrips, API type compatibility |
 | Documentation (doc-tests) | 11 | Inline code examples compile and produce correct results |
-| **Total** | **1427** | |
+| **Total** | **1446** | |
 
 ## OpenAPI-First Development Flow
 
@@ -303,10 +303,25 @@ tameshi (this repo, 1427 tests)
 
 Total ecosystem test count: **2,789 tests**.
 
+## Formal Verification
+
+Three-layer verification strategy. See `docs/verification-strategy.md` for full details.
+
+| Layer | Tool | Coverage | Run |
+|-------|------|----------|-----|
+| 1 | proptest (38 properties × 10k cases) | All 15 theorems + 7 corollaries | `nix run .#verify-proptest` |
+| 2 | Kani (30 bounded model checking harnesses) | Crypto, concurrency, liveness, FFI, refinement | `nix run .#verify-kani` |
+| 3 | F* (10 formal proof modules) | Thms 2.2, 3.1, 4.1, 7.1, 10.1, 11.1 + non-interference + refinement | `nix run .#verify-fstar` |
+
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
+| `docs/grand-unified-specification.md` | Grand Unified Specification: 5-level narrative from executive business case (GC tax, semantic gap) through data hierarchy, integration bridge, kernel enforcement, to verification matrix with auditor's seal. |
+| `docs/quick-start-guide.md` | Quick start for the Akeyless dev team: prerequisites, key files, common tasks, do-nots. Zero to verified in 5 minutes. |
+| `docs/tameshi-technical-specification.md` | System architecture: CertificationArtifact → HeartbeatChain → BPF bridge → kanshi eBPF → verification matrix. Full top-down trace from Merkle root to CPU registers. |
 | `docs/mathematical-foundations.md` | Formal mathematical proofs: 15 theorems, 7 corollaries, security reductions, complexity analysis. All Merkle tree properties, hash chain integrity, split-knowledge security, and ecosystem components derived as consequences. |
+| `docs/verification-strategy.md` | Three-layer verification strategy: proptest (380k random checks), Kani (exhaustive bounded proofs), F* (unbounded formal proofs). Theorem coverage matrix, trust model explanation. |
+| `docs/FORMAL_VERIFICATION_SUMMARY.md` | Board-level summary: regulatory alignment, full-stack refinement mapping, business impact. |
 | `docs/unified-theory-of-infrastructure-proof.md` | Constructive proof with test evidence: 3,288 tests mapped to security properties, attack surface analysis, regulatory alignment (NIST 800-53, CIRCIA, SLSA, FedRAMP). |
 | `docs/compliance-coverage-comparison.md` | Quantitative comparison: ~14,800 controls vs commercial platforms (AWS Security Hub, Prisma Cloud, Wiz, Chef Automate). |

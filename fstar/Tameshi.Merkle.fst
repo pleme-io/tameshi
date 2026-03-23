@@ -133,11 +133,11 @@ let lemma_second_preimage (x: hash_t) (y: hash_t)
   : Lemma (domain_leaf x =!= domain_internal y y)
   = domain_disjoint x y
 
-(** Corollary: a Leaf tree and a Node tree always have distinct roots *)
+(** Corollary: a Leaf tree and a Node tree always have distinct roots.
+    Now fully mechanized using domain_disjoint_general. *)
 let lemma_leaf_node_distinct (d: hash_t) (l r: merkle_tree)
   : Lemma (merkle_root (Leaf d) =!= merkle_root (Node l r))
   = (* merkle_root (Leaf d) = domain_leaf d
        merkle_root (Node l r) = domain_internal (merkle_root l) (merkle_root r)
-       Need: domain_leaf d != domain_internal X Y for all X, Y
-       We have domain_disjoint for X=Y case; general case from CR *)
-    admit () (* General case requires domain separation for all X,Y pairs *)
+       By domain_disjoint_general: domain_leaf d != domain_internal X Y for all X, Y *)
+    domain_disjoint_general d (merkle_root l) (merkle_root r)

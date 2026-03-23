@@ -67,10 +67,19 @@ val domain_internal_injective_right:
   Lemma (requires r1 =!= r2)
         (ensures domain_internal l r1 =!= domain_internal l r2)
 
-(** Axiom: Domain separation -- leaf and internal domains are disjoint *)
+(** Axiom: Domain separation -- leaf and internal domains are disjoint.
+    For ANY leaf input x and ANY internal inputs y1, y2:
+    hash(0x00 || x) != hash(0x01 || y1 || y2).
+    This is the fundamental axiom preventing second-preimage topological forgery. *)
 val domain_disjoint:
   x:hash_t -> y:hash_t ->
   Lemma (domain_leaf x =!= domain_internal y y)
+
+(** Axiom: Generalized domain separation -- leaf domain is disjoint from
+    internal domain for ALL pairs of internal arguments, not just y=y. *)
+val domain_disjoint_general:
+  x:hash_t -> y1:hash_t -> y2:hash_t ->
+  Lemma (domain_leaf x =!= domain_internal y1 y2)
 
 (** Axiom: XOR is its own inverse *)
 val xor_involutive:

@@ -1319,22 +1319,22 @@ applied to infrastructure attestation instead of TLS certificates.
 
 ## Appendix E: Test Evidence Mapping
 
-Every theorem in this document is verified by automated tests in the tameshi ecosystem. This table maps mathematical claims to their concrete test implementations.
+Every theorem in this document is verified by automated tests in the tameshi ecosystem. This table maps mathematical claims to their concrete test implementations across three verification layers.
 
-| Claim | Tests | Module | Key Tests |
-|-------|------:|--------|-----------|
-| Thm 2.1 (non-commutativity) | 4+ | `hash.rs` | `blake3_combine_not_commutative`, proptest `hash_combine_non_commutative` (256 cases) |
-| Thm 2.2 (domain separation) | 4 | `merkle.rs` | `domain_separated_leaf_prefix_byte`, `domain_separation_leaf_vs_internal_prefix` |
-| Thm 3.1 (tamper evidence) | 256+ | `merkle.rs` | proptest `merkle_tamper_detection` (256 random layer sets, random tamper position) |
-| Thm 3.2 (second-preimage) | 2 | `merkle.rs` | `domain_separation_prevents_second_preimage`, `domain_separation_root_differs_from_undifferentiated` |
-| Thm 3.3 (proof soundness) | 256+ | `merkle.rs` | proptest `merkle_proof_validity` (256 random trees, every leaf verified) |
-| Thm 4.1 (binding) | 287+ | `certification_artifact.rs` | 31 unit + 256 proptest (`certification_artifact_collision_resistance`, `tamper_detection`) |
-| Thm 5.1 (order-independence) | 3 | `merkle.rs` | `merkle_root_order_independent`, `compose_merkle_creates_master` |
-| Thm 6.1 (global determinism) | 8 | `global.rs` | `compute_global_root_deterministic`, `compute_cluster_root_deterministic` |
-| Thm 6.2 (hierarchical tamper) | 4 | `global.rs` | `global_root_changes_when_any_cluster_root_changes`, `compute_global_root_changes_when_cluster_changes` |
-| Thm 7.1 (chain integrity) | 13 | `heartbeat.rs`, `forensics/ledger.rs` | `chain_detect_tampered_entry`, `chain_1000_entries_integrity`, `test_verify_integrity_tampered_entry_hash` |
-| Thm 8.1 (consistency) | 8 | `heartbeat.rs` | `consistency_proof_valid`, `consistency_proof_detects_tamper` |
-| Thm 9.1 (two-phase binding) | 4 | `signature.rs` | `master_signature_with_compliance`, `master_signature_untested_only` |
-| Thm 10.1 (split-knowledge) | 4 | `signing.rs` | `mock_dfc_wrong_fragment_a_verify_fails`, `mock_dfc_wrong_fragment_b_verify_fails` |
-| Thm 11.1 (reduction) | structural | — | Proved by construction; all tamper detection tests (Thms 3.1, 4.1, 6.2, 7.1) serve as witnesses that the reduction holds |
-| Thm 11.2 (ledger reduction) | structural | — | Combination of chain integrity tests (Thm 7.1) + signing tests (Thm 10.1) |
+| Claim | Tests | Module | Key Tests | Kani | F* |
+|-------|------:|--------|-----------|------|----|
+| Thm 2.1 (non-commutativity) | 10k+ | `hash.rs`, proptest | `blake3_combine_not_commutative`, proptest `hash_combine_non_commutative` (10k), `avalanche_effect` (10k) | `combine_non_commutative` | Hash axiom |
+| Thm 2.2 (domain separation) | 10k+ | `merkle.rs`, proptest | `domain_separated_leaf_prefix_byte`, proptest `domain_separation_leaf_vs_internal` (10k) | `domain_disjoint` | `domain_disjoint` axiom |
+| Thm 3.1 (tamper evidence) | 10k+ | `merkle.rs`, proptest | proptest `merkle_tamper_detection` (10k), `hierarchical_tamper_detection` (10k) | `merkle_tamper_4_leaf` | `Tameshi.Merkle` (inductive) |
+| Thm 3.2 (second-preimage) | 2 | `merkle.rs` | `domain_separation_prevents_second_preimage` | `domain_disjoint` | `Tameshi.Merkle` |
+| Thm 3.3 (proof soundness) | 10k+ | `merkle.rs`, proptest | proptest `merkle_proof_validity` (10k), `merkle_proof_tamper_with_sibling` (10k) | `compose_verify_roundtrip` | — |
+| Thm 4.1 (binding) | 60k+ | `certification_artifact.rs`, proptest | 31 unit + 6 proptest properties (10k each): `three_paths_independent`, `partial_tamper`, `collision_resistance`, etc. | `tamper_any_leaf` | `Tameshi.Artifact` |
+| Thm 5.1 (order-independence) | 10k+ | `merkle.rs`, proptest | proptest `merkle_order_independence`, `canonical_sort_stability` (10k) | `canonical_sort` | — |
+| Thm 6.1 (global determinism) | 10k+ | `global.rs`, proptest | `compute_global_root_deterministic`, proptest `global_root_order_independence` (10k) | — | — |
+| Thm 6.2 (hierarchical tamper) | 10k+ | `global.rs`, proptest | proptest `hierarchical_tamper_detection` (10k) | — | — |
+| Thm 7.1 (chain integrity) | 30k+ | `heartbeat.rs`, proptest | proptest `chain_integrity_random_tampering` (10k), `chain_deletion_detection` (10k), `chain_reorder_detection` (10k) | `chain_linkage_invariant`, `chain_tamper_detection` | `Tameshi.Chain` (inductive) |
+| Thm 8.1 (consistency) | 10k+ | `heartbeat.rs`, proptest | proptest `consistency_proof_after_extend` (10k) | — | — |
+| Thm 9.1 (two-phase binding) | 20k+ | `signature.rs`, proptest | proptest `two_phase_binding_different_compliance` (10k), `two_phase_binding_different_untested` (10k) | — | — |
+| Thm 10.1 (split-knowledge) | 20k+ | `signing.rs`, proptest | proptest `split_knowledge_fragment_change` (10k), `split_knowledge_both_fragments_needed` (10k) | `xor_bijection`, `split_knowledge_key_changes` | `Tameshi.Signing` |
+| Thm 11.1 (reduction) | — | — | Proved by construction; meta-theorem | — | `Tameshi.Reduction` |
+| Thm 11.2 (ledger reduction) | structural | — | Combination of chain + signing evidence | — | Part of `Tameshi.Chain` |
