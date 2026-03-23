@@ -317,7 +317,8 @@ Three-layer verification strategy. See `docs/verification-strategy.md` for full 
 
 | Document | Purpose |
 |----------|---------|
-| `docs/grand-unified-specification.md` | Grand Unified Specification: 5-level narrative from executive business case (GC tax, semantic gap) through data hierarchy, integration bridge, kernel enforcement, to verification matrix with auditor's seal. |
+| `docs/OVERVIEW.md` | **Start here.** Plain-language stakeholder guide: what it is, how it works, what we've proved, where doubts are addressed with real tests, and where to go deeper. |
+| `docs/grand-unified-specification.md` | Grand Unified Specification: 7-level narrative from executive business case through data hierarchy, integration bridge, kernel enforcement, verification matrix, performance attestation, and sovereign integrity. |
 | `docs/quick-start-guide.md` | Quick start for the Akeyless dev team: prerequisites, key files, common tasks, do-nots. Zero to verified in 5 minutes. |
 | `docs/tameshi-technical-specification.md` | System architecture: CertificationArtifact → HeartbeatChain → BPF bridge → kanshi eBPF → verification matrix. Full top-down trace from Merkle root to CPU registers. |
 | `docs/mathematical-foundations.md` | Formal mathematical proofs: 15 theorems, 7 corollaries, security reductions, complexity analysis. All Merkle tree properties, hash chain integrity, split-knowledge security, and ecosystem components derived as consequences. |
