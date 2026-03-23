@@ -63,7 +63,7 @@
               type = "app";
               program = toString (pkgs.writeShellScript "verify-kani" ''
                 set -euo pipefail
-                echo "=== Layer 2: Kani Bounded Model Checking (30 harnesses) ==="
+                echo "=== Layer 2: Kani Bounded Model Checking (44 harnesses) ==="
                 cargo kani --manifest-path proofs/kani/Cargo.toml --output-format terse
               '');
             };
@@ -100,7 +100,7 @@
                 cargo test --test proptest_properties -- --test-threads=1
                 echo ""
 
-                echo "--- Layer 2: Kani Bounded Model Checking (30 harnesses) ---"
+                echo "--- Layer 2: Kani Bounded Model Checking (44 harnesses) ---"
                 if command -v cargo-kani &>/dev/null; then
                   cargo kani --manifest-path proofs/kani/Cargo.toml --output-format terse
                 else

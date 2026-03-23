@@ -83,3 +83,6 @@ mod gating_proofs;
 mod concurrency_proofs;
 mod liveness_proofs;
 mod ffi_safety_proofs;
+mod performance_bounds;
+mod crypto_timing_proofs;
+mod resource_bounds;
