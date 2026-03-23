@@ -8,6 +8,7 @@ use crate::Hash;
 
 /// A single entry in the attestation chain.
 #[derive(Clone, Copy)]
+#[cfg_attr(not(kani), allow(dead_code))]
 struct ChainEntry {
     /// Hash of the content this entry attests.
     content: Hash,
@@ -15,6 +16,7 @@ struct ChainEntry {
     prev_hash: Hash,
 }
 
+#[cfg_attr(not(kani), allow(dead_code))]
 impl ChainEntry {
     /// Compute this entry's hash: `combine(prev_hash, content)`.
     fn entry_hash(&self) -> Hash {
@@ -25,6 +27,7 @@ impl ChainEntry {
 /// Build a 4-entry chain from content hashes.
 ///
 /// Returns the chain entries with correctly linked prev_hash pointers.
+#[cfg_attr(not(kani), allow(dead_code))]
 fn build_chain(contents: &[Hash; 4]) -> [ChainEntry; 4] {
     let e0 = ChainEntry {
         content: contents[0],
@@ -46,6 +49,7 @@ fn build_chain(contents: &[Hash; 4]) -> [ChainEntry; 4] {
 }
 
 /// Verify chain linkage: each entry's prev_hash equals the previous entry's hash.
+#[cfg_attr(not(kani), allow(dead_code))]
 fn verify_linkage(chain: &[ChainEntry; 4]) -> bool {
     chain[0].prev_hash == crate::ZERO_HASH
         && chain[1].prev_hash == chain[0].entry_hash()

@@ -14,10 +14,12 @@ use crate::Hash;
 ///    / \    / \
 ///   l0 l1 l2 l3
 /// ```
+#[cfg_attr(not(kani), allow(dead_code))]
 struct MiniMerkle {
     leaves: [Hash; 4],
 }
 
+#[cfg_attr(not(kani), allow(dead_code))]
 impl MiniMerkle {
     /// Compute the Merkle root from 4 leaves.
     fn root(&self) -> Hash {

@@ -18,12 +18,14 @@ use crate::Hash;
 ///    /         \
 /// leaf_source  leaf_build
 /// ```
+#[cfg_attr(not(kani), allow(dead_code))]
 struct Artifact {
     source: Hash,
     build: Hash,
     config: Hash,
 }
 
+#[cfg_attr(not(kani), allow(dead_code))]
 impl Artifact {
     /// Compute the artifact root from its 3 component hashes.
     fn root(&self) -> Hash {

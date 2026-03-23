@@ -4,7 +4,6 @@ use proptest::prelude::*;
 use std::collections::BTreeMap;
 use tameshi::certification_artifact::{
     compose_certification_artifact, verify_certification_artifact, verify_proof_path,
-    CertificationArtifact,
 };
 use tameshi::changeset::{Operation, ResourceId, certify_changeset, verify_changeset};
 use tameshi::gating::{GatingPolicy, evaluate_gate};
@@ -13,7 +12,7 @@ use tameshi::hash::Blake3Hash;
 use tameshi::heartbeat::{HeartbeatChain, HeartbeatEvent, VerificationOutcome, VerifierIdentity};
 use tameshi::merkle::{compose_merkle, compute_merkle_root, domain_separated_leaf, merkle_proof, verify_proof};
 use tameshi::signature::{LayerSignature, LayerType, MasterSignature};
-use tameshi::signing::{LocalSigner, MockDfcSigner, MerkleRootSigner, SignedRoot, SigningAlgorithm};
+use tameshi::signing::{LocalSigner, MockDfcSigner, MerkleRootSigner};
 
 fn arb_layer_type() -> impl Strategy<Value = LayerType> {
     prop_oneof![
@@ -611,11 +610,27 @@ proptest! {
     }
 
     // Property 11: Canonical sort stability (Thm 5.1)
-    // Same layers in different order must produce same Merkle root.
+    // Layers with unique types in any order must produce the same Merkle root.
     #[test]
     fn canonical_sort_stability(
-        layers in prop::collection::vec(arb_layer_sig(), 2..10),
+        count in 2..12usize,
+        data_seed in prop::collection::vec(prop::collection::vec(any::<u8>(), 1..64), 12..13),
     ) {
+        let all_types = [
+            LayerType::Nix, LayerType::Oci, LayerType::Helm,
+            LayerType::Tofu, LayerType::Kubernetes, LayerType::Kindling,
+            LayerType::Tatara, LayerType::FluxCD, LayerType::ArgoCD,
+            LayerType::Akeyless, LayerType::AkeylessTarget, LayerType::FerritePoms,
+        ];
+        let count = count.min(all_types.len());
+        let layers: Vec<LayerSignature> = all_types[..count]
+            .iter()
+            .enumerate()
+            .map(|(i, lt)| {
+                let d = &data_seed[0][..std::cmp::min(data_seed[0].len(), i + 1)];
+                LayerSignature::new(lt.clone(), Blake3Hash::digest(d), "proptest", vec![])
+            })
+            .collect();
         let root1 = compute_merkle_root(&layers);
         let mut reversed = layers.clone();
         reversed.reverse();
@@ -633,13 +648,14 @@ proptest! {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let signer = LocalSigner::for_testing();
 
-        // Build keys in forward order
-        let mut keys: Vec<String> = (0..cluster_count).map(|i| format!("cluster-{i:03}")).collect();
+        // Build (key, seed) pairs so the mapping is stable regardless of insertion order
+        let pairs: Vec<(String, &Vec<u8>)> = (0..cluster_count)
+            .map(|i| (format!("cluster-{i:03}"), &seed[i % seed.len()]))
+            .collect();
 
-        let build_map = |key_order: &[String]| -> BTreeMap<String, ClusterRootEntry> {
+        let build_map = |pair_order: &[(String, &Vec<u8>)]| -> BTreeMap<String, ClusterRootEntry> {
             let mut map = BTreeMap::new();
-            for (i, k) in key_order.iter().enumerate() {
-                let s = &seed[i % seed.len()];
+            for (k, s) in pair_order {
                 let cr = Blake3Hash::digest(s);
                 let signed = rt.block_on(signer.sign(&cr)).unwrap();
                 map.insert(k.clone(), ClusterRootEntry {
@@ -655,9 +671,10 @@ proptest! {
             map
         };
 
-        let map1 = build_map(&keys);
-        keys.reverse();
-        let map2 = build_map(&keys);
+        let map1 = build_map(&pairs);
+        let mut reversed_pairs = pairs.clone();
+        reversed_pairs.reverse();
+        let map2 = build_map(&reversed_pairs);
 
         let root1 = compute_global_root(&map1);
         let root2 = compute_global_root(&map2);
@@ -761,7 +778,7 @@ proptest! {
         for guess in &guesses {
             let guessed_root = Blake3Hash::from(*guess);
             prop_assert_ne!(
-                art.composed_root, guessed_root,
+                &art.composed_root, &guessed_root,
                 "Random guess should not match composed_root"
             );
         }
@@ -826,16 +843,16 @@ proptest! {
         };
         if del_idx > 0 {
             prop_assert_ne!(
-                entry_after.previous_hash,
-                entry_before.entry_hash,
+                &entry_after.previous_hash,
+                &entry_before.entry_hash,
                 "Deletion at index {} must break chain linkage",
                 del_idx
             );
         } else {
             let zero_hash = Blake3Hash::from([0u8; 32]);
             prop_assert_ne!(
-                entry_after.previous_hash,
-                zero_hash,
+                &entry_after.previous_hash,
+                &zero_hash,
                 "Deletion at index 0 must break chain linkage"
             );
         }

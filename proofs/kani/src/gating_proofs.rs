@@ -8,6 +8,7 @@ use crate::Hash;
 
 /// Gating policy decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(kani), allow(dead_code))]
 enum GateDecision {
     /// Deployment is allowed.
     Allow,
@@ -23,6 +24,7 @@ enum GateDecision {
 ///
 /// The gate only opens when BOTH hashes are present and the compliance
 /// hash covers the artifact hash.
+#[cfg_attr(not(kani), allow(dead_code))]
 struct DeploymentGate {
     /// The artifact's attestation root (always present after build).
     artifact_hash: Hash,
@@ -32,6 +34,7 @@ struct DeploymentGate {
     requires_compliance: bool,
 }
 
+#[cfg_attr(not(kani), allow(dead_code))]
 impl DeploymentGate {
     /// Evaluate the gate: allow or deny deployment.
     fn evaluate(&self) -> GateDecision {

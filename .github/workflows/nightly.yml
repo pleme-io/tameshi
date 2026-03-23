@@ -1,0 +1,34 @@
+name: Nightly Verification
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 03:00 UTC daily
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  proptest-extended:
+    name: Proptest (100k cases)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run proptest with 100,000 cases
+        env:
+          PROPTEST_CASES: "100000"
+        run: cargo test --test proptest_properties -- --test-threads=1
+        timeout-minutes: 60
+
+  kani:
+    name: Kani Bounded Proofs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: model-checking/kani-github-action@v1
+        with:
+          working-directory: proofs/kani
+          args: --output-format terse
