@@ -75,6 +75,7 @@ pub mod smt_certification;
 pub mod sparse_merkle;
 pub mod testing;
 pub mod traits;
+pub mod zk_bpf;
 pub mod verify;
 
 /// Prelude module for convenient wildcard imports.
