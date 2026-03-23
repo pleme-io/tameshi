@@ -38,6 +38,7 @@
 pub mod ai_threat;
 pub mod akeyless_client;
 pub mod alerts;
+pub mod bpf_loader;
 pub mod api_types;
 pub mod cache;
 pub mod canonicalize;

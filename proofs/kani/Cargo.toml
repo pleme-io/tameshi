@@ -1,0 +1,15 @@
+[package]
+name = "tameshi-kani-proofs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89.0"
+publish = false
+
+[dependencies]
+# No tameshi dependency — proofs use abstract models
+
+[lints.clippy]
+pedantic = "warn"
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
