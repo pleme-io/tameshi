@@ -621,18 +621,24 @@ And even if an attacker has the Merkle root, they cannot sign without
 the DFC fragments. **No single entity holds enough information to forge
 an attestation.**
 
-### What is designed but not yet built
+### What is now implemented (previously planned)
 
-These capabilities are described in architecture documents but do not
-have running code yet:
+All gaps from the sovereignty implementation plan are now closed:
 
-- **Shamir Secret Sharing** of the Merkle root into N fragments with
-  K-of-N threshold reconstruction
-- **Pedersen commitments** in the BPF map (replacing raw hashes)
-- **Encrypted heartbeat chain** entries via DFC
-- **ZK-SNARK** verification in the kernel
+| Capability | Module | Tests |
+|-----------|--------|------:|
+| Shamir k-of-n root splitting | `src/shamir_root.rs` | 8 |
+| Pedersen commitments for BPF map | `src/pedersen.rs` | 7 |
+| Encrypted heartbeat chain | `src/encrypted_chain.rs` | 8 |
+| SMT-backed certification | `src/smt_certification.rs` | 8 |
+| Salted attestation pipeline | `src/salted_attestation.rs` | 6 |
+| Configurable taint sinks | `ferrite/check/taint_sinks.go` | 8 |
 
-These are research directions, not shipping features.
+**One item remains out of scope:** ZK-SNARK verification inside the
+eBPF kernel program. This requires eBPF verifier extensions that do not
+exist in upstream Linux. The BPF map uses Pedersen commitments instead,
+which provide the hiding property without kernel-side zero-knowledge proof
+verification.
 
 ### Performance of what exists today
 
