@@ -8,6 +8,23 @@
 use crate::hash::Blake3Hash;
 use crate::sparse_merkle::{SmtProof, SparseMerkleTree};
 
+/// Trait for attestation store operations.
+///
+/// Abstracts the underlying Merkle tree so consumers can inject
+/// mocks or alternative storage backends.
+pub trait AttestationStore: Send + Sync {
+    /// Attest a binary: insert its composed root.
+    fn attest(&mut self, binary_path: &str, composed_root: Blake3Hash);
+    /// Revoke a binary's attestation.
+    fn revoke(&mut self, binary_path: &str) -> Option<Blake3Hash>;
+    /// Query a binary's attestation status with proof.
+    fn query(&self, binary_path: &str) -> SmtAttestationResult;
+    /// Get the current root.
+    fn root(&self) -> Blake3Hash;
+    /// Number of attested binaries.
+    fn count(&self) -> usize;
+}
+
 /// An SMT-backed attestation store.
 /// Maps binary paths (hashed) to their composed roots.
 #[derive(Clone, Debug)]
@@ -80,6 +97,74 @@ impl SmtAttestationStore {
     #[must_use]
     pub fn count(&self) -> usize {
         self.tree.len()
+    }
+}
+
+impl AttestationStore for SmtAttestationStore {
+    fn attest(&mut self, binary_path: &str, composed_root: Blake3Hash) {
+        SmtAttestationStore::attest(self, binary_path, composed_root);
+    }
+
+    fn revoke(&mut self, binary_path: &str) -> Option<Blake3Hash> {
+        SmtAttestationStore::revoke(self, binary_path)
+    }
+
+    fn query(&self, binary_path: &str) -> SmtAttestationResult {
+        SmtAttestationStore::query(self, binary_path)
+    }
+
+    fn root(&self) -> Blake3Hash {
+        SmtAttestationStore::root(self)
+    }
+
+    fn count(&self) -> usize {
+        SmtAttestationStore::count(self)
+    }
+}
+
+/// Mock attestation store for testing consumers.
+#[derive(Debug, Default)]
+pub struct MockAttestationStore {
+    entries: std::collections::HashMap<String, Blake3Hash>,
+}
+
+impl MockAttestationStore {
+    /// Create a new empty mock store.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl AttestationStore for MockAttestationStore {
+    fn attest(&mut self, binary_path: &str, composed_root: Blake3Hash) {
+        self.entries.insert(binary_path.to_string(), composed_root);
+    }
+
+    fn revoke(&mut self, binary_path: &str) -> Option<Blake3Hash> {
+        self.entries.remove(binary_path)
+    }
+
+    fn query(&self, binary_path: &str) -> SmtAttestationResult {
+        let key = Blake3Hash::digest(binary_path.as_bytes());
+        let composed_root = self.entries.get(binary_path).cloned();
+        SmtAttestationResult {
+            binary_path_hash: key,
+            composed_root: composed_root.clone(),
+            proof: crate::sparse_merkle::SmtProof {
+                siblings: vec![],
+                key: Blake3Hash::digest(binary_path.as_bytes()),
+                value: composed_root,
+            },
+            smt_root: Blake3Hash::digest(b"mock-root"),
+        }
+    }
+
+    fn root(&self) -> Blake3Hash {
+        Blake3Hash::digest(b"mock-root")
+    }
+
+    fn count(&self) -> usize {
+        self.entries.len()
     }
 }
 
@@ -244,5 +329,22 @@ mod tests {
             SmtAttestationStore::verify(&evidence, &smt_root),
             "non-inclusion proof after revocation must verify as evidence"
         );
+    }
+
+    #[test]
+    fn mock_store_attest_and_query() {
+        let mut store = MockAttestationStore::new();
+        let root = Blake3Hash::digest(b"root");
+        store.attest("/bin/test", root.clone());
+        let result = store.query("/bin/test");
+        assert_eq!(result.composed_root, Some(root));
+        assert_eq!(store.count(), 1);
+    }
+
+    #[test]
+    fn trait_object_dispatch_store() {
+        let mut store: Box<dyn AttestationStore> = Box::new(SmtAttestationStore::new(8));
+        store.attest("/bin/app", Blake3Hash::digest(b"root"));
+        assert_eq!(store.count(), 1);
     }
 }

@@ -68,6 +68,51 @@ fn gf256_div(a: u8, b: u8) -> u8 {
 // Shamir Secret Sharing
 // =========================================================================
 
+/// Trait for secret sharing schemes.
+///
+/// Abstracts the split/reconstruct operations so consumers
+/// can inject mocks or alternative sharing schemes (e.g., Feldman VSS).
+pub trait SecretSharingScheme: Send + Sync {
+    /// Split a secret into n shares with threshold k.
+    fn split(&self, secret: &[u8], k: u8, n: u8) -> Vec<Share>;
+    /// Reconstruct a secret from k or more shares.
+    fn reconstruct(&self, shares: &[Share]) -> Vec<u8>;
+}
+
+/// Shamir GF(256) secret sharing (default).
+#[derive(Clone, Debug, Default)]
+pub struct ShamirScheme;
+
+impl SecretSharingScheme for ShamirScheme {
+    fn split(&self, secret: &[u8], k: u8, n: u8) -> Vec<Share> {
+        split(secret, k, n)
+    }
+
+    fn reconstruct(&self, shares: &[Share]) -> Vec<u8> {
+        reconstruct(shares)
+    }
+}
+
+/// Mock secret sharing for testing.
+///
+/// Splits by simply copying the secret to each share (NOT secure --
+/// testing only). Reconstructs by returning the first share's data.
+#[derive(Clone, Debug, Default)]
+pub struct MockSecretSharing;
+
+impl SecretSharingScheme for MockSecretSharing {
+    fn split(&self, secret: &[u8], _k: u8, n: u8) -> Vec<Share> {
+        (1..=n).map(|x| Share {
+            x,
+            y: secret.to_vec(),
+        }).collect()
+    }
+
+    fn reconstruct(&self, shares: &[Share]) -> Vec<u8> {
+        shares[0].y.clone()
+    }
+}
+
 /// A single share of a secret-shared value.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Share {
@@ -530,5 +575,33 @@ mod tests {
         let signer = ShamirDfcSigner::for_testing();
         assert_eq!(signer.share_count(), 3);
         assert_eq!(signer.threshold(), 2);
+    }
+
+    #[test]
+    fn shamir_scheme_trait_roundtrip() {
+        let scheme = ShamirScheme;
+        let secret = [0xCC; 32];
+        let shares = scheme.split(&secret, 2, 3);
+        let recovered = scheme.reconstruct(&shares[0..2]);
+        assert_eq!(recovered, secret);
+    }
+
+    #[test]
+    fn mock_scheme_roundtrip() {
+        let scheme = MockSecretSharing;
+        let secret = [0xDD; 32];
+        let shares = scheme.split(&secret, 2, 3);
+        assert_eq!(shares.len(), 3);
+        let recovered = scheme.reconstruct(&shares);
+        assert_eq!(recovered, secret);
+    }
+
+    #[test]
+    fn trait_object_dispatch_sharing() {
+        let scheme: Box<dyn SecretSharingScheme> = Box::new(ShamirScheme);
+        let secret = [0xEE; 32];
+        let shares = scheme.split(&secret, 2, 3);
+        let recovered = scheme.reconstruct(&shares[0..2]);
+        assert_eq!(recovered, secret);
     }
 }

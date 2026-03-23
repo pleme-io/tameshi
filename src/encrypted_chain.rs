@@ -20,6 +20,68 @@ pub struct EncryptedEntry {
     pub mac: Blake3Hash,
 }
 
+/// Trait for heartbeat chain entry encryption.
+///
+/// Enables swapping the encryption algorithm or using a mock
+/// that returns deterministic values for testing.
+pub trait EntryEncryption: Send + Sync {
+    /// Encrypt a heartbeat entry.
+    fn encrypt(&self, entry: &HeartbeatEntry, key: &[u8; 32]) -> EncryptedEntry;
+    /// Decrypt an encrypted entry.
+    fn decrypt(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<HeartbeatEntry, String>;
+    /// Verify the MAC without decrypting.
+    fn verify_mac(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> bool;
+}
+
+/// BLAKE3 counter-mode encryption (default).
+#[derive(Clone, Debug, Default)]
+pub struct Blake3CounterModeEncryption;
+
+impl EntryEncryption for Blake3CounterModeEncryption {
+    fn encrypt(&self, entry: &HeartbeatEntry, key: &[u8; 32]) -> EncryptedEntry {
+        encrypt_entry(entry, key)
+    }
+
+    fn decrypt(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<HeartbeatEntry, String> {
+        decrypt_entry(encrypted, key)
+    }
+
+    fn verify_mac(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> bool {
+        verify_mac(encrypted, key)
+    }
+}
+
+/// Mock encryption that stores plaintext JSON as "ciphertext" (no actual encryption).
+/// Useful for testing that the pipeline works without cryptographic overhead.
+#[derive(Clone, Debug, Default)]
+pub struct MockEntryEncryption;
+
+impl EntryEncryption for MockEntryEncryption {
+    fn encrypt(&self, entry: &HeartbeatEntry, key: &[u8; 32]) -> EncryptedEntry {
+        let plaintext = serde_json::to_vec(entry).unwrap();
+        let mac = Blake3Hash(blake3::keyed_hash(key, &plaintext).into());
+        EncryptedEntry {
+            ciphertext: plaintext, // NOT encrypted — mock for testing
+            sequence: entry.sequence,
+            mac,
+        }
+    }
+
+    fn decrypt(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<HeartbeatEntry, String> {
+        let expected_mac = Blake3Hash(blake3::keyed_hash(key, &encrypted.ciphertext).into());
+        if encrypted.mac != expected_mac {
+            return Err("MAC verification failed".to_string());
+        }
+        serde_json::from_slice(&encrypted.ciphertext)
+            .map_err(|e| format!("invalid JSON: {e}"))
+    }
+
+    fn verify_mac(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> bool {
+        let expected = Blake3Hash(blake3::keyed_hash(key, &encrypted.ciphertext).into());
+        encrypted.mac == expected
+    }
+}
+
 /// Encrypt a heartbeat entry using a 32-byte key.
 pub fn encrypt_entry(entry: &HeartbeatEntry, key: &[u8; 32]) -> EncryptedEntry {
     let plaintext = serde_json::to_vec(entry).expect("HeartbeatEntry serialization cannot fail");
@@ -189,5 +251,26 @@ mod tests {
         assert_eq!(encrypted.ciphertext, deserialized.ciphertext);
         assert_eq!(encrypted.sequence, deserialized.sequence);
         assert_eq!(encrypted.mac, deserialized.mac);
+    }
+
+    #[test]
+    fn mock_encryption_roundtrip() {
+        let mock = MockEntryEncryption;
+        let entry = test_entry(0);
+        let key = [0x42u8; 32];
+        let encrypted = mock.encrypt(&entry, &key);
+        let decrypted = mock.decrypt(&encrypted, &key).unwrap();
+        assert_eq!(entry.sequence, decrypted.sequence);
+    }
+
+    #[test]
+    fn trait_object_dispatch_encryption() {
+        let enc: Box<dyn EntryEncryption> = Box::new(Blake3CounterModeEncryption);
+        let entry = test_entry(0);
+        let key = [0x42u8; 32];
+        let encrypted = enc.encrypt(&entry, &key);
+        assert!(enc.verify_mac(&encrypted, &key));
+        let decrypted = enc.decrypt(&encrypted, &key).unwrap();
+        assert_eq!(entry.sequence, decrypted.sequence);
     }
 }

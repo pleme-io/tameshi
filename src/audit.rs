@@ -7,7 +7,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::bpf_loader::{AuditEvent, HASH_SIZE};
+use crate::bpf_loader::AuditEvent;
 use crate::hash::Blake3Hash;
 
 /// MITRE ATT&CK tactic mapping for execution denial events.

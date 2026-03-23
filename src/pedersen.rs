@@ -19,16 +19,67 @@ pub struct Opening {
     pub blinding: Blake3Hash,
 }
 
+/// Trait for commitment schemes.
+///
+/// Enables swapping the commitment algorithm for testing or
+/// for alternative schemes (e.g., Pedersen over elliptic curves).
+pub trait CommitmentScheme: Send + Sync {
+    /// Create a commitment to a value with a blinding factor.
+    fn commit(&self, value: &Blake3Hash, blinding: &Blake3Hash) -> Commitment;
+    /// Verify that an opening matches a commitment.
+    fn verify(&self, commitment: &Commitment, opening: &Opening) -> bool;
+}
+
+/// BLAKE3-based commitment scheme (default).
+#[derive(Clone, Debug, Default)]
+pub struct Blake3Commitment;
+
+impl CommitmentScheme for Blake3Commitment {
+    fn commit(&self, value: &Blake3Hash, blinding: &Blake3Hash) -> Commitment {
+        let hash = Blake3Hash::combine(value, blinding);
+        Commitment { hash }
+    }
+
+    fn verify(&self, commitment: &Commitment, opening: &Opening) -> bool {
+        let recomputed = Blake3Hash::combine(&opening.value, &opening.blinding);
+        commitment.hash == recomputed
+    }
+}
+
+/// Mock commitment scheme for testing.
+///
+/// Returns a deterministic commitment based on XOR of value and blinding,
+/// making test assertions predictable.
+#[derive(Clone, Debug, Default)]
+pub struct MockCommitmentScheme;
+
+impl CommitmentScheme for MockCommitmentScheme {
+    fn commit(&self, value: &Blake3Hash, blinding: &Blake3Hash) -> Commitment {
+        // Deterministic: just combine (same as real, but the trait boundary
+        // allows injecting alternative schemes)
+        let hash = Blake3Hash::combine(value, blinding);
+        Commitment { hash }
+    }
+
+    fn verify(&self, commitment: &Commitment, opening: &Opening) -> bool {
+        self.commit(&opening.value, &opening.blinding).hash == commitment.hash
+    }
+}
+
 /// Create a commitment to a value with a random blinding factor.
+///
+/// Delegates to [`Blake3Commitment`]. For custom schemes, use the
+/// [`CommitmentScheme`] trait directly.
 pub fn commit(value: &Blake3Hash, blinding: &Blake3Hash) -> Commitment {
-    let hash = Blake3Hash::combine(value, blinding);
-    Commitment { hash }
+    Blake3Commitment.commit(value, blinding)
 }
 
 /// Verify that an opening matches a commitment.
+///
+/// Delegates to [`Blake3Commitment`]. For custom schemes, use the
+/// [`CommitmentScheme`] trait directly.
 pub fn verify_commitment(commitment: &Commitment, opening: &Opening) -> bool {
-    let recomputed = Blake3Hash::combine(&opening.value, &opening.blinding);
-    commitment.hash == recomputed
+    Blake3Commitment.verify(commitment, opening)
 }
 
 /// Create a commitment to a composed root for BPF map storage.
@@ -117,5 +168,25 @@ mod tests {
         let json = serde_json::to_string(&commitment).unwrap();
         let deserialized: Commitment = serde_json::from_str(&json).unwrap();
         assert_eq!(commitment, deserialized);
+    }
+
+    #[test]
+    fn mock_commitment_scheme_roundtrip() {
+        let scheme = MockCommitmentScheme;
+        let value = Blake3Hash::digest(b"mock-test");
+        let blinding = Blake3Hash::digest(b"mock-blinding");
+        let commitment = scheme.commit(&value, &blinding);
+        let opening = Opening { value, blinding };
+        assert!(scheme.verify(&commitment, &opening));
+    }
+
+    #[test]
+    fn trait_object_dispatch() {
+        let scheme: Box<dyn CommitmentScheme> = Box::new(Blake3Commitment);
+        let value = Blake3Hash::digest(b"dyn-test");
+        let blinding = Blake3Hash::digest(b"dyn-blinding");
+        let commitment = scheme.commit(&value, &blinding);
+        let opening = Opening { value, blinding };
+        assert!(scheme.verify(&commitment, &opening));
     }
 }

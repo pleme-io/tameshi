@@ -27,6 +27,30 @@ fn empty_hash(level: usize) -> Blake3Hash {
     Blake3Hash::combine(&child, &child)
 }
 
+/// Trait for Merkle tree operations.
+///
+/// Abstracts the tree implementation so consumers can inject
+/// mocks or alternative implementations (e.g., persistent SMT,
+/// in-memory balanced tree).
+pub trait MerkleTreeOps: Send + Sync {
+    /// Insert a key-value pair. Returns the old value if key existed.
+    fn insert(&mut self, key: Blake3Hash, value: Blake3Hash) -> Option<Blake3Hash>;
+    /// Remove a key. Returns the old value if key existed.
+    fn remove(&mut self, key: &Blake3Hash) -> Option<Blake3Hash>;
+    /// Get the value for a key.
+    fn get(&self, key: &Blake3Hash) -> Option<&Blake3Hash>;
+    /// Compute the root hash.
+    fn root(&self) -> Blake3Hash;
+    /// Generate a proof for a key (inclusion or non-inclusion).
+    fn prove(&self, key: &Blake3Hash) -> SmtProof;
+    /// Number of entries.
+    fn len(&self) -> usize;
+    /// Whether empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 /// A Sparse Merkle Tree with 256-bit key space.
 ///
 /// Keys and values are both 32-byte BLAKE3 hashes. The tree is stored
@@ -258,6 +282,90 @@ impl SparseMerkleTree {
     }
 }
 
+impl MerkleTreeOps for SparseMerkleTree {
+    fn insert(&mut self, key: Blake3Hash, value: Blake3Hash) -> Option<Blake3Hash> {
+        self.leaves.insert(key, value)
+    }
+
+    fn remove(&mut self, key: &Blake3Hash) -> Option<Blake3Hash> {
+        self.leaves.remove(key)
+    }
+
+    fn get(&self, key: &Blake3Hash) -> Option<&Blake3Hash> {
+        self.leaves.get(key)
+    }
+
+    fn root(&self) -> Blake3Hash {
+        SparseMerkleTree::root(self)
+    }
+
+    fn prove(&self, key: &Blake3Hash) -> SmtProof {
+        SparseMerkleTree::prove(self, key)
+    }
+
+    fn len(&self) -> usize {
+        self.leaves.len()
+    }
+}
+
+/// Mock Merkle tree for testing consumers that depend on `MerkleTreeOps`.
+///
+/// Stores entries in a HashMap and computes roots deterministically.
+/// Does not build a real tree -- just hashes all values together.
+#[derive(Debug, Default)]
+pub struct MockMerkleTree {
+    entries: HashMap<Blake3Hash, Blake3Hash>,
+}
+
+impl MockMerkleTree {
+    /// Create a new empty mock tree.
+    pub fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+}
+
+impl MerkleTreeOps for MockMerkleTree {
+    fn insert(&mut self, key: Blake3Hash, value: Blake3Hash) -> Option<Blake3Hash> {
+        self.entries.insert(key, value)
+    }
+
+    fn remove(&mut self, key: &Blake3Hash) -> Option<Blake3Hash> {
+        self.entries.remove(key)
+    }
+
+    fn get(&self, key: &Blake3Hash) -> Option<&Blake3Hash> {
+        self.entries.get(key)
+    }
+
+    fn root(&self) -> Blake3Hash {
+        if self.entries.is_empty() {
+            return Blake3Hash::digest(b"mock-empty-root");
+        }
+        let mut sorted: Vec<_> = self.entries.iter().collect();
+        sorted.sort_by(|a, b| a.0 .0.cmp(&b.0 .0));
+        let mut data = Vec::new();
+        for (k, v) in &sorted {
+            data.extend_from_slice(&k.0);
+            data.extend_from_slice(&v.0);
+        }
+        Blake3Hash::digest(&data)
+    }
+
+    fn prove(&self, key: &Blake3Hash) -> SmtProof {
+        SmtProof {
+            siblings: vec![],
+            key: key.clone(),
+            value: self.entries.get(key).cloned(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
 /// Convert a key to a path of bits (MSB first).
 fn key_to_path(key: &Blake3Hash, depth: usize) -> Vec<bool> {
     let mut path = Vec::with_capacity(depth);
@@ -457,5 +565,26 @@ mod tests {
             !SparseMerkleTree::verify_proof(&proof1, &root2, tree1.depth()),
             "proof from tree1 must not verify against tree2's root"
         );
+    }
+
+    #[test]
+    fn mock_tree_insert_and_root() {
+        let mut mock = MockMerkleTree::new();
+        let key = Blake3Hash::digest(b"key");
+        let val = Blake3Hash::digest(b"val");
+        mock.insert(key.clone(), val);
+        assert_eq!(mock.len(), 1);
+        assert!(mock.get(&key).is_some());
+        let _ = mock.root(); // should not panic
+    }
+
+    #[test]
+    fn trait_object_dispatch_smt() {
+        let mut tree: Box<dyn MerkleTreeOps> = Box::new(SparseMerkleTree::new(8));
+        let key = Blake3Hash::digest(b"trait-key");
+        let val = Blake3Hash::digest(b"trait-val");
+        tree.insert(key.clone(), val);
+        assert_eq!(tree.len(), 1);
+        let _ = tree.root();
     }
 }

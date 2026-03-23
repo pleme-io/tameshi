@@ -26,6 +26,57 @@
 
 use crate::hash::Blake3Hash;
 
+/// Trait for extended DFC signing operations.
+///
+/// Enables swapping the key reconstruction and signing strategy
+/// for testing or alternative fragment schemes.
+pub trait ExtendedSigner: Send + Sync {
+    /// Reconstruct a signing key from fragments plus a Merkle root.
+    fn reconstruct_key(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash) -> [u8; 32];
+    /// Sign data using extended key reconstruction.
+    fn sign(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash) -> Vec<u8>;
+    /// Verify a signature using extended key reconstruction.
+    fn verify(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash, signature: &[u8]) -> bool;
+}
+
+/// BLAKE3-based extended signer (default).
+#[derive(Clone, Debug, Default)]
+pub struct Blake3ExtendedSigner;
+
+impl ExtendedSigner for Blake3ExtendedSigner {
+    fn reconstruct_key(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash) -> [u8; 32] {
+        reconstruct_key_extended(frag_a, frag_b, root)
+    }
+
+    fn sign(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash) -> Vec<u8> {
+        sign_extended(frag_a, frag_b, root, data)
+    }
+
+    fn verify(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash, signature: &[u8]) -> bool {
+        verify_extended(frag_a, frag_b, root, data, signature)
+    }
+}
+
+/// Mock extended signer for testing.
+/// Uses the same BLAKE3 implementation but provides a trait boundary
+/// so consumers can inject alternatives.
+#[derive(Clone, Debug, Default)]
+pub struct MockExtendedSigner;
+
+impl ExtendedSigner for MockExtendedSigner {
+    fn reconstruct_key(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash) -> [u8; 32] {
+        reconstruct_key_extended(frag_a, frag_b, root)
+    }
+
+    fn sign(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash) -> Vec<u8> {
+        sign_extended(frag_a, frag_b, root, data)
+    }
+
+    fn verify(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash, signature: &[u8]) -> bool {
+        verify_extended(frag_a, frag_b, root, data, signature)
+    }
+}
+
 /// Reconstruct a signing key from two DFC fragments plus the Merkle root.
 ///
 /// This is the "extended" reconstruction that binds the key to the artifact.
@@ -260,5 +311,27 @@ mod tests {
         let sig2 = sign_extended(&frag_a, &frag_b, &root, &data);
 
         assert_eq!(sig1, sig2, "identical inputs must produce identical signatures");
+    }
+
+    #[test]
+    fn trait_object_dispatch_extended_signer() {
+        let signer: Box<dyn ExtendedSigner> = Box::new(Blake3ExtendedSigner);
+        let frag_a = [1u8; 32];
+        let frag_b = [2u8; 32];
+        let root = Blake3Hash::digest(b"trait-root");
+        let data = Blake3Hash::digest(b"trait-data");
+        let sig = signer.sign(&frag_a, &frag_b, &root, &data);
+        assert!(signer.verify(&frag_a, &frag_b, &root, &data, &sig));
+    }
+
+    #[test]
+    fn mock_extended_signer_roundtrip() {
+        let signer = MockExtendedSigner;
+        let frag_a = [0xAA; 32];
+        let frag_b = [0xBB; 32];
+        let root = Blake3Hash::digest(b"mock-root");
+        let data = Blake3Hash::digest(b"mock-data");
+        let sig = signer.sign(&frag_a, &frag_b, &root, &data);
+        assert!(signer.verify(&frag_a, &frag_b, &root, &data, &sig));
     }
 }

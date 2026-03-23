@@ -1337,6 +1337,7 @@ mod tests {
     }
 
     /// Generate a pods JSON with full security context (for new checks)
+    #[allow(dead_code)]
     fn secure_pods_json(containers: &[bool]) -> String {
         let container_items: Vec<String> = containers
             .iter()

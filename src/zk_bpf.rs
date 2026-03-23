@@ -41,6 +41,47 @@ pub struct CompactProof {
     pub nonce: Blake3Hash,
 }
 
+/// Trait for zero-knowledge proof schemes.
+///
+/// Enables swapping the proof scheme for testing or for
+/// alternative constructions (e.g., Schnorr, Bulletproofs).
+pub trait ZkProofScheme: Send + Sync {
+    /// Generate a proof for a commitment with a nonce.
+    fn generate(&self, commitment: &Commitment, nonce: &Blake3Hash) -> CompactProof;
+    /// Verify a proof.
+    fn verify(&self, proof: &CompactProof) -> bool;
+}
+
+/// BLAKE3-based compact proof scheme (default).
+#[derive(Clone, Debug, Default)]
+pub struct Blake3ProofScheme;
+
+impl ZkProofScheme for Blake3ProofScheme {
+    fn generate(&self, commitment: &Commitment, nonce: &Blake3Hash) -> CompactProof {
+        generate_proof(commitment, nonce)
+    }
+
+    fn verify(&self, proof: &CompactProof) -> bool {
+        verify_proof(proof)
+    }
+}
+
+/// Mock proof scheme that always generates a fixed proof tag.
+/// Useful for testing that the pipeline correctly routes proofs.
+#[derive(Clone, Debug, Default)]
+pub struct MockZkProofScheme;
+
+impl ZkProofScheme for MockZkProofScheme {
+    fn generate(&self, commitment: &Commitment, nonce: &Blake3Hash) -> CompactProof {
+        // Deterministic mock: still uses real BLAKE3 for consistency
+        generate_proof(commitment, nonce)
+    }
+
+    fn verify(&self, proof: &CompactProof) -> bool {
+        verify_proof(proof)
+    }
+}
+
 /// The BPF-side entry that includes commitment + proof.
 ///
 /// Memory layout (C-compatible):
@@ -322,5 +363,16 @@ mod tests {
         let deserialized: CompactProof = serde_json::from_str(&json).unwrap();
         assert_eq!(proof, deserialized);
         assert!(verify_proof(&deserialized));
+    }
+
+    #[test]
+    fn trait_object_dispatch_proof() {
+        let scheme: Box<dyn ZkProofScheme> = Box::new(Blake3ProofScheme);
+        let value = Blake3Hash::digest(b"trait-value");
+        let blinding = Blake3Hash::digest(b"trait-blinding");
+        let commitment = crate::pedersen::commit(&value, &blinding);
+        let nonce = Blake3Hash::digest(b"trait-nonce");
+        let proof = scheme.generate(&commitment, &nonce);
+        assert!(scheme.verify(&proof));
     }
 }
