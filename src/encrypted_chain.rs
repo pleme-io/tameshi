@@ -1,0 +1,193 @@
+//! Encrypted heartbeat chain entries.
+//!
+//! Encrypts chain entry payloads using a DFC-derived key before storage.
+//! Even if the storage backend is compromised, entries are unreadable
+//! without the encryption key fragments.
+
+use crate::hash::Blake3Hash;
+use crate::heartbeat::HeartbeatEntry;
+
+/// An encrypted chain entry. The original entry is serialized to JSON,
+/// then encrypted via BLAKE3 keyed hash (as a MAC — the "ciphertext"
+/// is the entry JSON XOR'd with the keystream).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct EncryptedEntry {
+    /// The encrypted payload (entry JSON XOR'd with BLAKE3 keystream).
+    pub ciphertext: Vec<u8>,
+    /// The entry sequence number (visible for ordering, not secret).
+    pub sequence: u64,
+    /// BLAKE3 MAC of the ciphertext for integrity.
+    pub mac: Blake3Hash,
+}
+
+/// Encrypt a heartbeat entry using a 32-byte key.
+pub fn encrypt_entry(entry: &HeartbeatEntry, key: &[u8; 32]) -> EncryptedEntry {
+    let plaintext = serde_json::to_vec(entry).expect("HeartbeatEntry serialization cannot fail");
+
+    // Generate keystream: BLAKE3 in counter mode
+    let mut ciphertext = Vec::with_capacity(plaintext.len());
+    let mut counter = 0u64;
+    let mut keystream_pos = 0;
+    let mut keystream_block = [0u8; 32];
+
+    for &byte in &plaintext {
+        if keystream_pos % 32 == 0 {
+            let mut counter_input = Vec::with_capacity(40);
+            counter_input.extend_from_slice(key);
+            counter_input.extend_from_slice(&counter.to_le_bytes());
+            keystream_block = *blake3::hash(&counter_input).as_bytes();
+            counter += 1;
+            keystream_pos = 0;
+        }
+        ciphertext.push(byte ^ keystream_block[keystream_pos % 32]);
+        keystream_pos += 1;
+    }
+
+    // MAC for integrity
+    let mac = Blake3Hash(blake3::keyed_hash(key, &ciphertext).into());
+
+    EncryptedEntry {
+        ciphertext,
+        sequence: entry.sequence,
+        mac,
+    }
+}
+
+/// Decrypt an encrypted entry using the same key.
+pub fn decrypt_entry(encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<HeartbeatEntry, String> {
+    // Verify MAC
+    let expected_mac = Blake3Hash(blake3::keyed_hash(key, &encrypted.ciphertext).into());
+    if encrypted.mac != expected_mac {
+        return Err("MAC verification failed: entry may have been tampered".to_string());
+    }
+
+    // Decrypt (XOR is symmetric)
+    let mut plaintext = Vec::with_capacity(encrypted.ciphertext.len());
+    let mut counter = 0u64;
+    let mut keystream_pos = 0;
+    let mut keystream_block = [0u8; 32];
+
+    for &byte in &encrypted.ciphertext {
+        if keystream_pos % 32 == 0 {
+            let mut counter_input = Vec::with_capacity(40);
+            counter_input.extend_from_slice(key);
+            counter_input.extend_from_slice(&counter.to_le_bytes());
+            keystream_block = *blake3::hash(&counter_input).as_bytes();
+            counter += 1;
+            keystream_pos = 0;
+        }
+        plaintext.push(byte ^ keystream_block[keystream_pos % 32]);
+        keystream_pos += 1;
+    }
+
+    serde_json::from_slice(&plaintext)
+        .map_err(|e| format!("decryption produced invalid JSON: {e}"))
+}
+
+/// Verify a MAC without decrypting.
+pub fn verify_mac(encrypted: &EncryptedEntry, key: &[u8; 32]) -> bool {
+    let expected = Blake3Hash(blake3::keyed_hash(key, &encrypted.ciphertext).into());
+    encrypted.mac == expected
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::heartbeat::{HeartbeatEvent, VerificationOutcome, VerifierIdentity};
+    use chrono::Utc;
+
+    fn test_entry(seq: u64) -> HeartbeatEntry {
+        HeartbeatEntry {
+            sequence: seq,
+            timestamp: Utc::now(),
+            verifier: VerifierIdentity::new("test", "node-1", "1.0"),
+            event: HeartbeatEvent::GateCheck,
+            result: VerificationOutcome::Allowed,
+            resource: "test/resource".to_string(),
+            signature_checked: Blake3Hash::digest(b"sig"),
+            entry_hash: Blake3Hash::digest(format!("entry-{seq}").as_bytes()),
+            previous_hash: Blake3Hash::from([0u8; 32]),
+        }
+    }
+
+    #[test]
+    fn encrypt_decrypt_roundtrip() {
+        let entry = test_entry(1);
+        let key = [0xABu8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        let decrypted = decrypt_entry(&encrypted, &key).unwrap();
+        assert_eq!(entry, decrypted);
+    }
+
+    #[test]
+    fn wrong_key_mac_fails() {
+        let entry = test_entry(2);
+        let key = [0xABu8; 32];
+        let wrong_key = [0xCDu8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        let result = decrypt_entry(&encrypted, &wrong_key);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("MAC verification failed"));
+    }
+
+    #[test]
+    fn tampered_ciphertext_fails() {
+        let entry = test_entry(3);
+        let key = [0xABu8; 32];
+        let mut encrypted = encrypt_entry(&entry, &key);
+        // Tamper with the ciphertext
+        if let Some(byte) = encrypted.ciphertext.first_mut() {
+            *byte ^= 0xFF;
+        }
+        let result = decrypt_entry(&encrypted, &key);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("MAC verification failed"));
+    }
+
+    #[test]
+    fn sequence_visible() {
+        let entry = test_entry(42);
+        let key = [0xABu8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        assert_eq!(encrypted.sequence, 42);
+    }
+
+    #[test]
+    fn different_keys_different_ciphertext() {
+        let entry = test_entry(4);
+        let key_1 = [0xAAu8; 32];
+        let key_2 = [0xBBu8; 32];
+        let enc_1 = encrypt_entry(&entry, &key_1);
+        let enc_2 = encrypt_entry(&entry, &key_2);
+        assert_ne!(enc_1.ciphertext, enc_2.ciphertext);
+    }
+
+    #[test]
+    fn verify_mac_correct() {
+        let entry = test_entry(5);
+        let key = [0xABu8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        assert!(verify_mac(&encrypted, &key));
+    }
+
+    #[test]
+    fn verify_mac_wrong_key() {
+        let entry = test_entry(6);
+        let key = [0xABu8; 32];
+        let wrong_key = [0xCDu8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        assert!(!verify_mac(&encrypted, &wrong_key));
+    }
+
+    #[test]
+    fn serde_roundtrip() {
+        let entry = test_entry(7);
+        let key = [0xABu8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        let json = serde_json::to_string(&encrypted).unwrap();
+        let deserialized: EncryptedEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(encrypted.ciphertext, deserialized.ciphertext);
+        assert_eq!(encrypted.sequence, deserialized.sequence);
+        assert_eq!(encrypted.mac, deserialized.mac);
+    }
+}
