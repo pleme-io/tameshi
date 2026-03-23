@@ -68,12 +68,12 @@
               '');
             };
 
-            # Layer 3: F* formal proofs (8 modules)
+            # Layer 3: F* formal proofs (11 modules)
             verify-fstar = {
               type = "app";
               program = toString (pkgs.writeShellScript "verify-fstar" ''
                 set -euo pipefail
-                echo "=== Layer 3: F* Formal Proofs (10 modules) ==="
+                echo "=== Layer 3: F* Formal Proofs (11 modules) ==="
                 cd fstar
                 fstar.exe --include . \
                   Tameshi.Hash.fst \
@@ -85,7 +85,8 @@
                   Tameshi.DomainSeparation.fst \
                   Tameshi.NonInterference.fst \
                   Tameshi.Refinement.fst \
-                  Tameshi.FragmentedSovereignty.fst
+                  Tameshi.FragmentedSovereignty.fst \
+                  Tameshi.FragmentCollector.fst
               '');
             };
 
@@ -109,7 +110,7 @@
                 fi
                 echo ""
 
-                echo "--- Layer 3: F* Formal Proofs (10 modules) ---"
+                echo "--- Layer 3: F* Formal Proofs (11 modules) ---"
                 if command -v fstar.exe &>/dev/null; then
                   cd fstar
                   fstar.exe --include . \
@@ -119,7 +120,11 @@
                     Tameshi.Chain.fst \
                     Tameshi.Signing.fst \
                     Tameshi.Reduction.fst \
-                    Tameshi.DomainSeparation.fst
+                    Tameshi.DomainSeparation.fst \
+                    Tameshi.NonInterference.fst \
+                    Tameshi.Refinement.fst \
+                    Tameshi.FragmentedSovereignty.fst \
+                    Tameshi.FragmentCollector.fst
                   cd ..
                 else
                   echo "SKIP: fstar.exe not installed (opam install fstar)"

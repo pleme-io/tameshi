@@ -109,6 +109,14 @@ pub enum HeartbeatEvent {
     IacTestSuiteComplete,
     /// AI Threat Intelligence analysis completed.
     AiThreatAnalysis,
+    /// Fragment collection request initiated.
+    FragmentCollectionRequest,
+    /// Fragment collection completed (threshold met or failed).
+    FragmentCollectionComplete,
+    /// Attestation expired and was revoked.
+    AttestationExpired,
+    /// Compliance re-verification triggered.
+    ComplianceRecheck,
 }
 
 impl std::fmt::Display for HeartbeatEvent {
@@ -129,6 +137,10 @@ impl std::fmt::Display for HeartbeatEvent {
             Self::IacTestTeardown => write!(f, "iac_test_teardown"),
             Self::IacTestSuiteComplete => write!(f, "iac_test_suite_complete"),
             Self::AiThreatAnalysis => write!(f, "ai_threat_analysis"),
+            Self::FragmentCollectionRequest => write!(f, "fragment_collection_request"),
+            Self::FragmentCollectionComplete => write!(f, "fragment_collection_complete"),
+            Self::AttestationExpired => write!(f, "attestation_expired"),
+            Self::ComplianceRecheck => write!(f, "compliance_recheck"),
         }
     }
 }

@@ -100,6 +100,10 @@ harness = false
 name = "verify"
 harness = false
 
+[[bench]]
+name = "fragment"
+harness = false
+
 [profile.release]
 opt-level = "z"
 lto = true
