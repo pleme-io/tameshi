@@ -87,6 +87,20 @@ pub mod verify;
 /// use tameshi::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::collectors::agent_binary::{AgentBinaryCollector, AgentBinaryConfig};
+    pub use crate::collectors::agent_config::{AgentConfigCollector, AgentConfigCollectorConfig};
+    pub use crate::collectors::agent_guardrails::{
+        AgentGuardrailsCollector, AgentGuardrailsConfig,
+    };
+    pub use crate::collectors::agent_models::{AgentModelsCollector, AgentModelsConfig, ModelProvider};
+    pub use crate::collectors::agent_runtime::{
+        AgentRuntimeCollector, AgentRuntimeConfig, HumanOversight, RuntimePolicy, SandboxMode,
+        TimeoutAction,
+    };
+    pub use crate::collectors::agent_skills::{
+        AgentSkillsCollector, AgentSkillsConfig, SkillAttestation, SkillComplianceStatus,
+        SkillDefinition, SkillSource, attest_skill,
+    };
     pub use crate::ai_threat::{
         AiAnalysisSummary, AiDecision, AiDeploymentContext, AiFailMode, AiThreatClient,
         AiThreatError, AnalysisFeedback, AnalyzeProvenanceRequest, AnalyzeProvenanceResponse,

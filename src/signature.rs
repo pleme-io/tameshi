@@ -50,6 +50,24 @@ pub enum LayerType {
     /// Ferrite Proof of Memory Safety (PoMS).
     #[serde(rename = "ferrite_poms")]
     FerritePoms,
+    /// AI agent binary/container image.
+    #[serde(rename = "agent_binary")]
+    AgentBinary,
+    /// AI agent skill manifest (each skill hashed individually).
+    #[serde(rename = "agent_skills")]
+    AgentSkills,
+    /// AI agent configuration (secrets stripped).
+    #[serde(rename = "agent_config")]
+    AgentConfig,
+    /// AI agent guardrail policies and rules.
+    #[serde(rename = "agent_guardrails")]
+    AgentGuardrails,
+    /// AI agent authorized model providers.
+    #[serde(rename = "agent_models")]
+    AgentModels,
+    /// AI agent runtime behavior policies.
+    #[serde(rename = "agent_runtime")]
+    AgentRuntime,
 }
 
 impl fmt::Display for LayerType {
@@ -70,6 +88,12 @@ impl fmt::Display for LayerType {
             Self::RSpecResult => write!(f, "rspec_result"),
             Self::InSpecResult => write!(f, "inspec_result"),
             Self::FerritePoms => write!(f, "ferrite_poms"),
+            Self::AgentBinary => write!(f, "agent_binary"),
+            Self::AgentSkills => write!(f, "agent_skills"),
+            Self::AgentConfig => write!(f, "agent_config"),
+            Self::AgentGuardrails => write!(f, "agent_guardrails"),
+            Self::AgentModels => write!(f, "agent_models"),
+            Self::AgentRuntime => write!(f, "agent_runtime"),
         }
     }
 }
@@ -94,6 +118,12 @@ impl FromStr for LayerType {
             "rspec_result" | "rspecresult" | "rspec" => Ok(Self::RSpecResult),
             "inspec_result" | "inspecresult" => Ok(Self::InSpecResult),
             "ferrite_poms" | "ferritepoms" | "ferrite" | "poms" => Ok(Self::FerritePoms),
+            "agent_binary" | "agentbinary" => Ok(Self::AgentBinary),
+            "agent_skills" | "agentskills" => Ok(Self::AgentSkills),
+            "agent_config" | "agentconfig" => Ok(Self::AgentConfig),
+            "agent_guardrails" | "agentguardrails" => Ok(Self::AgentGuardrails),
+            "agent_models" | "agentmodels" => Ok(Self::AgentModels),
+            "agent_runtime" | "agentruntime" => Ok(Self::AgentRuntime),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
@@ -371,6 +401,12 @@ mod tests {
             LayerType::RSpecResult,
             LayerType::InSpecResult,
             LayerType::FerritePoms,
+            LayerType::AgentBinary,
+            LayerType::AgentSkills,
+            LayerType::AgentConfig,
+            LayerType::AgentGuardrails,
+            LayerType::AgentModels,
+            LayerType::AgentRuntime,
         ];
         for lt in types {
             let s = lt.to_string();
@@ -516,6 +552,9 @@ mod tests {
             LayerType::Akeyless, LayerType::AkeylessTarget,
             LayerType::PangeaSynthesis, LayerType::RSpecResult,
             LayerType::InSpecResult, LayerType::FerritePoms,
+            LayerType::AgentBinary, LayerType::AgentSkills,
+            LayerType::AgentConfig, LayerType::AgentGuardrails,
+            LayerType::AgentModels, LayerType::AgentRuntime,
         ];
         for i in 0..types.len() {
             for j in 0..types.len() {

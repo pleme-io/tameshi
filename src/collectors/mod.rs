@@ -7,6 +7,12 @@
 //! All collectors implement the [`LayerCollector`] trait, which provides a
 //! uniform interface for collecting layer signatures.
 
+pub mod agent_binary;
+pub mod agent_config;
+pub mod agent_guardrails;
+pub mod agent_models;
+pub mod agent_runtime;
+pub mod agent_skills;
 pub mod akeyless;
 pub mod akeyless_target;
 pub mod argocd;
@@ -26,6 +32,12 @@ pub mod tatara;
 pub mod tofu;
 pub mod traits;
 
+pub use agent_binary::AgentBinaryCollector;
+pub use agent_config::AgentConfigCollector;
+pub use agent_guardrails::AgentGuardrailsCollector;
+pub use agent_models::AgentModelsCollector;
+pub use agent_runtime::AgentRuntimeCollector;
+pub use agent_skills::AgentSkillsCollector;
 pub use ferrite::FerriteCollector;
 pub use mock::MockCollector;
 pub use traits::LayerCollector;
