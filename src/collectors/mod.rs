@@ -8,8 +8,11 @@
 //! uniform interface for collecting layer signatures.
 
 pub mod agent_binary;
+pub mod agent_certificates;
 pub mod agent_config;
+pub mod agent_dependencies;
 pub mod agent_guardrails;
+pub mod agent_mcp_servers;
 pub mod agent_models;
 pub mod agent_runtime;
 pub mod agent_skills;
@@ -33,8 +36,11 @@ pub mod tofu;
 pub mod traits;
 
 pub use agent_binary::AgentBinaryCollector;
+pub use agent_certificates::AgentCertificatesCollector;
 pub use agent_config::AgentConfigCollector;
+pub use agent_dependencies::AgentDependenciesCollector;
 pub use agent_guardrails::AgentGuardrailsCollector;
+pub use agent_mcp_servers::AgentMcpServersCollector;
 pub use agent_models::AgentModelsCollector;
 pub use agent_runtime::AgentRuntimeCollector;
 pub use agent_skills::AgentSkillsCollector;

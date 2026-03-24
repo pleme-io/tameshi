@@ -88,9 +88,18 @@ pub mod verify;
 /// ```
 pub mod prelude {
     pub use crate::collectors::agent_binary::{AgentBinaryCollector, AgentBinaryConfig};
+    pub use crate::collectors::agent_certificates::{
+        AgentCertificatesCollector, AgentCertificatesConfig, CertificateEntry, CertificateUsage,
+    };
     pub use crate::collectors::agent_config::{AgentConfigCollector, AgentConfigCollectorConfig};
+    pub use crate::collectors::agent_dependencies::{
+        AgentDependenciesCollector, AgentDependenciesConfig, DependencyEntry, SbomFormat,
+    };
     pub use crate::collectors::agent_guardrails::{
         AgentGuardrailsCollector, AgentGuardrailsConfig,
+    };
+    pub use crate::collectors::agent_mcp_servers::{
+        AgentMcpServersCollector, AgentMcpServersConfig, McpServerAttestation, McpTransport,
     };
     pub use crate::collectors::agent_models::{AgentModelsCollector, AgentModelsConfig, ModelProvider};
     pub use crate::collectors::agent_runtime::{

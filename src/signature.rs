@@ -68,6 +68,15 @@ pub enum LayerType {
     /// AI agent runtime behavior policies.
     #[serde(rename = "agent_runtime")]
     AgentRuntime,
+    /// AI agent MCP server configurations and binaries.
+    #[serde(rename = "agent_mcp_servers")]
+    AgentMcpServers,
+    /// AI agent dependency SBOM (Software Bill of Materials).
+    #[serde(rename = "agent_dependencies")]
+    AgentDependencies,
+    /// AI agent TLS certificate chain fingerprints.
+    #[serde(rename = "agent_certificates")]
+    AgentCertificates,
 }
 
 impl fmt::Display for LayerType {
@@ -94,6 +103,9 @@ impl fmt::Display for LayerType {
             Self::AgentGuardrails => write!(f, "agent_guardrails"),
             Self::AgentModels => write!(f, "agent_models"),
             Self::AgentRuntime => write!(f, "agent_runtime"),
+            Self::AgentMcpServers => write!(f, "agent_mcp_servers"),
+            Self::AgentDependencies => write!(f, "agent_dependencies"),
+            Self::AgentCertificates => write!(f, "agent_certificates"),
         }
     }
 }
@@ -124,6 +136,9 @@ impl FromStr for LayerType {
             "agent_guardrails" | "agentguardrails" => Ok(Self::AgentGuardrails),
             "agent_models" | "agentmodels" => Ok(Self::AgentModels),
             "agent_runtime" | "agentruntime" => Ok(Self::AgentRuntime),
+            "agent_mcp_servers" | "agentmcpservers" => Ok(Self::AgentMcpServers),
+            "agent_dependencies" | "agentdependencies" => Ok(Self::AgentDependencies),
+            "agent_certificates" | "agentcertificates" => Ok(Self::AgentCertificates),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
@@ -407,6 +422,9 @@ mod tests {
             LayerType::AgentGuardrails,
             LayerType::AgentModels,
             LayerType::AgentRuntime,
+            LayerType::AgentMcpServers,
+            LayerType::AgentDependencies,
+            LayerType::AgentCertificates,
         ];
         for lt in types {
             let s = lt.to_string();
@@ -555,6 +573,8 @@ mod tests {
             LayerType::AgentBinary, LayerType::AgentSkills,
             LayerType::AgentConfig, LayerType::AgentGuardrails,
             LayerType::AgentModels, LayerType::AgentRuntime,
+            LayerType::AgentMcpServers, LayerType::AgentDependencies,
+            LayerType::AgentCertificates,
         ];
         for i in 0..types.len() {
             for j in 0..types.len() {
