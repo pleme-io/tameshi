@@ -24,6 +24,7 @@ pub mod fluxcd;
 pub mod generic;
 pub mod helm;
 pub mod inspec_result;
+pub mod kasou;
 pub mod kindling;
 pub mod kubernetes;
 pub mod mock;

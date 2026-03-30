@@ -77,6 +77,8 @@ pub enum LayerType {
     /// AI agent TLS certificate chain fingerprints.
     #[serde(rename = "agent_certificates")]
     AgentCertificates,
+    /// Kasou virtual machine state (VM config + disk image + network identity).
+    Kasou,
 }
 
 impl fmt::Display for LayerType {
@@ -106,6 +108,7 @@ impl fmt::Display for LayerType {
             Self::AgentMcpServers => write!(f, "agent_mcp_servers"),
             Self::AgentDependencies => write!(f, "agent_dependencies"),
             Self::AgentCertificates => write!(f, "agent_certificates"),
+            Self::Kasou => write!(f, "kasou"),
         }
     }
 }
@@ -139,6 +142,7 @@ impl FromStr for LayerType {
             "agent_mcp_servers" | "agentmcpservers" => Ok(Self::AgentMcpServers),
             "agent_dependencies" | "agentdependencies" => Ok(Self::AgentDependencies),
             "agent_certificates" | "agentcertificates" => Ok(Self::AgentCertificates),
+            "kasou" | "vm" => Ok(Self::Kasou),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
@@ -424,7 +428,7 @@ mod tests {
             LayerType::AgentRuntime,
             LayerType::AgentMcpServers,
             LayerType::AgentDependencies,
-            LayerType::AgentCertificates,
+            LayerType::AgentCertificates, LayerType::Kasou,
         ];
         for lt in types {
             let s = lt.to_string();
@@ -574,7 +578,7 @@ mod tests {
             LayerType::AgentConfig, LayerType::AgentGuardrails,
             LayerType::AgentModels, LayerType::AgentRuntime,
             LayerType::AgentMcpServers, LayerType::AgentDependencies,
-            LayerType::AgentCertificates,
+            LayerType::AgentCertificates, LayerType::Kasou,
         ];
         for i in 0..types.len() {
             for j in 0..types.len() {
