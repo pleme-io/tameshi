@@ -211,3 +211,148 @@ impl LayerCollector for TataraCollector {
         LayerType::Tatara
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn hash_cluster_state_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let state = serde_json::json!({"cluster": "prod", "version": 3});
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.layer, LayerType::Tatara);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "cluster-state");
+    }
+
+    #[tokio::test]
+    async fn hash_cluster_state_with_nodes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state_nodes.json");
+        let state = serde_json::json!({
+            "cluster": "prod",
+            "nodes": [
+                {"id": "node-1", "role": "worker"},
+                {"id": "node-2", "role": "control-plane"}
+            ]
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.inputs.len(), 3, "1 cluster-state + 2 nodes");
+        assert_eq!(sig.inputs[1].name, "node-node-1");
+        assert_eq!(sig.inputs[2].name, "node-node-2");
+    }
+
+    #[tokio::test]
+    async fn hash_cluster_state_with_allocations() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state_alloc.json");
+        let state = serde_json::json!({
+            "allocations": [
+                {"id": "alloc-a", "cpu": 4},
+                {"id": "alloc-b", "cpu": 8}
+            ]
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.inputs.len(), 3, "1 cluster-state + 2 allocations");
+        assert_eq!(sig.inputs[1].name, "allocation-alloc-a");
+        assert_eq!(sig.inputs[2].name, "allocation-alloc-b");
+    }
+
+    #[tokio::test]
+    async fn hash_cluster_state_node_missing_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state_no_id.json");
+        let state = serde_json::json!({
+            "nodes": [{"role": "worker"}]
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.inputs[1].name, "node-unknown");
+    }
+
+    #[tokio::test]
+    async fn hash_cluster_state_deterministic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let state = serde_json::json!({"cluster": "deterministic-test"});
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig1 = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
+        let sig2 = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig1.hash, sig2.hash);
+    }
+
+    #[tokio::test]
+    async fn hash_cluster_state_missing_file() {
+        let result = hash_cluster_state("/nonexistent/state.json").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn hash_cluster_state_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        tokio::fs::write(&path, b"{{invalid json").await.unwrap();
+
+        let result = hash_cluster_state(path.to_str().unwrap()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn hash_job_spec_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("job.json");
+        let spec = serde_json::json!({
+            "name": "batch-job-1",
+            "container": "worker:v1",
+            "cpu": 2
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&spec).unwrap()).await.unwrap();
+
+        let sig = hash_job_spec(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.layer, LayerType::Tatara);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "job-spec");
+    }
+
+    #[tokio::test]
+    async fn hash_job_spec_missing_file() {
+        let result = hash_job_spec("/nonexistent/job.json").await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn tatara_collector_from_state() {
+        let c = TataraCollector::from_state("/path/state.json");
+        assert!(matches!(c.source, TataraSource::StateFile(_)));
+        assert_eq!(c.layer_type(), LayerType::Tatara);
+    }
+
+    #[test]
+    fn tatara_collector_from_api() {
+        let c = TataraCollector::from_api("https://tatara.example.com");
+        assert!(matches!(c.source, TataraSource::Api(_)));
+    }
+
+    #[test]
+    fn tatara_collector_from_job_spec() {
+        let c = TataraCollector::from_job_spec("/path/job.json");
+        assert!(matches!(c.source, TataraSource::JobSpec(_)));
+    }
+
+    #[test]
+    fn tatara_source_clone_debug() {
+        let source = TataraSource::StateFile("/path".to_string());
+        let cloned = source.clone();
+        assert!(format!("{:?}", cloned).contains("StateFile"));
+    }
+}

@@ -564,4 +564,141 @@ mod tests {
         .unwrap();
         assert_eq!(hash, hash2);
     }
+
+    #[tokio::test]
+    async fn hash_binary_missing_file() {
+        let result = hash_binary("/nonexistent/binary/path").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn hash_binary_deterministic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bin");
+        tokio::fs::write(&path, b"binary content").await.unwrap();
+        let h1 = hash_binary(path.to_str().unwrap()).await.unwrap();
+        let h2 = hash_binary(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(h1, h2);
+    }
+
+    #[tokio::test]
+    async fn hash_binary_different_content_different_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let p1 = dir.path().join("bin1");
+        let p2 = dir.path().join("bin2");
+        tokio::fs::write(&p1, b"binary-v1").await.unwrap();
+        tokio::fs::write(&p2, b"binary-v2").await.unwrap();
+        let h1 = hash_binary(p1.to_str().unwrap()).await.unwrap();
+        let h2 = hash_binary(p2.to_str().unwrap()).await.unwrap();
+        assert_ne!(h1, h2);
+    }
+
+    #[tokio::test]
+    async fn attest_framework_sorts_components() {
+        let dir = tempfile::tempdir().unwrap();
+        let p_z = dir.path().join("z-bin");
+        let p_a = dir.path().join("a-bin");
+        tokio::fs::write(&p_z, b"z-binary").await.unwrap();
+        tokio::fs::write(&p_a, b"a-binary").await.unwrap();
+
+        let att = attest_framework(&[
+            ("z-component", p_z.to_str().unwrap()),
+            ("a-component", p_a.to_str().unwrap()),
+        ]).await.unwrap();
+
+        assert_eq!(att.components[0].name, "a-component");
+        assert_eq!(att.components[1].name, "z-component");
+    }
+
+    #[tokio::test]
+    async fn attest_framework_propagates_error() {
+        let result = attest_framework(&[
+            ("tameshi", "/nonexistent/tameshi-binary"),
+        ]).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn attest_framework_verify_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("tameshi");
+        tokio::fs::write(&p, b"tameshi-binary-data").await.unwrap();
+
+        let att = attest_framework(&[
+            ("tameshi", p.to_str().unwrap()),
+        ]).await.unwrap();
+
+        assert!(att.verify());
+        assert_eq!(att.schema_version, "1.0.0");
+        assert!(!att.components.is_empty());
+        assert!(att.components[0].satisfies_controls.contains(&"SC-13".to_string()));
+    }
+
+    #[test]
+    fn controls_for_component_all_known() {
+        let known = ["tameshi", "sekiban", "kensa", "inshou"];
+        for name in &known {
+            let controls = controls_for_component(name);
+            assert!(!controls.is_empty(), "{} should have controls", name);
+            for ctrl in &controls {
+                assert!(ctrl.starts_with("SI-") || ctrl.starts_with("CM-") || ctrl.starts_with("AU-") ||
+                        ctrl.starts_with("SC-") || ctrl.starts_with("SR-") || ctrl.starts_with("CA-") ||
+                        ctrl.starts_with("AC-") || ctrl.starts_with("RA-"),
+                        "unexpected control format: {}", ctrl);
+            }
+        }
+    }
+
+    #[test]
+    fn framework_hash_order_matters() {
+        let c1 = vec![
+            FrameworkComponent {
+                name: "a".to_string(),
+                version: "1.0".to_string(),
+                binary_hash: Blake3Hash::digest(b"a"),
+                binary_path: "/bin/a".to_string(),
+                satisfies_controls: vec![],
+            },
+            FrameworkComponent {
+                name: "b".to_string(),
+                version: "1.0".to_string(),
+                binary_hash: Blake3Hash::digest(b"b"),
+                binary_path: "/bin/b".to_string(),
+                satisfies_controls: vec![],
+            },
+        ];
+        let c2 = vec![
+            FrameworkComponent {
+                name: "b".to_string(),
+                version: "1.0".to_string(),
+                binary_hash: Blake3Hash::digest(b"b"),
+                binary_path: "/bin/b".to_string(),
+                satisfies_controls: vec![],
+            },
+            FrameworkComponent {
+                name: "a".to_string(),
+                version: "1.0".to_string(),
+                binary_hash: Blake3Hash::digest(b"a"),
+                binary_path: "/bin/a".to_string(),
+                satisfies_controls: vec![],
+            },
+        ];
+        assert_ne!(
+            compute_framework_hash(&c1),
+            compute_framework_hash(&c2),
+            "component order must affect the framework hash (sort before hashing!)"
+        );
+    }
+
+    #[test]
+    fn satisfied_controls_empty_components() {
+        let attestation = FrameworkAttestation {
+            components: vec![],
+            framework_hash: compute_framework_hash(&[]),
+            computed_at: Utc::now(),
+            schema_version: "1.0.0".to_string(),
+        };
+        assert!(attestation.satisfied_controls().is_empty());
+        assert!(attestation.verify());
+    }
 }

@@ -192,3 +192,131 @@ impl LayerCollector for TofuCollector {
         LayerType::Tofu
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn hash_state_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("terraform.tfstate");
+        let state = serde_json::json!({
+            "version": 4,
+            "serial": 1,
+            "lineage": "abc-123"
+        });
+        tokio::fs::write(&path, serde_json::to_vec_pretty(&state).unwrap()).await.unwrap();
+
+        let sig = hash_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.layer, LayerType::Tofu);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "state");
+    }
+
+    #[tokio::test]
+    async fn hash_state_with_resources() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("terraform.tfstate");
+        let state = serde_json::json!({
+            "version": 4,
+            "resources": [
+                {"type": "aws_instance", "name": "web"},
+                {"type": "aws_s3_bucket", "name": "data"}
+            ]
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig = hash_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.inputs.len(), 3, "1 state + 2 resources");
+        assert_eq!(sig.inputs[1].name, "aws_instance.web");
+        assert_eq!(sig.inputs[2].name, "aws_s3_bucket.data");
+    }
+
+    #[tokio::test]
+    async fn hash_state_resource_missing_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("terraform.tfstate");
+        let state = serde_json::json!({
+            "resources": [
+                {"other_field": "value"},
+                {"type": "aws_vpc"}
+            ]
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig = hash_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.inputs.len(), 3);
+        assert_eq!(sig.inputs[1].name, "unknown.unnamed");
+        assert_eq!(sig.inputs[2].name, "aws_vpc.unnamed");
+    }
+
+    #[tokio::test]
+    async fn hash_state_deterministic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("terraform.tfstate");
+        let state = serde_json::json!({"version": 4, "serial": 1});
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+
+        let sig1 = hash_state(path.to_str().unwrap()).await.unwrap();
+        let sig2 = hash_state(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig1.hash, sig2.hash);
+    }
+
+    #[tokio::test]
+    async fn hash_state_missing_file() {
+        let result = hash_state("/nonexistent/terraform.tfstate").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn hash_state_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.tfstate");
+        tokio::fs::write(&path, b"not valid json!!").await.unwrap();
+
+        let result = hash_state(path.to_str().unwrap()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn hash_state_changed_content_different_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path1 = dir.path().join("state1.json");
+        let path2 = dir.path().join("state2.json");
+        let state1 = serde_json::json!({"version": 4, "serial": 1});
+        let state2 = serde_json::json!({"version": 4, "serial": 2});
+        tokio::fs::write(&path1, serde_json::to_vec(&state1).unwrap()).await.unwrap();
+        tokio::fs::write(&path2, serde_json::to_vec(&state2).unwrap()).await.unwrap();
+
+        let sig1 = hash_state(path1.to_str().unwrap()).await.unwrap();
+        let sig2 = hash_state(path2.to_str().unwrap()).await.unwrap();
+        assert_ne!(sig1.hash, sig2.hash);
+    }
+
+    #[test]
+    fn tofu_collector_from_state() {
+        let c = TofuCollector::from_state("/path/terraform.tfstate");
+        assert!(matches!(c.source, TofuSource::StateFile(_)));
+        assert_eq!(c.layer_type(), LayerType::Tofu);
+    }
+
+    #[test]
+    fn tofu_collector_from_plan() {
+        let c = TofuCollector::from_plan("/path/plan.out");
+        assert!(matches!(c.source, TofuSource::PlanFile(_)));
+    }
+
+    #[test]
+    fn tofu_collector_from_remote() {
+        let c = TofuCollector::from_remote("/project/dir");
+        assert!(matches!(c.source, TofuSource::RemoteState(_)));
+    }
+
+    #[test]
+    fn tofu_source_clone_debug() {
+        let source = TofuSource::StateFile("/path".to_string());
+        let cloned = source.clone();
+        assert!(format!("{:?}", cloned).contains("StateFile"));
+    }
+}

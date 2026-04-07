@@ -273,4 +273,76 @@ mod tests {
         let decrypted = enc.decrypt(&encrypted, &key).unwrap();
         assert_eq!(entry.sequence, decrypted.sequence);
     }
+
+    #[test]
+    fn encrypt_decrypt_multi_block_payload() {
+        let entry = test_entry(99);
+        let key = [0x55u8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        assert!(encrypted.ciphertext.len() > 32, "payload should span multiple keystream blocks");
+        let decrypted = decrypt_entry(&encrypted, &key).unwrap();
+        assert_eq!(entry, decrypted);
+    }
+
+    #[test]
+    fn ciphertext_not_plaintext() {
+        let entry = test_entry(10);
+        let key = [0xABu8; 32];
+        let plaintext = serde_json::to_vec(&entry).unwrap();
+        let encrypted = encrypt_entry(&entry, &key);
+        assert_ne!(encrypted.ciphertext, plaintext, "ciphertext must differ from plaintext");
+    }
+
+    #[test]
+    fn same_entry_same_key_same_ciphertext() {
+        let key = [0xAAu8; 32];
+        let entry1 = HeartbeatEntry {
+            sequence: 1,
+            timestamp: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc),
+            verifier: VerifierIdentity::new("test", "node-1", "1.0"),
+            event: HeartbeatEvent::GateCheck,
+            result: VerificationOutcome::Allowed,
+            resource: "test/resource".to_string(),
+            signature_checked: Blake3Hash::digest(b"sig"),
+            entry_hash: Blake3Hash::digest(b"entry-1"),
+            previous_hash: Blake3Hash::from([0u8; 32]),
+        };
+        let entry2 = entry1.clone();
+        let enc1 = encrypt_entry(&entry1, &key);
+        let enc2 = encrypt_entry(&entry2, &key);
+        assert_eq!(enc1.ciphertext, enc2.ciphertext, "identical entries with same key must produce identical ciphertext");
+    }
+
+    #[test]
+    fn mock_encryption_mac_fails_with_wrong_key() {
+        let mock = MockEntryEncryption;
+        let entry = test_entry(0);
+        let key = [0x42u8; 32];
+        let wrong_key = [0x99u8; 32];
+        let encrypted = mock.encrypt(&entry, &key);
+        assert!(!mock.verify_mac(&encrypted, &wrong_key));
+        let result = mock.decrypt(&encrypted, &wrong_key);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encrypted_entry_serde_json_roundtrip_complete() {
+        let entry = test_entry(100);
+        let key = [0xCCu8; 32];
+        let encrypted = encrypt_entry(&entry, &key);
+        let json = serde_json::to_string(&encrypted).unwrap();
+        let deserialized: EncryptedEntry = serde_json::from_str(&json).unwrap();
+        let decrypted = decrypt_entry(&deserialized, &key).unwrap();
+        assert_eq!(entry, decrypted, "full roundtrip: encrypt -> serialize -> deserialize -> decrypt");
+    }
+
+    #[test]
+    fn tampered_mac_fails_verification() {
+        let entry = test_entry(11);
+        let key = [0xABu8; 32];
+        let mut encrypted = encrypt_entry(&entry, &key);
+        encrypted.mac = Blake3Hash::digest(b"tampered-mac");
+        assert!(!verify_mac(&encrypted, &key));
+        assert!(decrypt_entry(&encrypted, &key).is_err());
+    }
 }
