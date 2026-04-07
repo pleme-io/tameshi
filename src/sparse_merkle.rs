@@ -587,4 +587,157 @@ mod tests {
         assert_eq!(tree.len(), 1);
         let _ = tree.root();
     }
+
+    #[test]
+    #[should_panic(expected = "depth must be 1..=256")]
+    fn new_depth_zero_panics() {
+        SparseMerkleTree::new(0);
+    }
+
+    #[test]
+    #[should_panic(expected = "depth must be 1..=256")]
+    fn new_depth_257_panics() {
+        SparseMerkleTree::new(257);
+    }
+
+    #[test]
+    fn new_depth_1_works() {
+        let tree = SparseMerkleTree::new(1);
+        assert!(tree.is_empty());
+        assert_eq!(tree.len(), 0);
+        let _ = tree.root();
+    }
+
+    #[test]
+    fn new_depth_256_works() {
+        let tree = SparseMerkleTree::new(256);
+        assert!(tree.is_empty());
+        let _ = tree.root();
+    }
+
+    #[test]
+    fn remove_nonexistent_returns_none() {
+        let mut tree = SparseMerkleTree::new(8);
+        let key = Blake3Hash::digest(b"never-inserted");
+        assert!(tree.remove(&key).is_none());
+    }
+
+    #[test]
+    fn get_nonexistent_returns_none() {
+        let tree = SparseMerkleTree::new(8);
+        let key = Blake3Hash::digest(b"missing");
+        assert!(tree.get(&key).is_none());
+    }
+
+    #[test]
+    fn get_returns_correct_value() {
+        let mut tree = SparseMerkleTree::new(8);
+        let key = Blake3Hash::digest(b"lookup-key");
+        let value = Blake3Hash::digest(b"lookup-value");
+        tree.insert(key.clone(), value.clone());
+        assert_eq!(tree.get(&key), Some(&value));
+    }
+
+    #[test]
+    fn is_empty_on_new_tree() {
+        let tree = SparseMerkleTree::new(16);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn is_empty_after_insert_and_remove() {
+        let mut tree = SparseMerkleTree::new(8);
+        let key = Blake3Hash::digest(b"temp");
+        tree.insert(key.clone(), Blake3Hash::digest(b"v"));
+        assert!(!tree.is_empty());
+        tree.remove(&key);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn multiple_entries_len() {
+        let mut tree = SparseMerkleTree::new(8);
+        for i in 0u32..10 {
+            tree.insert(Blake3Hash::digest(&i.to_le_bytes()), Blake3Hash::digest(&i.to_le_bytes()));
+        }
+        assert_eq!(tree.len(), 10);
+    }
+
+    #[test]
+    fn smt_serde_roundtrip() {
+        let mut tree = SparseMerkleTree::new(8);
+        let key = Blake3Hash::digest(b"serde-key");
+        let val = Blake3Hash::digest(b"serde-val");
+        tree.insert(key, val);
+
+        let json = serde_json::to_string(&tree).unwrap();
+        let deserialized: SparseMerkleTree = serde_json::from_str(&json).unwrap();
+        assert_eq!(tree.root(), deserialized.root());
+        assert_eq!(tree.len(), deserialized.len());
+    }
+
+    #[test]
+    fn smt_proof_serde_roundtrip() {
+        let mut tree = SparseMerkleTree::new(8);
+        let key = Blake3Hash::digest(b"proof-serde");
+        let val = Blake3Hash::digest(b"proof-val");
+        tree.insert(key.clone(), val);
+
+        let proof = tree.prove(&key);
+        let json = serde_json::to_string(&proof).unwrap();
+        let deserialized: SmtProof = serde_json::from_str(&json).unwrap();
+        assert_eq!(proof.key, deserialized.key);
+        assert_eq!(proof.value, deserialized.value);
+        assert_eq!(proof.siblings.len(), deserialized.siblings.len());
+    }
+
+    #[test]
+    fn mock_tree_empty_root() {
+        let mock = MockMerkleTree::new();
+        let root = mock.root();
+        assert_eq!(root, Blake3Hash::digest(b"mock-empty-root"));
+    }
+
+    #[test]
+    fn mock_tree_remove() {
+        let mut mock = MockMerkleTree::new();
+        let key = Blake3Hash::digest(b"mock-remove");
+        let val = Blake3Hash::digest(b"val");
+        mock.insert(key.clone(), val.clone());
+        let removed = mock.remove(&key);
+        assert_eq!(removed, Some(val));
+        assert!(mock.is_empty());
+    }
+
+    #[test]
+    fn mock_tree_prove() {
+        let mut mock = MockMerkleTree::new();
+        let key = Blake3Hash::digest(b"mock-prove");
+        let val = Blake3Hash::digest(b"val");
+        mock.insert(key.clone(), val.clone());
+        let proof = mock.prove(&key);
+        assert_eq!(proof.value, Some(val));
+        assert!(proof.siblings.is_empty());
+    }
+
+    #[test]
+    fn mock_tree_prove_absent() {
+        let mock = MockMerkleTree::new();
+        let key = Blake3Hash::digest(b"absent");
+        let proof = mock.prove(&key);
+        assert!(proof.value.is_none());
+    }
+
+    #[test]
+    fn empty_hash_level_zero() {
+        let h = empty_hash(0);
+        assert_eq!(h, Blake3Hash::digest(b"smt:empty:leaf"));
+    }
+
+    #[test]
+    fn empty_hash_level_one() {
+        let leaf = empty_hash(0);
+        let level_one = Blake3Hash::combine(&leaf, &leaf);
+        assert_eq!(empty_hash(1), level_one);
+    }
 }

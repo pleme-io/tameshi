@@ -211,3 +211,119 @@ impl LayerCollector for KindlingCollector {
         LayerType::Kindling
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn hash_identity_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("identity.json");
+        let identity = serde_json::json!({
+            "cluster_id": "prod-east-1",
+            "node_id": "node-001"
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap()).await.unwrap();
+
+        let sig = hash_identity(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.layer, LayerType::Kindling);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "identity-document");
+    }
+
+    #[tokio::test]
+    async fn hash_identity_with_certificates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("identity_certs.json");
+        let identity = serde_json::json!({
+            "cluster_id": "prod-east-1",
+            "certificates": [
+                {"cn": "node-001", "issuer": "ca-root"},
+                {"cn": "node-002", "issuer": "ca-root"}
+            ]
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap()).await.unwrap();
+
+        let sig = hash_identity(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.inputs.len(), 3, "1 identity + 2 certificates");
+        assert_eq!(sig.inputs[1].name, "certificate-0");
+        assert_eq!(sig.inputs[2].name, "certificate-1");
+    }
+
+    #[tokio::test]
+    async fn hash_identity_deterministic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("identity.json");
+        let identity = serde_json::json!({"cluster_id": "test"});
+        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap()).await.unwrap();
+
+        let sig1 = hash_identity(path.to_str().unwrap()).await.unwrap();
+        let sig2 = hash_identity(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig1.hash, sig2.hash);
+    }
+
+    #[tokio::test]
+    async fn hash_identity_missing_file() {
+        let result = hash_identity("/nonexistent/identity.json").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn hash_identity_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        tokio::fs::write(&path, b"not valid json!").await.unwrap();
+
+        let result = hash_identity(path.to_str().unwrap()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn hash_report_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.json");
+        let report = serde_json::json!({
+            "status": "compliant",
+            "checks_passed": 42
+        });
+        tokio::fs::write(&path, serde_json::to_vec(&report).unwrap()).await.unwrap();
+
+        let sig = hash_report(path.to_str().unwrap()).await.unwrap();
+        assert_eq!(sig.layer, LayerType::Kindling);
+        assert_eq!(sig.inputs.len(), 1);
+        assert_eq!(sig.inputs[0].name, "compliance-report");
+    }
+
+    #[tokio::test]
+    async fn hash_report_missing_file() {
+        let result = hash_report("/nonexistent/report.json").await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn kindling_collector_from_identity() {
+        let c = KindlingCollector::from_identity("/path/to/identity.json");
+        assert!(matches!(c.source, KindlingSource::IdentityFile(_)));
+        assert_eq!(c.layer_type(), LayerType::Kindling);
+    }
+
+    #[test]
+    fn kindling_collector_from_report() {
+        let c = KindlingCollector::from_report("/path/to/report.json");
+        assert!(matches!(c.source, KindlingSource::ReportFile(_)));
+    }
+
+    #[test]
+    fn kindling_collector_from_k8s_secret() {
+        let c = KindlingCollector::from_k8s_secret("kube-system", "kindling-identity");
+        assert!(matches!(c.source, KindlingSource::K8sSecret { .. }));
+    }
+
+    #[test]
+    fn kindling_source_clone_debug() {
+        let source = KindlingSource::IdentityFile("/path".to_string());
+        let cloned = source.clone();
+        assert!(format!("{:?}", cloned).contains("IdentityFile"));
+    }
+}

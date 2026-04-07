@@ -189,4 +189,55 @@ mod tests {
         let opening = Opening { value, blinding };
         assert!(scheme.verify(&commitment, &opening));
     }
+
+    #[test]
+    fn opening_serde_roundtrip() {
+        let opening = Opening {
+            value: Blake3Hash::digest(b"open-value"),
+            blinding: Blake3Hash::digest(b"open-blinding"),
+        };
+        let json = serde_json::to_string(&opening).unwrap();
+        let deserialized: Opening = serde_json::from_str(&json).unwrap();
+        assert_eq!(opening.value, deserialized.value);
+        assert_eq!(opening.blinding, deserialized.blinding);
+    }
+
+    #[test]
+    fn commitment_deterministic() {
+        let value = Blake3Hash::digest(b"deterministic-test");
+        let blinding = Blake3Hash::digest(b"fixed-blinding");
+        let c1 = commit(&value, &blinding);
+        let c2 = commit(&value, &blinding);
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn commitment_clone() {
+        let value = Blake3Hash::digest(b"clone-test");
+        let blinding = Blake3Hash::digest(b"clone-blinding");
+        let commitment = commit(&value, &blinding);
+        let cloned = commitment.clone();
+        assert_eq!(commitment, cloned);
+    }
+
+    #[test]
+    fn commit_for_bpf_same_as_commit() {
+        let root = Blake3Hash::digest(b"composed-root");
+        let blinding = Blake3Hash::digest(b"bpf-blinding");
+        let c1 = commit(&root, &blinding);
+        let c2 = commit_for_bpf(&root, &blinding);
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn both_wrong_value_and_blinding_fails() {
+        let value = Blake3Hash::digest(b"real-value");
+        let blinding = Blake3Hash::digest(b"real-blinding");
+        let commitment = commit(&value, &blinding);
+        let wrong_opening = Opening {
+            value: Blake3Hash::digest(b"wrong-value"),
+            blinding: Blake3Hash::digest(b"wrong-blinding"),
+        };
+        assert!(!verify_commitment(&commitment, &wrong_opening));
+    }
 }

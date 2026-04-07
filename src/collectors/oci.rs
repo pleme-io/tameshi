@@ -181,3 +181,132 @@ impl LayerCollector for OciCollector {
         LayerType::Oci
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_manifest_layers_oci_image() {
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "config": {
+                "digest": "sha256:config123",
+                "size": 1234
+            },
+            "layers": [
+                {"digest": "sha256:layer1abc", "size": 10000},
+                {"digest": "sha256:layer2def", "size": 20000}
+            ]
+        });
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let inputs = parse_manifest_layers(&bytes, "test-image:latest").unwrap();
+        assert_eq!(inputs.len(), 3, "2 layers + 1 config");
+        assert!(inputs[0].name.starts_with("layer-0-"));
+        assert!(inputs[1].name.starts_with("layer-1-"));
+        assert!(inputs[2].name.starts_with("config-"));
+        assert_eq!(inputs[0].size_bytes, Some(10000));
+        assert_eq!(inputs[1].size_bytes, Some(20000));
+        assert_eq!(inputs[2].size_bytes, Some(1234));
+    }
+
+    #[test]
+    fn parse_manifest_layers_manifest_list() {
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "manifests": [
+                {
+                    "digest": "sha256:amd64abc",
+                    "size": 5000,
+                    "platform": {"os": "linux", "architecture": "amd64"}
+                },
+                {
+                    "digest": "sha256:arm64def",
+                    "size": 6000,
+                    "platform": {"os": "linux", "architecture": "arm64"}
+                }
+            ]
+        });
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let inputs = parse_manifest_layers(&bytes, "multi-arch:v1").unwrap();
+        assert_eq!(inputs.len(), 2);
+        assert!(inputs[0].name.contains("linux/amd64"));
+        assert!(inputs[1].name.contains("linux/arm64"));
+        assert_eq!(inputs[0].size_bytes, Some(5000));
+    }
+
+    #[test]
+    fn parse_manifest_layers_empty_manifest() {
+        let manifest = serde_json::json!({"schemaVersion": 2});
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let inputs = parse_manifest_layers(&bytes, "empty:v1").unwrap();
+        assert!(inputs.is_empty());
+    }
+
+    #[test]
+    fn parse_manifest_layers_invalid_json() {
+        let result = parse_manifest_layers(b"not json", "bad:v1");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_manifest_layers_missing_digest() {
+        let manifest = serde_json::json!({
+            "layers": [
+                {"size": 10000},
+                {"digest": "sha256:valid", "size": 20000}
+            ]
+        });
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let inputs = parse_manifest_layers(&bytes, "partial:v1").unwrap();
+        assert_eq!(inputs.len(), 1, "layer without digest should be skipped");
+    }
+
+    #[test]
+    fn parse_manifest_layers_missing_platform() {
+        let manifest = serde_json::json!({
+            "manifests": [
+                {"digest": "sha256:noplatform", "size": 1000}
+            ]
+        });
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let inputs = parse_manifest_layers(&bytes, "noplatform:v1").unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert!(inputs[0].name.starts_with("manifest-0"));
+    }
+
+    #[test]
+    fn parse_manifest_layers_config_without_size() {
+        let manifest = serde_json::json!({
+            "config": {"digest": "sha256:configonly"}
+        });
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let inputs = parse_manifest_layers(&bytes, "configonly:v1").unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert!(inputs[0].name.starts_with("config-"));
+        assert_eq!(inputs[0].size_bytes, None);
+    }
+
+    #[test]
+    fn parse_manifest_layers_deterministic_hash() {
+        let manifest = serde_json::json!({
+            "layers": [{"digest": "sha256:abc123", "size": 100}]
+        });
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let inputs1 = parse_manifest_layers(&bytes, "det:v1").unwrap();
+        let inputs2 = parse_manifest_layers(&bytes, "det:v1").unwrap();
+        assert_eq!(inputs1[0].hash, inputs2[0].hash, "same digest must produce same hash");
+    }
+
+    #[test]
+    fn oci_collector_layer_type() {
+        let collector = OciCollector::new("test:latest");
+        assert_eq!(collector.layer_type(), LayerType::Oci);
+    }
+
+    #[test]
+    fn oci_collector_stores_image_ref() {
+        let collector = OciCollector::new("ghcr.io/org/app:v1.0");
+        assert_eq!(collector.image_ref, "ghcr.io/org/app:v1.0");
+    }
+}

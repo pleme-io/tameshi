@@ -240,4 +240,105 @@ mod tests {
         };
         assert_eq!(r1, r2);
     }
+
+    #[test]
+    fn verify_master_without_compliance_uses_untested() {
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix-data"),
+            make_layer(LayerType::Oci, b"oci-data"),
+        ];
+        let master = merkle::compose_merkle(&layers, "staging");
+        assert!(!master.is_fully_attested());
+        let expected = master.gating_signature().clone();
+        assert_eq!(expected, master.untested, "without compliance, gating = untested");
+        let result = verify_master(&master, &expected);
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn verify_secure_without_compliance_still_passes() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let master = merkle::compose_merkle(&layers, "dev");
+        let expected = master.gating_signature().clone();
+        assert!(verify_secure(&master, &expected).is_ok());
+    }
+
+    #[test]
+    fn verify_untested_mismatch_error_message() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let master = merkle::compose_merkle(&layers, "test");
+        let wrong = Blake3Hash::digest(b"wrong");
+        let err = verify_untested(&master, &wrong).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("expected") || msg.contains("got") || msg.contains("verification"),
+            "error should describe the mismatch: {}", msg);
+    }
+
+    #[test]
+    fn verify_secure_wrong_hash_error_message() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let compliance = Blake3Hash::digest(b"compliance");
+        let master = merkle::compose_merkle(&layers, "prod").with_compliance(compliance);
+        let wrong = Blake3Hash::digest(b"wrong");
+        let err = verify_secure(&master, &wrong).unwrap_err();
+        assert!(err.to_string().contains(wrong.to_hex().as_str()) ||
+                err.to_string().contains("expected"));
+    }
+
+    #[test]
+    fn verify_prefixed_wrong_hash_value() {
+        let layers = vec![make_layer(LayerType::Nix, b"nix")];
+        let master = merkle::compose_merkle(&layers, "test");
+        let wrong_prefixed = format!("blake3:{}", Blake3Hash::digest(b"wrong").to_hex());
+        let result = verify_prefixed(&master, &wrong_prefixed);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_master_with_compliance_both_checked() {
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix"),
+            make_layer(LayerType::Oci, b"oci"),
+            make_layer(LayerType::Helm, b"helm"),
+        ];
+        let compliance = Blake3Hash::digest(b"compliance-hash");
+        let master = merkle::compose_merkle(&layers, "prod").with_compliance(compliance);
+        assert!(master.is_fully_attested());
+        let expected = master.gating_signature().clone();
+        let result = verify_master(&master, &expected);
+        assert!(result.passed);
+        assert!(result.description.contains("prod"));
+    }
+
+    #[test]
+    fn layer_verification_equality() {
+        let h = Blake3Hash::digest(b"test");
+        let lv1 = LayerVerification {
+            layer: "nix".to_string(),
+            passed: true,
+            expected: h.clone(),
+            actual: h.clone(),
+        };
+        let lv2 = LayerVerification {
+            layer: "nix".to_string(),
+            passed: true,
+            expected: h.clone(),
+            actual: h,
+        };
+        assert_eq!(lv1, lv2);
+    }
+
+    #[test]
+    fn verification_result_clone() {
+        let h = Blake3Hash::digest(b"clone-test");
+        let result = VerificationResult {
+            passed: true,
+            expected: h.clone(),
+            actual: h,
+            description: "clone test".to_string(),
+            layer_results: vec![],
+        };
+        let cloned = result.clone();
+        assert_eq!(result, cloned);
+    }
 }

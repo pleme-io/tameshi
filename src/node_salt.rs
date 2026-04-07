@@ -224,4 +224,52 @@ mod tests {
         let salt_2 = MockTpmSalt::for_testing();
         assert_eq!(salt_1.salt(), salt_2.salt());
     }
+
+    #[test]
+    fn mock_salt_new_with_specific_value() {
+        let hash = Blake3Hash::digest(b"specific-salt-value");
+        let salt = MockTpmSalt::new(hash.clone());
+        assert_eq!(salt.salt(), hash);
+    }
+
+    #[test]
+    fn mock_salt_clone() {
+        let salt = MockTpmSalt::from_node_name("cloneable");
+        let cloned = salt.clone();
+        assert_eq!(salt.salt(), cloned.salt());
+    }
+
+    #[test]
+    fn salted_root_deterministic() {
+        let composed = Blake3Hash::digest(b"composed-data");
+        let salt = Blake3Hash::digest(b"node-salt");
+        let r1 = salted_root(&composed, &salt);
+        let r2 = salted_root(&composed, &salt);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn salted_root_differs_from_unsalted() {
+        let composed = Blake3Hash::digest(b"composed-data");
+        let salt = Blake3Hash::digest(b"salt-value");
+        let sr = salted_root(&composed, &salt);
+        assert_ne!(sr, composed, "salted root must differ from the original composed root");
+    }
+
+    #[test]
+    fn system_id_salt_creation() {
+        let result = SystemIdSalt::new();
+        if let Ok(sys_salt) = result {
+            let s1 = sys_salt.salt();
+            let s2 = sys_salt.salt();
+            assert_eq!(s1, s2, "system salt must be deterministic across calls");
+        }
+    }
+
+    #[test]
+    fn empty_node_name_produces_valid_salt() {
+        let salt = MockTpmSalt::from_node_name("");
+        let s = salt.salt();
+        assert_ne!(s, Blake3Hash::from([0u8; 32]), "empty name should still produce a non-zero hash");
+    }
 }

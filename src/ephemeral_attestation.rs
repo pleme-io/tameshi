@@ -208,7 +208,67 @@ mod tests {
         let hash = test_hash(b"custom-ttl");
         let att = mgr.attest_with_ttl(hash, test_hash(b"root"), 10);
         assert_eq!(att.ttl_secs, 10);
-        // The attestation should expire much sooner than the default.
         assert!(att.remaining_secs() <= 10);
+    }
+
+    #[test]
+    fn attest_replaces_existing() {
+        let mgr = EphemeralAttestationManager::new(60);
+        let hash = test_hash(b"replace-binary");
+        let root1 = test_hash(b"root-v1");
+        let root2 = test_hash(b"root-v2");
+
+        mgr.attest(hash.clone(), root1);
+        mgr.attest(hash.clone(), root2);
+
+        assert_eq!(mgr.total_count(), 1, "same binary hash should replace, not duplicate");
+        assert!(mgr.is_attested(&hash));
+    }
+
+    #[test]
+    fn sweep_preserves_active() {
+        let mgr = EphemeralAttestationManager::new(3600);
+        let active_hash = test_hash(b"active");
+        let expired_hash = test_hash(b"expired");
+
+        mgr.attest(active_hash.clone(), test_hash(b"r1"));
+        mgr.attest_with_ttl(expired_hash.clone(), test_hash(b"r2"), 0);
+
+        let swept = mgr.sweep_expired();
+        assert_eq!(swept.len(), 1);
+        assert_eq!(swept[0], expired_hash);
+        assert!(mgr.is_attested(&active_hash), "active attestation must survive sweep");
+        assert!(!mgr.is_attested(&expired_hash), "expired should be gone");
+    }
+
+    #[test]
+    fn sweep_empty_manager() {
+        let mgr = EphemeralAttestationManager::new(60);
+        let swept = mgr.sweep_expired();
+        assert!(swept.is_empty());
+    }
+
+    #[test]
+    fn multiple_sweeps_idempotent() {
+        let mgr = EphemeralAttestationManager::new(60);
+        let hash = test_hash(b"multi-sweep");
+        mgr.attest_with_ttl(hash, test_hash(b"root"), 0);
+
+        let first = mgr.sweep_expired();
+        assert_eq!(first.len(), 1);
+        let second = mgr.sweep_expired();
+        assert!(second.is_empty(), "second sweep should find nothing");
+    }
+
+    #[test]
+    fn is_expired_at_boundary() {
+        let att = EphemeralAttestation::new(
+            test_hash(b"boundary"),
+            test_hash(b"root"),
+            60,
+        );
+        assert!(!att.is_expired_at(att.attested_at));
+        assert!(att.is_expired_at(att.expires_at));
+        assert!(att.is_expired_at(att.expires_at + chrono::Duration::seconds(1)));
     }
 }

@@ -102,4 +102,54 @@ mod tests {
         let tameshi_err: TameshiError = serde_err.into();
         assert!(matches!(tameshi_err, TameshiError::SerializationError(_)));
     }
+
+    #[test]
+    fn error_is_send_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<TameshiError>();
+        assert_sync::<TameshiError>();
+    }
+
+    #[test]
+    fn error_debug_format() {
+        let err = TameshiError::HashError("test".to_string());
+        let debug = format!("{:?}", err);
+        assert!(debug.contains("HashError"));
+    }
+
+    #[test]
+    fn command_failed_exit_code() {
+        let err = TameshiError::CommandFailed {
+            command: "test-cmd".to_string(),
+            code: 127,
+            stderr: "command not found".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("127"), "should include exit code");
+        assert!(msg.contains("command not found"), "should include stderr");
+    }
+
+    #[test]
+    fn verification_failed_contains_both_hashes() {
+        let err = TameshiError::VerificationFailed {
+            expected: "aaa".to_string(),
+            actual: "bbb".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("aaa"));
+        assert!(msg.contains("bbb"));
+    }
+
+    #[test]
+    fn result_type_alias_works() {
+        fn returns_ok() -> Result<u32> {
+            Ok(42)
+        }
+        fn returns_err() -> Result<u32> {
+            Err(TameshiError::InvalidInput("bad".to_string()))
+        }
+        assert_eq!(returns_ok().unwrap(), 42);
+        assert!(returns_err().is_err());
+    }
 }
