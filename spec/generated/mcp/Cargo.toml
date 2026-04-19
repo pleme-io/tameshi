@@ -3,7 +3,8 @@ name = "tameshi_mcp"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.89.0"
-description = "Deterministic integrity attestation and compliance verification for infrastructure.
+description = """
+Deterministic integrity attestation and compliance verification for infrastructure.
 
 Tameshi unifies two complementary services:
 
@@ -15,7 +16,7 @@ Tameshi unifies two complementary services:
 Together they provide a cryptographically verifiable chain from source code
 through build, image, chart, deployment, and compliance -- producing a single
 certification hash that attests the entire stack.
-"
+"""
 license = "MIT"
 
 [[bin]]
