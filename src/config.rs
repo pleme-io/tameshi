@@ -40,10 +40,12 @@
 //! Nested structs use double underscores:
 //! - `tls.cert_path` → `MYAPP_TLS__CERT_PATH`
 
-use figment::providers::{Env, Format, Serialized, Yaml};
-use figment::Figment;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+
+// Config loading delegates to shikumi's ProviderChain — the pleme-io
+// standard. shikumi wraps figment behind a fluent API; the public
+// trait surface here is unchanged.
 
 use crate::error::TameshiError;
 
@@ -59,7 +61,10 @@ pub trait ConfigLoader: Send + Sync {
         T: Default + Serialize + serde::de::DeserializeOwned;
 }
 
-/// Default config loader using the layered figment pattern.
+/// Default config loader using the layered pattern (defaults → YAML → env).
+///
+/// Historically called `FigmentConfigLoader` — name retained for API
+/// stability. Internals delegate to shikumi's `ProviderChain`.
 pub struct FigmentConfigLoader {
     /// Environment variable prefix.
     pub env_prefix: String,
@@ -68,7 +73,7 @@ pub struct FigmentConfigLoader {
 }
 
 impl FigmentConfigLoader {
-    /// Create a new figment config loader.
+    /// Create a new layered config loader.
     #[must_use]
     pub fn new(env_prefix: &str, yaml_paths: &[&str]) -> Self {
         Self {
@@ -98,21 +103,22 @@ pub fn load_config<T>(env_prefix: &str, yaml_paths: &[&str]) -> Result<T, Tamesh
 where
     T: Default + Serialize + DeserializeOwned,
 {
-    let mut figment = Figment::new().merge(Serialized::defaults(T::default()));
+    let mut chain = shikumi::ProviderChain::new().with_defaults(&T::default());
 
-    // Merge the first YAML file that exists
+    // Merge the first YAML file that exists.
     for path in yaml_paths {
-        if std::path::Path::new(path).exists() {
-            figment = figment.merge(Yaml::file(path));
+        let p = std::path::Path::new(path);
+        if p.exists() {
+            chain = chain.with_file(p);
             break;
         }
     }
 
-    // Environment variables override everything
-    figment = figment.merge(Env::prefixed(&format!("{}_", env_prefix)).split("__"));
+    // Environment variables override everything.
+    chain = chain.with_env(&format!("{}_", env_prefix));
 
-    figment.extract().map_err(|e| {
-        TameshiError::ConfigError(format!("failed to load config: {}", e))
+    chain.extract().map_err(|e| {
+        TameshiError::ConfigError(format!("failed to load config: {e}"))
     })
 }
 

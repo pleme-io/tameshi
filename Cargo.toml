@@ -42,8 +42,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Object storage abstraction (S3, GCS, Azure, local) for heartbeat log forwarding
 object_store = { version = "0.13", features = ["aws"] }
 
-# Configuration (layered: defaults → YAML → envvars)
-figment = { version = "0.10", features = ["yaml", "env"] }
+# Configuration (layered: defaults → YAML → envvars) via shikumi,
+# the pleme-io standard. shikumi wraps figment so this crate doesn't
+# have to depend on figment directly.
+shikumi = { git = "https://github.com/pleme-io/shikumi" }
 
 # Error handling
 thiserror = "2.0"
