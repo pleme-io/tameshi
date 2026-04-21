@@ -1,5 +1,12 @@
 # tameshi -- Deterministic integrity attestation library
 
+<!-- Blackmatter alignment: pillars 10 -->
+<!-- See ~/code/github/pleme-io/BLACKMATTER.md for pillar definitions. -->
+
+## Blackmatter pillars upheld
+
+- **Pillar 10** (Proof discipline): Tameshi IS Pillar 10's cryptographic spine. Every artifact in the pleme-io platform hashes through a BLAKE3 Merkle tree rooted at tameshi. `Attested<T>` (arch-synthesizer) refuses to seal without a tameshi-verified proof; `sekiban` enforces at K8s admission; `kensa` enforces compliance; `inshou` gates Nix rebuilds. Cross-infra attestation chains compose here.
+
 Core library for the Unified Theory of Infrastructure Proof. Provides cryptographic hash computation, Merkle tree composition, signature verification, compliance attestation, and tamper-evident audit trails across infrastructure layers. Edition 2024, Rust 1.89.0, MIT.
 
 ## Build
