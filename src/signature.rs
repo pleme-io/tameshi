@@ -79,6 +79,11 @@ pub enum LayerType {
     AgentCertificates,
     /// Kasou virtual machine state (VM config + disk image + network identity).
     Kasou,
+    /// Claude Code skill — a compliant agent capability whose source +
+    /// declared capabilities + threat model + scanner outputs hash to a
+    /// deterministic LayerSignature. Used by skill-evidence collectors
+    /// to publish skill listings into compliant artifact stores.
+    Skill,
 }
 
 impl fmt::Display for LayerType {
@@ -109,6 +114,7 @@ impl fmt::Display for LayerType {
             Self::AgentDependencies => write!(f, "agent_dependencies"),
             Self::AgentCertificates => write!(f, "agent_certificates"),
             Self::Kasou => write!(f, "kasou"),
+            Self::Skill => write!(f, "skill"),
         }
     }
 }
@@ -143,6 +149,7 @@ impl FromStr for LayerType {
             "agent_dependencies" | "agentdependencies" => Ok(Self::AgentDependencies),
             "agent_certificates" | "agentcertificates" => Ok(Self::AgentCertificates),
             "kasou" | "vm" => Ok(Self::Kasou),
+            "skill" => Ok(Self::Skill),
             other => Err(crate::error::TameshiError::InvalidInput(format!(
                 "unknown layer type: '{other}'"
             ))),
