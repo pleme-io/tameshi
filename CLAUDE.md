@@ -16,7 +16,7 @@ Core library for the Unified Theory of Infrastructure Proof. Provides cryptograp
 
 ```bash
 cargo check
-cargo test          # 1446 tests (1289 lib + 95 e2e + 38 proptest + 13 spec + 11 doc)
+cargo test          # 1834 tests (1712 lib + 122 across 6 integration files; counts include proptest, spec, doctests)
 cargo build --release
 ```
 
