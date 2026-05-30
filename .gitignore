@@ -1,3 +1,4 @@
 /target
 proofs/kani/target
 spec/generated/mcp/Cargo.lock
+Cargo.build-spec.json
