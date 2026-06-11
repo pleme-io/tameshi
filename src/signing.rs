@@ -3,9 +3,14 @@
 //! Provides the [`MerkleRootSigner`] trait for signing and verifying Merkle roots.
 //! Two implementations:
 //!
-//! - [`LocalSigner`] — file-based Ed25519 key for development and testing
-//! - [`AkeylessDfcSigner`] — calls Akeyless DFC signing API (threshold signing,
-//!   key never exists in one piece)
+//! - [`LocalSigner`] — real public-key **Ed25519** (ed25519-dalek), seed-derived
+//!   and deterministic (RFC 8032). The 32-byte verifying key verifies a
+//!   [`SignedRoot`] **without the secret seed** (see [`verify_signed_root`]) —
+//!   the load-bearing property for mutually-untrusting peers verifying each
+//!   other's attestations. (Before 2026-06-11 this was a symmetric BLAKE3 keyed
+//!   MAC; the `Ed25519Local` algorithm name is now truthful.)
+//! - [`AkeylessDfcSigner`] — calls Akeyless DFC signing API (gateway-custodied
+//!   classic-key signing, key never assembled in one piece)
 //!
 //! # Break-Glass Support
 //!
@@ -83,17 +88,55 @@ pub trait MerkleRootSigner: Send + Sync {
     ) -> impl std::future::Future<Output = crate::error::Result<bool>> + Send;
 }
 
-/// Local Ed25519 signer for development and testing.
+/// Verify a [`SignedRoot`] against a 32-byte Ed25519 **verifying (public) key**,
+/// holding no secret.
 ///
-/// Uses a 32-byte seed to derive an Ed25519 keypair. The seed can be loaded
-/// from a file or generated randomly for testing.
+/// This is the load-bearing primitive for a swarm of mutually-untrusting peers:
+/// a peer distributes only its public key (e.g. under the mutirão UserId→NodeId
+/// certificate chain), and every other peer verifies that peer's attestations
+/// with this function — no shared seed, no symmetric secret. Returns `false`
+/// for a malformed key, a wrong-length signature, or a non-Ed25519 algorithm,
+/// never an error.
+#[must_use]
+pub fn verify_signed_root(signed: &SignedRoot, verifying_key: &[u8; 32]) -> bool {
+    if !matches!(signed.algorithm, SigningAlgorithm::Ed25519Local) {
+        return false;
+    }
+    verify_ed25519(&signed.root.0, &signed.signature, verifying_key)
+}
+
+/// Verify an Ed25519 signature over `data` with a 32-byte public key.
+/// Returns `false` on any malformed input — never panics, never errors.
+///
+/// Uses `verify_strict`: it rejects small-order / torsion-component public keys
+/// and non-canonical signatures. In a swarm of mutually-untrusting peers that
+/// hardening (against signature malleability and key-substitution) is the point.
+fn verify_ed25519(data: &[u8], signature: &[u8], verifying_key: &[u8; 32]) -> bool {
+    use ed25519_dalek::{Signature, VerifyingKey};
+    let Ok(sig_bytes) = <[u8; 64]>::try_from(signature) else {
+        return false;
+    };
+    let Ok(vk) = VerifyingKey::from_bytes(verifying_key) else {
+        return false;
+    };
+    let sig = Signature::from_bytes(&sig_bytes);
+    vk.verify_strict(data, &sig).is_ok()
+}
+
+/// Local **Ed25519** signer (real public-key crypto) for development and testing.
+///
+/// A 32-byte seed deterministically derives an Ed25519 keypair
+/// ([`ed25519_dalek::SigningKey::from_bytes`]); signing is deterministic
+/// (RFC 8032), so the same root signs to the same 64-byte signature. Verification
+/// needs only the 32-byte [`LocalSigner::verifying_key`] — see the free function
+/// [`verify_signed_root`] for the no-secret path.
 pub struct LocalSigner {
     seed: [u8; 32],
     signer_id: String,
 }
 
 impl LocalSigner {
-    /// Create a signer from a 32-byte seed.
+    /// Create a signer from a 32-byte Ed25519 seed.
     #[must_use]
     pub fn from_seed(seed: [u8; 32], signer_id: &str) -> Self {
         Self {
@@ -108,28 +151,33 @@ impl LocalSigner {
         Self::from_seed([42u8; 32], "test-signer")
     }
 
-    /// Get the public key bytes (BLAKE3 hash of seed for simplicity).
-    /// In production, this would be the actual Ed25519 public key.
+    /// The real 32-byte Ed25519 verifying (public) key. Safe to publish — it is
+    /// what other peers pass to [`verify_signed_root`].
+    #[must_use]
+    pub fn verifying_key(&self) -> [u8; 32] {
+        ed25519_dalek::SigningKey::from_bytes(&self.seed)
+            .verifying_key()
+            .to_bytes()
+    }
+
+    /// BLAKE3 hash of the **public** verifying key (a short signer fingerprint).
+    /// Never hashes the secret seed.
     #[must_use]
     pub fn public_key_hash(&self) -> Blake3Hash {
-        Blake3Hash::digest(&self.seed)
+        Blake3Hash::digest(&self.verifying_key())
     }
 
-    /// Sign data using the seed as an HMAC-like construction.
-    /// Uses BLAKE3 keyed hash for deterministic, verifiable signatures.
+    /// Sign `data` with the seed-derived Ed25519 key — deterministic (RFC 8032),
+    /// 64-byte signature.
     fn sign_bytes(&self, data: &[u8]) -> Vec<u8> {
-        // BLAKE3 keyed hash: H(seed || data) — deterministic MAC
-        let mut input = Vec::with_capacity(32 + data.len());
-        input.extend_from_slice(&self.seed);
-        input.extend_from_slice(data);
-        let hash = Blake3Hash::digest(&input);
-        hash.0.to_vec()
+        use ed25519_dalek::{Signer, SigningKey};
+        let key = SigningKey::from_bytes(&self.seed);
+        key.sign(data).to_bytes().to_vec()
     }
 
-    /// Verify a signature against data.
+    /// Verify a signature against `data` using this signer's own public key.
     fn verify_bytes(&self, data: &[u8], signature: &[u8]) -> bool {
-        let expected = self.sign_bytes(data);
-        expected == signature
+        verify_ed25519(data, signature, &self.verifying_key())
     }
 }
 
@@ -832,6 +880,67 @@ mod tests {
 
         let verified = signer.verify(&signed).await.unwrap();
         assert!(!verified, "Tampered root should reject");
+    }
+
+    #[tokio::test]
+    async fn local_signer_real_ed25519_signature() {
+        // The signature is a 64-byte Ed25519 signature, not a 32-byte MAC.
+        let signer = LocalSigner::for_testing();
+        let signed = signer.sign(&Blake3Hash::digest(b"r")).await.unwrap();
+        assert_eq!(signed.signature.len(), 64, "Ed25519 signatures are 64 bytes");
+        // The verifying key is the real 32-byte Ed25519 public key, distinct from
+        // both the secret seed and the BLAKE3 hash of it.
+        assert_eq!(signer.verifying_key().len(), 32);
+        assert_ne!(signer.verifying_key(), [42u8; 32]);
+    }
+
+    #[tokio::test]
+    async fn verify_with_public_key_only() {
+        // The load-bearing swarm property: a third party that holds ONLY the
+        // verifying key (no seed, no signer) can verify the attestation.
+        let signer = LocalSigner::from_seed([7u8; 32], "peer-a");
+        let root = Blake3Hash::digest(b"attestation");
+        let signed = signer.sign(&root).await.unwrap();
+
+        let pubkey = signer.verifying_key();
+        assert!(
+            verify_signed_root(&signed, &pubkey),
+            "a holder of only the public key must verify the signature"
+        );
+
+        // A different peer's public key rejects it.
+        let other_pubkey = LocalSigner::from_seed([8u8; 32], "peer-b").verifying_key();
+        assert!(
+            !verify_signed_root(&signed, &other_pubkey),
+            "the wrong public key must reject"
+        );
+
+        // A tampered root rejects under the public key.
+        let mut tampered = signed.clone();
+        tampered.root = Blake3Hash::digest(b"forged");
+        assert!(!verify_signed_root(&tampered, &pubkey), "tampered root must reject");
+    }
+
+    #[test]
+    fn verify_signed_root_rejects_malformed() {
+        let root = Blake3Hash::digest(b"x");
+        // Wrong-length signature, all-zero key, wrong algorithm — each false, no panic.
+        let short = SignedRoot {
+            root: root.clone(),
+            signature: vec![0u8; 10],
+            algorithm: SigningAlgorithm::Ed25519Local,
+            signer_id: "s".into(),
+            signed_at: Utc::now(),
+        };
+        assert!(!verify_signed_root(&short, &[0u8; 32]));
+        let wrong_algo = SignedRoot {
+            root,
+            signature: vec![0u8; 64],
+            algorithm: SigningAlgorithm::MockDfc,
+            signer_id: "s".into(),
+            signed_at: Utc::now(),
+        };
+        assert!(!verify_signed_root(&wrong_algo, &[1u8; 32]));
     }
 
     // =========================================================================

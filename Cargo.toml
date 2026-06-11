@@ -23,6 +23,11 @@ sha2 = "0.10"
 const-hex = "1"
 rs_merkle = "1.4"
 
+# Asymmetric signing — real public-key Ed25519 for LocalSigner / SignedRoot.
+# Deterministic (RFC 8032), seed-derived keypair, public-key-only verification.
+# Default features keep `zeroize` (secret hygiene on SigningKey) + `fast` + `std`.
+ed25519-dalek = "2"
+
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
