@@ -64,7 +64,7 @@ src/
   changeset.rs                  -- CertifiedChangeset, hash_changeset
   certification.rs              -- ProductCertification builder (7-stage pipeline)
   certification_artifact.rs     -- CertificationArtifact (3-leaf Merkle: provenance + compliance + intent), ArtifactProofPaths, verify_certification_artifact, verify_proof_path
-  signing.rs                    -- MerkleRootSigner trait, LocalSigner (Ed25519), AkeylessDfcSigner (DFC threshold), MockDfcSigner (split-knowledge XOR), BreakGlassToken, SignedRoot, SigningAlgorithm
+  signing.rs                    -- MerkleRootSigner trait, LocalSigner (real public-key Ed25519 + verify_signed_root pubkey-only verify), AkeylessDfcSigner (DFC threshold), MockDfcSigner (split-knowledge XOR), BreakGlassToken, SignedRoot, SigningAlgorithm
   heartbeat.rs                  -- HeartbeatChain (RwLock thread-safe), HeartbeatEntry, HeartbeatEvent (14 variants), VerificationOutcome, VerifierIdentity, ConsistencyProof, S3Emitter, HeartbeatEmitter trait
   compliance_api.rs             -- ComplianceQuery trait, ComplianceState, ComplianceStatus, ComplianceDistance, FrameworkState, CertificationQueryStatus, DynamicComplianceCheck, CheckDefinition
   iac_attestation.rs            -- IacTestAttester trait, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport, MockIacTestAttester
@@ -186,7 +186,7 @@ spec/
 
 - **`SignedRoot`** -- root hash + signature bytes + algorithm + signer ID + timestamp.
 - **`SigningAlgorithm`** -- enum: `Ed25519Local`, `AkeylessDfc { key_name }`, `MockDfc`, `BreakGlass`.
-- **`LocalSigner`** -- Ed25519 HMAC-like signing using BLAKE3 keyed hash. Development/testing.
+- **`LocalSigner`** -- real public-key **Ed25519** (ed25519-dalek), seed-derived + deterministic (RFC 8032). `verifying_key()` is the 32-byte public key; the free function `verify_signed_root(signed, &pubkey)` verifies with **no secret** (`verify_strict`) — the property that lets mutually-untrusting peers verify each other's attestations. (Was a symmetric BLAKE3 keyed MAC before 2026-06-11; the `Ed25519Local` name is now truthful.) Development/testing.
 - **`AkeylessDfcSigner`** -- Calls Akeyless gateway REST API for threshold signing. Key never exists in one piece. Supports mTLS via `TlsConfig`.
 - **`MockDfcSigner`** -- Split-knowledge simulation. Two 32-byte fragments (`fragment_a`, `fragment_b`). Key = `BLAKE3(fragment_a XOR fragment_b)`. Neither fragment alone reveals the key. Debug output redacts fragments.
 - **`BreakGlassToken`** -- Emergency bypass with cryptographic logging. Every break-glass event is signed and logged for the 72-hour CIRCIA report.
