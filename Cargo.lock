@@ -610,15 +610,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fsevent-sys"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "futures"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -709,7 +700,8 @@ dependencies = [
 [[package]]
 name = "gen-macros"
 version = "0.1.33"
-source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01a65672c144a3365d0e0c1949102eb8149ebc8bee4f702decf699f0d12e4b22"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -719,7 +711,8 @@ dependencies = [
 [[package]]
 name = "gen-platform"
 version = "0.1.33"
-source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6a9878a6592876a0d813f1b476e74d8b6213447d7d07876de51311aed454a00"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -732,7 +725,8 @@ dependencies = [
 [[package]]
 name = "gen-types"
 version = "0.1.33"
-source = "git+https://github.com/pleme-io/gen#816be99e3f1629538008afa339ec82bcd6730f9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c45ce151777b35170110bed11f2fbe10e42a95217b83be77def5d93a97640fe4"
 dependencies = [
  "blake3",
  "chrono",
@@ -1279,7 +1273,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d3d07927151ff8575b7087f245456e549fea62edf0ec4e565a5ee50c8402bc3"
 dependencies = [
  "bitflags",
- "fsevent-sys",
  "inotify",
  "kqueue",
  "libc",
@@ -2111,8 +2104,9 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.452"
-source = "git+https://github.com/pleme-io/shikumi#a1fec80e342b705f48dce559850a5497e3c1ea81"
+version = "0.1.345"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b16ee133464b7ed883612752c462ac6846e4365dd1dcbf15d788a1a81235fb38"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -2240,7 +2234,7 @@ dependencies = [
 
 [[package]]
 name = "tameshi"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "axum",
  "blake3",
