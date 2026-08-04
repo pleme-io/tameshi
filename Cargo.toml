@@ -50,7 +50,7 @@ object_store = { version = "0.13", features = ["aws"] }
 # Configuration (layered: defaults → YAML → envvars) via shikumi,
 # the pleme-io standard. shikumi wraps figment so this crate doesn't
 # have to depend on figment directly.
-shikumi = { git = "https://github.com/pleme-io/shikumi" }
+shikumi = "0.1"
 
 # Error handling
 thiserror = "2.0"
