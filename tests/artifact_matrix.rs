@@ -7,11 +7,11 @@
 use tameshi::certification_artifact::{
     compose_certification_artifact, verify_certification_artifact,
 };
-use tameshi::gating::{evaluate_gate, GatingPolicy};
+use tameshi::gating::{GatingPolicy, evaluate_gate};
 use tameshi::hash::Blake3Hash;
 use tameshi::merkle::compose_merkle;
 use tameshi::signature::{LayerSignature, LayerType, MasterSignature};
-use tameshi::signing::{MockDfcSigner, MerkleRootSigner};
+use tameshi::signing::{MerkleRootSigner, MockDfcSigner};
 
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
@@ -66,9 +66,7 @@ fn tamper_hash(hash: &Blake3Hash) -> Blake3Hash {
 }
 
 /// Full positive pipeline: create → verify → sign → gate
-async fn positive_pipeline(
-    artifact: tameshi::certification_artifact::CertificationArtifact,
-) {
+async fn positive_pipeline(artifact: tameshi::certification_artifact::CertificationArtifact) {
     // Step 1: Verify the artifact
     assert!(
         verify_certification_artifact(&artifact),
@@ -367,32 +365,17 @@ async fn inspec_transpiled_to_rspec() {
 
 #[test]
 fn tampered_nix_closure_denied() {
-    negative_pipeline(
-        b"nix-closure-hash",
-        b"controls",
-        b"intent",
-        "artifact",
-    );
+    negative_pipeline(b"nix-closure-hash", b"controls", b"intent", "artifact");
 }
 
 #[test]
 fn tampered_oci_manifest_denied() {
-    negative_pipeline(
-        b"oci-manifest",
-        b"controls",
-        b"intent",
-        "control",
-    );
+    negative_pipeline(b"oci-manifest", b"controls", b"intent", "control");
 }
 
 #[test]
 fn tampered_helm_chart_denied() {
-    negative_pipeline(
-        b"helm-chart",
-        b"helm-controls",
-        b"helm-intent",
-        "intent",
-    );
+    negative_pipeline(b"helm-chart", b"helm-controls", b"helm-intent", "intent");
 }
 
 #[test]
@@ -427,22 +410,12 @@ fn tampered_inspec_result_denied() {
 
 #[test]
 fn tampered_git_tree_denied() {
-    negative_pipeline(
-        b"git-tree",
-        b"git-controls",
-        b"git-intent",
-        "artifact",
-    );
+    negative_pipeline(b"git-tree", b"git-controls", b"git-intent", "artifact");
 }
 
 #[test]
 fn tampered_iac_suite_denied() {
-    negative_pipeline(
-        b"iac-suite",
-        b"iac-controls",
-        b"iac-intent",
-        "control",
-    );
+    negative_pipeline(b"iac-suite", b"iac-controls", b"iac-intent", "control");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -562,10 +535,30 @@ fn sdlc_chain_all_nix_artifacts() {
 #[test]
 fn sdlc_chain_mixed_artifacts() {
     let artifacts = vec![
-        make_artifact("/nix/store/app", b"nix-build", b"nix-controls", b"nix-intent"),
-        make_artifact("ghcr.io/app:v1", b"oci-image", b"oci-controls", b"oci-intent"),
-        make_artifact("charts/app", b"helm-chart", b"helm-controls", b"helm-intent"),
-        make_artifact("pangea/synth", b"pangea-tf", b"pangea-controls", b"pangea-intent"),
+        make_artifact(
+            "/nix/store/app",
+            b"nix-build",
+            b"nix-controls",
+            b"nix-intent",
+        ),
+        make_artifact(
+            "ghcr.io/app:v1",
+            b"oci-image",
+            b"oci-controls",
+            b"oci-intent",
+        ),
+        make_artifact(
+            "charts/app",
+            b"helm-chart",
+            b"helm-controls",
+            b"helm-intent",
+        ),
+        make_artifact(
+            "pangea/synth",
+            b"pangea-tf",
+            b"pangea-controls",
+            b"pangea-intent",
+        ),
     ];
 
     for artifact in &artifacts {
@@ -590,8 +583,7 @@ fn sdlc_chain_mixed_artifacts() {
 fn sdlc_chain_missing_container_build_incomplete() {
     // Master with no certification artifacts should be denied
     let layers = vec![make_layer(LayerType::Nix, b"nix")];
-    let master = compose_merkle(&layers, "prod")
-        .with_compliance(Blake3Hash::digest(b"compliance"));
+    let master = compose_merkle(&layers, "prod").with_compliance(Blake3Hash::digest(b"compliance"));
 
     let policy = gate_policy_with_artifacts();
     let decision = evaluate_gate(&policy, &master, master.gating_signature());
@@ -617,7 +609,10 @@ fn sdlc_chain_all_passed_then_tampered() {
 
     let policy = gate_policy_with_artifacts();
     let decision = evaluate_gate(&policy, &master, master.gating_signature());
-    assert!(!decision.allowed, "Gate should deny when any artifact is tampered");
+    assert!(
+        !decision.allowed,
+        "Gate should deny when any artifact is tampered"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -796,7 +791,11 @@ mod plugin_merkle_integration {
         );
         runner.add_response("nix-store", &["--verify", "--check-contents"], "");
         runner.add_error("vulnix", &["--system"], "not found");
-        runner.add_response("nix-store", &["--gc", "--print-roots"], "/nix/var/nix/gcroots/auto/abc -> /nix/store/abc\n");
+        runner.add_response(
+            "nix-store",
+            &["--gc", "--print-roots"],
+            "/nix/var/nix/gcroots/auto/abc -> /nix/store/abc\n",
+        );
         runner.add_response("stat", &["-c", "%a", "/nix/store"], "1775\n");
         runner.add_response(
             "nix",

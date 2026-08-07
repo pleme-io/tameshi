@@ -238,14 +238,9 @@ impl VulnSummary {
         match max_severity {
             VulnSeverity::Critical => self.critical == 0,
             VulnSeverity::High => self.critical == 0 && self.high == 0,
-            VulnSeverity::Medium => {
-                self.critical == 0 && self.high == 0 && self.medium == 0
-            }
+            VulnSeverity::Medium => self.critical == 0 && self.high == 0 && self.medium == 0,
             VulnSeverity::Low => {
-                self.critical == 0
-                    && self.high == 0
-                    && self.medium == 0
-                    && self.low == 0
+                self.critical == 0 && self.high == 0 && self.medium == 0 && self.low == 0
             }
             VulnSeverity::Unknown => self.total == 0,
         }
@@ -327,7 +322,10 @@ pub fn evaluate_vuln_policy(scan: &VulnerabilityScan, policy: &VulnPolicy) -> Vu
 
     // Filter out acknowledged if policy allows
     let effective_vulns: Vec<&Vulnerability> = if policy.allow_acknowledged {
-        scan.vulnerabilities.iter().filter(|v| !v.acknowledged).collect()
+        scan.vulnerabilities
+            .iter()
+            .filter(|v| !v.acknowledged)
+            .collect()
     } else {
         scan.vulnerabilities.iter().collect()
     };

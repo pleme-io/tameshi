@@ -125,9 +125,15 @@ pub fn build_catalog() -> Catalog {
                 id: "IA".to_string(),
                 title: "Identification and Authentication".to_string(),
                 controls: vec![
-                    control("IA-2", "Identification and Authentication (Organizational Users)"),
+                    control(
+                        "IA-2",
+                        "Identification and Authentication (Organizational Users)",
+                    ),
                     control("IA-5", "Authenticator Management"),
-                    control("IA-8", "Identification and Authentication (Non-Organizational Users)"),
+                    control(
+                        "IA-8",
+                        "Identification and Authentication (Non-Organizational Users)",
+                    ),
                 ],
             },
             ControlGroup {
@@ -179,20 +185,19 @@ pub fn baseline_controls(baseline: &Baseline) -> Vec<String> {
         Baseline::Moderate => {
             let mut controls = baseline_controls(&Baseline::Low);
             controls.extend(
-                vec!["AC-4", "AC-6", "CA-8", "CM-3", "IA-8", "SC-12", "SI-7", "SI-10", "SR-3", "SR-4", "SR-11"]
-                    .into_iter()
-                    .map(String::from),
+                vec![
+                    "AC-4", "AC-6", "CA-8", "CM-3", "IA-8", "SC-12", "SI-7", "SI-10", "SR-3",
+                    "SR-4", "SR-11",
+                ]
+                .into_iter()
+                .map(String::from),
             );
             controls
         }
         Baseline::High => {
             let mut controls = baseline_controls(&Baseline::Moderate);
             // High adds all remaining controls
-            controls.extend(
-                vec!["AC-4", "SC-12"]
-                    .into_iter()
-                    .map(String::from),
-            );
+            controls.extend(vec!["AC-4", "SC-12"].into_iter().map(String::from));
             controls.sort();
             controls.dedup();
             controls
@@ -273,7 +278,11 @@ mod tests {
     fn catalog_control_count() {
         let catalog = build_catalog();
         let count = catalog.control_count();
-        assert!(count > 20, "catalog should have >20 controls, got {}", count);
+        assert!(
+            count > 20,
+            "catalog should have >20 controls, got {}",
+            count
+        );
     }
 
     #[test]
@@ -281,7 +290,11 @@ mod tests {
         let low = baseline_controls(&Baseline::Low);
         let moderate = baseline_controls(&Baseline::Moderate);
         for c in &low {
-            assert!(moderate.contains(c), "moderate should contain low control {}", c);
+            assert!(
+                moderate.contains(c),
+                "moderate should contain low control {}",
+                c
+            );
         }
         assert!(moderate.len() > low.len());
     }
@@ -291,7 +304,11 @@ mod tests {
         let moderate = baseline_controls(&Baseline::Moderate);
         let high = baseline_controls(&Baseline::High);
         for c in &moderate {
-            assert!(high.contains(c), "high should contain moderate control {}", c);
+            assert!(
+                high.contains(c),
+                "high should contain moderate control {}",
+                c
+            );
         }
     }
 

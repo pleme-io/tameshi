@@ -264,9 +264,7 @@ impl<C: CommandRunner + 'static> CompliancePlugin for NixStorePlugin<C> {
 
             let domain_hash = DomainEvaluation::compute_domain_hash(DOMAIN, &evaluations);
             let total_duration_ms = evaluations.iter().map(|e| e.duration_ms).sum();
-            let all_required_passed = evaluations
-                .iter()
-                .all(|e| !e.control.required || e.passed);
+            let all_required_passed = evaluations.iter().all(|e| !e.control.required || e.passed);
 
             Ok(DomainEvaluation {
                 domain: DOMAIN.to_string(),
@@ -286,7 +284,10 @@ impl<C: CommandRunner + 'static> CompliancePlugin for NixStorePlugin<C> {
 
 async fn check_closure_query<C: CommandRunner>(runner: &C) -> (bool, String) {
     match runner
-        .run("nix-store", &["--query", "--requisites", "/run/current-system"])
+        .run(
+            "nix-store",
+            &["--query", "--requisites", "/run/current-system"],
+        )
         .await
     {
         Ok(output) => {
@@ -311,10 +312,7 @@ async fn check_flake_inputs_pinned<C: CommandRunner>(runner: &C) -> (bool, Strin
                         if unpinned.is_empty() {
                             (true, "All flake inputs are pinned".to_string())
                         } else {
-                            (
-                                false,
-                                format!("Unpinned inputs: {}", unpinned.join(", ")),
-                            )
+                            (false, format!("Unpinned inputs: {}", unpinned.join(", ")))
                         }
                     } else {
                         (false, "Invalid locks structure".to_string())
@@ -409,9 +407,7 @@ fn check_sandbox_from_config(config_output: &crate::error::Result<String>) -> (b
                                 false,
                                 format!("Nix sandbox is set to '{other}' (expected true)"),
                             ),
-                            None => {
-                                (false, "sandbox setting not found in nix config".to_string())
-                            }
+                            None => (false, "sandbox setting not found in nix config".to_string()),
                         }
                     }
                 }
@@ -422,9 +418,7 @@ fn check_sandbox_from_config(config_output: &crate::error::Result<String>) -> (b
     }
 }
 
-fn check_trusted_users_from_config(
-    config_output: &crate::error::Result<String>,
-) -> (bool, String) {
+fn check_trusted_users_from_config(config_output: &crate::error::Result<String>) -> (bool, String) {
     match config_output {
         Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
             Ok(config) => {
@@ -448,9 +442,7 @@ fn check_trusted_users_from_config(
     }
 }
 
-fn check_require_sigs_from_config(
-    config_output: &crate::error::Result<String>,
-) -> (bool, String) {
+fn check_require_sigs_from_config(config_output: &crate::error::Result<String>) -> (bool, String) {
     match config_output {
         Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
             Ok(config) => {
@@ -473,9 +465,7 @@ fn check_require_sigs_from_config(
     }
 }
 
-fn check_allowed_users_from_config(
-    config_output: &crate::error::Result<String>,
-) -> (bool, String) {
+fn check_allowed_users_from_config(config_output: &crate::error::Result<String>) -> (bool, String) {
     match config_output {
         Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
             Ok(config) => {
@@ -508,10 +498,11 @@ fn check_max_jobs_from_config(config_output: &crate::error::Result<String>) -> (
                     .and_then(|s| s.get("value"))
                     .and_then(|v| v.as_u64());
                 match max_jobs {
-                    Some(n) if n <= 16 => {
-                        (true, format!("max-jobs is {n} (reasonable)"))
-                    }
-                    Some(n) => (false, format!("max-jobs is {n} (> 16, may exhaust resources)")),
+                    Some(n) if n <= 16 => (true, format!("max-jobs is {n} (reasonable)")),
+                    Some(n) => (
+                        false,
+                        format!("max-jobs is {n} (> 16, may exhaust resources)"),
+                    ),
                     None => (true, "max-jobs not set, using default".to_string()),
                 }
             }
@@ -538,10 +529,7 @@ fn check_experimental_features_from_config(
                     .filter(|d| features.contains(**d))
                     .collect();
                 if found.is_empty() {
-                    (
-                        true,
-                        format!("experimental-features safe: {features}"),
-                    )
+                    (true, format!("experimental-features safe: {features}"))
                 } else {
                     (
                         false,
@@ -559,10 +547,7 @@ fn check_experimental_features_from_config(
 }
 
 async fn check_gc_roots_staleness<C: CommandRunner>(runner: &C) -> (bool, String) {
-    match runner
-        .run("nix-store", &["--gc", "--print-roots"])
-        .await
-    {
+    match runner.run("nix-store", &["--gc", "--print-roots"]).await {
         Ok(output) => {
             let root_count = output.lines().filter(|l| !l.is_empty()).count();
             // We can only check root count in a mock context -- real staleness
@@ -639,11 +624,17 @@ fn check_pure_eval_from_config(config_output: &crate::error::Result<String>) -> 
                 if features.contains("flakes") {
                     match pure_eval {
                         Some(true) => (true, "pure-eval is enabled for flakes".to_string()),
-                        _ => (false, "pure-eval is not enabled (flakes active)".to_string()),
+                        _ => (
+                            false,
+                            "pure-eval is not enabled (flakes active)".to_string(),
+                        ),
                     }
                 } else {
                     // If flakes aren't enabled, pure-eval isn't critical
-                    (true, "Flakes not enabled, pure-eval not required".to_string())
+                    (
+                        true,
+                        "Flakes not enabled, pure-eval not required".to_string(),
+                    )
                 }
             }
             Err(e) => (false, format!("Failed to parse nix config: {e}")),
@@ -704,7 +695,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(true, "root", true, "root", 4, "nix-command flakes", "nixbld", true),
+            &nix_config_json_full(
+                true,
+                "root",
+                true,
+                "root",
+                4,
+                "nix-command flakes",
+                "nixbld",
+                true,
+            ),
         );
     }
 
@@ -721,7 +721,11 @@ mod tests {
         );
         runner.add_response("nix-store", &["--verify", "--check-contents"], "");
         runner.add_error("vulnix", &["--system"], "not found");
-        runner.add_response("nix-store", &["--gc", "--print-roots"], "/nix/var/nix/gcroots/auto/abc -> /nix/store/abc\n");
+        runner.add_response(
+            "nix-store",
+            &["--gc", "--print-roots"],
+            "/nix/var/nix/gcroots/auto/abc -> /nix/store/abc\n",
+        );
         runner.add_response("stat", &["-c", "%a", "/nix/store"], "1775\n");
     }
 
@@ -729,7 +733,11 @@ mod tests {
     fn generate_controls_default_has_12_plus() {
         let plugin = NixStorePlugin::new(make_runner());
         let controls = plugin.generate_controls(&PluginConfig::default());
-        assert!(controls.len() >= 12, "expected >= 12 required controls, got {}", controls.len());
+        assert!(
+            controls.len() >= 12,
+            "expected >= 12 required controls, got {}",
+            controls.len()
+        );
         assert!(controls.iter().all(|c| c.domain == "nix-store"));
     }
 
@@ -739,7 +747,11 @@ mod tests {
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert!(controls.len() >= 15, "expected >= 15 total controls, got {}", controls.len());
+        assert!(
+            controls.len() >= 15,
+            "expected >= 15 total controls, got {}",
+            controls.len()
+        );
     }
 
     #[test]
@@ -760,7 +772,11 @@ mod tests {
         let plugin = NixStorePlugin::new(make_runner());
         let controls = plugin.generate_controls(&PluginConfig::default());
         for c in &controls {
-            assert!(!c.nist_control_ids.is_empty(), "Control {} has no NIST IDs", c.id);
+            assert!(
+                !c.nist_control_ids.is_empty(),
+                "Control {} has no NIST IDs",
+                c.id
+            );
         }
     }
 
@@ -786,10 +802,21 @@ mod tests {
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        assert!(result.all_required_passed, "Expected all required to pass. Failures: {:?}",
-            result.evaluations.iter().filter(|e| !e.passed).map(|e| format!("{}: {}", e.control.id, e.message)).collect::<Vec<_>>());
+        assert!(
+            result.all_required_passed,
+            "Expected all required to pass. Failures: {:?}",
+            result
+                .evaluations
+                .iter()
+                .filter(|e| !e.passed)
+                .map(|e| format!("{}: {}", e.control.id, e.message))
+                .collect::<Vec<_>>()
+        );
         assert_eq!(result.domain, "nix-store");
     }
 
@@ -814,9 +841,16 @@ mod tests {
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let closure = result.evaluations.iter().find(|e| e.control.id == "NIX-001").unwrap();
+        let closure = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-001")
+            .unwrap();
         assert!(!closure.passed);
     }
 
@@ -841,9 +875,16 @@ mod tests {
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let pinned = result.evaluations.iter().find(|e| e.control.id == "NIX-002").unwrap();
+        let pinned = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-002")
+            .unwrap();
         assert!(!pinned.passed);
         assert!(pinned.message.contains("Unpinned"));
     }
@@ -871,8 +912,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let verify = result.evaluations.iter().find(|e| e.control.id == "NIX-003").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let verify = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-003")
+            .unwrap();
         assert!(!verify.passed);
     }
 
@@ -909,8 +957,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let cve = result.evaluations.iter().find(|e| e.control.id == "NIX-004").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let cve = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-004")
+            .unwrap();
         assert!(!cve.passed);
         assert!(cve.message.contains("vulnerable"));
     }
@@ -923,7 +978,10 @@ mod tests {
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         let json = serde_json::to_string(&result).unwrap();
         let back: DomainEvaluation = serde_json::from_str(&json).unwrap();
@@ -939,7 +997,10 @@ mod tests {
 
         let plugin = NixStorePlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         for eval in &result.evaluations {
             assert!(eval.evidence_hash.is_some());
@@ -966,8 +1027,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let closure = result.evaluations.iter().find(|e| e.control.id == "NIX-001").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let closure = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-001")
+            .unwrap();
         assert!(!closure.passed);
         assert!(closure.message.contains("failed"));
     }
@@ -979,7 +1047,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(false, "root", true, "root", 4, "nix-command flakes", "nixbld", true),
+            &nix_config_json_full(
+                false,
+                "root",
+                true,
+                "root",
+                4,
+                "nix-command flakes",
+                "nixbld",
+                true,
+            ),
         );
 
         let plugin = NixStorePlugin::new(runner);
@@ -992,8 +1069,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let sandbox = result.evaluations.iter().find(|e| e.control.id == "NIX-006").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let sandbox = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-006")
+            .unwrap();
         assert!(!sandbox.passed);
         assert!(sandbox.message.contains("disabled"));
     }
@@ -1005,7 +1089,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(true, "*", true, "root", 4, "nix-command flakes", "nixbld", true),
+            &nix_config_json_full(
+                true,
+                "*",
+                true,
+                "root",
+                4,
+                "nix-command flakes",
+                "nixbld",
+                true,
+            ),
         );
 
         let plugin = NixStorePlugin::new(runner);
@@ -1018,8 +1111,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let users = result.evaluations.iter().find(|e| e.control.id == "NIX-007").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let users = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-007")
+            .unwrap();
         assert!(!users.passed);
         assert!(users.message.contains("wildcard"));
     }
@@ -1031,7 +1131,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(true, "root", false, "root", 4, "nix-command flakes", "nixbld", true),
+            &nix_config_json_full(
+                true,
+                "root",
+                false,
+                "root",
+                4,
+                "nix-command flakes",
+                "nixbld",
+                true,
+            ),
         );
 
         let plugin = NixStorePlugin::new(runner);
@@ -1044,8 +1153,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let sigs = result.evaluations.iter().find(|e| e.control.id == "NIX-008").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let sigs = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-008")
+            .unwrap();
         assert!(!sigs.passed);
         assert!(sigs.message.contains("false"));
     }
@@ -1057,7 +1173,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(true, "root", true, "*", 4, "nix-command flakes", "nixbld", true),
+            &nix_config_json_full(
+                true,
+                "root",
+                true,
+                "*",
+                4,
+                "nix-command flakes",
+                "nixbld",
+                true,
+            ),
         );
 
         let plugin = NixStorePlugin::new(runner);
@@ -1070,8 +1195,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "NIX-009").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-009")
+            .unwrap();
         assert!(!ctrl.passed);
         assert!(ctrl.message.contains("wildcard"));
     }
@@ -1083,7 +1215,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(true, "root", true, "root", 4, "nix-command flakes auto-allocate-uids", "nixbld", true),
+            &nix_config_json_full(
+                true,
+                "root",
+                true,
+                "root",
+                4,
+                "nix-command flakes auto-allocate-uids",
+                "nixbld",
+                true,
+            ),
         );
 
         let plugin = NixStorePlugin::new(runner);
@@ -1096,8 +1237,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "NIX-011").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-011")
+            .unwrap();
         assert!(!ctrl.passed);
         assert!(ctrl.message.contains("auto-allocate-uids"));
     }
@@ -1120,8 +1268,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "NIX-013").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-013")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -1132,7 +1287,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(true, "root", true, "root", 4, "nix-command flakes", "", true),
+            &nix_config_json_full(
+                true,
+                "root",
+                true,
+                "root",
+                4,
+                "nix-command flakes",
+                "",
+                true,
+            ),
         );
 
         let plugin = NixStorePlugin::new(runner);
@@ -1145,8 +1309,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "NIX-014").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-014")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -1157,7 +1328,16 @@ mod tests {
         runner.add_response(
             "nix",
             &["show-config", "--json"],
-            &nix_config_json_full(true, "root", true, "root", 4, "nix-command flakes", "nixbld", false),
+            &nix_config_json_full(
+                true,
+                "root",
+                true,
+                "root",
+                4,
+                "nix-command flakes",
+                "nixbld",
+                false,
+            ),
         );
 
         let plugin = NixStorePlugin::new(runner);
@@ -1170,8 +1350,15 @@ mod tests {
             domain: DOMAIN.to_string(),
             required: true,
         };
-        let result = plugin.evaluate(&[control], &PluginConfig::default()).await.unwrap();
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "NIX-015").unwrap();
+        let result = plugin
+            .evaluate(&[control], &PluginConfig::default())
+            .await
+            .unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "NIX-015")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 }

@@ -394,7 +394,10 @@ mod tests {
             let proof = merkle_proof(&layers, i);
             assert!(proof.is_some(), "proof should exist for index {i}");
             let proof_hashes = proof.unwrap();
-            assert!(!proof_hashes.is_empty(), "proof should have hashes for index {i}");
+            assert!(
+                !proof_hashes.is_empty(),
+                "proof should have hashes for index {i}"
+            );
         }
     }
 
@@ -414,13 +417,7 @@ mod tests {
 
         for i in 0..sorted_sigs.len() {
             let proof_hashes = merkle_proof(&layers, i).unwrap();
-            let valid = verify_proof(
-                &proof_hashes,
-                &root,
-                &sorted_sigs[i],
-                i,
-                sorted_sigs.len(),
-            );
+            let valid = verify_proof(&proof_hashes, &root, &sorted_sigs[i], i, sorted_sigs.len());
             assert!(valid, "proof verification should pass for sorted index {i}");
         }
     }
@@ -511,13 +508,7 @@ mod tests {
 
         for i in [0, 1, 63, 64, 127] {
             let proof_hashes = merkle_proof(&layers, i).unwrap();
-            let valid = verify_proof(
-                &proof_hashes,
-                &root,
-                &sorted_sigs[i],
-                i,
-                sorted_sigs.len(),
-            );
+            let valid = verify_proof(&proof_hashes, &root, &sorted_sigs[i], i, sorted_sigs.len());
             assert!(valid, "proof should verify for leaf {i} in large tree");
         }
     }
@@ -571,9 +562,13 @@ mod tests {
             let data = format!("single-{i}");
             let layers = vec![make_layer(LayerType::Nix, data.as_bytes())];
             let root = compute_merkle_root(&layers);
-            let expected = Blake3Hash(domain_separated_leaf(&Blake3Hash::digest(data.as_bytes()).0));
-            assert_eq!(root, expected,
-                "Single-element tree root must equal domain-separated leaf hash for input {i}");
+            let expected = Blake3Hash(domain_separated_leaf(
+                &Blake3Hash::digest(data.as_bytes()).0,
+            ));
+            assert_eq!(
+                root, expected,
+                "Single-element tree root must equal domain-separated leaf hash for input {i}"
+            );
         }
     }
 
@@ -605,7 +600,10 @@ mod tests {
 
         // Build the tree structure too
         let tree = build_merkle_tree(&layers);
-        assert_eq!(root, tree.hash, "build_merkle_tree must agree with compute_merkle_root for large trees");
+        assert_eq!(
+            root, tree.hash,
+            "build_merkle_tree must agree with compute_merkle_root for large trees"
+        );
     }
 
     #[test]
@@ -626,7 +624,10 @@ mod tests {
 
             let root1 = compute_merkle_root(&layers);
             let root2 = compute_merkle_root(&layers);
-            assert_eq!(root1, root2, "Odd-count tree with {count} leaves must be deterministic");
+            assert_eq!(
+                root1, root2,
+                "Odd-count tree with {count} leaves must be deterministic"
+            );
         }
     }
 
@@ -649,7 +650,10 @@ mod tests {
         // Domain-separated leaf BLAKE3(0x00 || data) must differ from raw BLAKE3(data)
         let data = Blake3Hash::digest(b"test-data");
         let ds = domain_separated_leaf(&data.0);
-        assert_ne!(ds, data.0, "domain-separated leaf must differ from raw hash");
+        assert_ne!(
+            ds, data.0,
+            "domain-separated leaf must differ from raw hash"
+        );
     }
 
     #[test]
@@ -662,8 +666,10 @@ mod tests {
         // Simulate internal node hash with the same data as both children
         let internal_hash = Blake3Algorithm::concat_and_hash(&data, Some(&data));
 
-        assert_ne!(leaf_hash, internal_hash,
-            "leaf domain (0x00) must differ from internal domain (0x01)");
+        assert_ne!(
+            leaf_hash, internal_hash,
+            "leaf domain (0x00) must differ from internal domain (0x01)"
+        );
     }
 
     #[test]
@@ -683,8 +689,10 @@ mod tests {
 
         let fake_as_leaf = domain_separated_leaf(&fake_leaf_data);
 
-        assert_ne!(internal, fake_as_leaf,
-            "internal node must not collide with leaf containing the same byte pattern");
+        assert_ne!(
+            internal, fake_as_leaf,
+            "internal node must not collide with leaf containing the same byte pattern"
+        );
     }
 
     #[test]
@@ -738,7 +746,10 @@ mod tests {
         ];
         let root_a = compute_merkle_root(&layers_a);
         let root_b = compute_merkle_root(&layers_b);
-        assert_ne!(root_a, root_b, "Different layer data must produce different roots");
+        assert_ne!(
+            root_a, root_b,
+            "Different layer data must produce different roots"
+        );
     }
 
     #[test]
@@ -779,12 +790,12 @@ mod tests {
         // Compute a naive root without domain separation
         let sorted = sorted_layers(&layers);
         let naive_leaves: Vec<[u8; 32]> = sorted.iter().map(|sig| sig.hash.0).collect();
-        let naive_combined = Blake3Hash::combine(
-            &Blake3Hash(naive_leaves[0]),
-            &Blake3Hash(naive_leaves[1]),
-        );
+        let naive_combined =
+            Blake3Hash::combine(&Blake3Hash(naive_leaves[0]), &Blake3Hash(naive_leaves[1]));
 
-        assert_ne!(ds_root, naive_combined,
-            "domain-separated root must differ from naive combination");
+        assert_ne!(
+            ds_root, naive_combined,
+            "domain-separated root must differ from naive combination"
+        );
     }
 }

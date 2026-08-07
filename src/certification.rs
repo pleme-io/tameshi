@@ -583,16 +583,10 @@ fn evaluate_chart(chart: &ChartAttestation, policy: &CertificationPolicy) -> Sta
         ));
     }
     if !chart.linter_passed {
-        violations.push(format!(
-            "{}: kube-linter scan failed",
-            chart.chart_name
-        ));
+        violations.push(format!("{}: kube-linter scan failed", chart.chart_name));
     }
     if !chart.policy_passed {
-        violations.push(format!(
-            "{}: Conftest policy scan failed",
-            chart.chart_name
-        ));
+        violations.push(format!("{}: Conftest policy scan failed", chart.chart_name));
     }
 
     let hash = chart.chart_hash.clone();
@@ -604,7 +598,10 @@ fn evaluate_chart(chart: &ChartAttestation, policy: &CertificationPolicy) -> Sta
     }
 }
 
-fn evaluate_deployment(deployment: &DeploymentAttestation, policy: &CertificationPolicy) -> StageResult {
+fn evaluate_deployment(
+    deployment: &DeploymentAttestation,
+    policy: &CertificationPolicy,
+) -> StageResult {
     let mut violations = Vec::new();
 
     if policy.require_source_verification && !deployment.source_verified {
@@ -636,7 +633,10 @@ fn evaluate_deployment(deployment: &DeploymentAttestation, policy: &Certificatio
     }
 }
 
-fn evaluate_compliance(compliance: &ComplianceAttestation, policy: &CertificationPolicy) -> StageResult {
+fn evaluate_compliance(
+    compliance: &ComplianceAttestation,
+    policy: &CertificationPolicy,
+) -> StageResult {
     let mut violations = Vec::new();
 
     if policy.require_compliance && !compliance.all_passed {

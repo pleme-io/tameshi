@@ -132,7 +132,10 @@ impl TieredLedgerStore {
     /// Get the total number of entries evicted to warm tier.
     #[must_use]
     pub fn warm_evicted_count(&self) -> usize {
-        *self.warm_evicted.lock().expect("warm_evicted lock poisoned")
+        *self
+            .warm_evicted
+            .lock()
+            .expect("warm_evicted lock poisoned")
     }
 
     /// Evict entries older than `hot_retention_hours` to the warm tier.
@@ -155,7 +158,10 @@ impl TieredLedgerStore {
         let evicted = before - entries.len();
 
         if evicted > 0 {
-            let mut warm = self.warm_evicted.lock().expect("warm_evicted lock poisoned");
+            let mut warm = self
+                .warm_evicted
+                .lock()
+                .expect("warm_evicted lock poisoned");
             *warm += evicted;
         }
 
@@ -166,7 +172,10 @@ impl TieredLedgerStore {
     #[must_use]
     pub fn stats_at(&self, now: DateTime<Utc>) -> StorageStats {
         let entries = self.hot.entries.lock().expect("hot store lock poisoned");
-        let warm_count = *self.warm_evicted.lock().expect("warm_evicted lock poisoned");
+        let warm_count = *self
+            .warm_evicted
+            .lock()
+            .expect("warm_evicted lock poisoned");
 
         let mut hot_entries = 0usize;
         let mut oldest_hot: Option<DateTime<Utc>> = None;

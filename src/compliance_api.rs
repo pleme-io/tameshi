@@ -379,7 +379,10 @@ mod tests {
         assert!(json.contains("\"type\":\"config_assertion\""));
         let deserialized: CheckDefinition = serde_json::from_str(&json).unwrap();
         match deserialized {
-            CheckDefinition::ConfigAssertion { path, expected_hash } => {
+            CheckDefinition::ConfigAssertion {
+                path,
+                expected_hash,
+            } => {
                 assert_eq!(path, "/etc/app/config.yaml");
                 assert_eq!(expected_hash, Blake3Hash::digest(b"config-content"));
             }

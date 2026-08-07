@@ -18,12 +18,12 @@ use tracing::debug;
 /// Reads the state JSON, sorts keys for deterministic hashing, and
 /// computes BLAKE3 over the canonical representation.
 pub async fn hash_state(state_path: &str) -> Result<LayerSignature> {
-    let data = tokio::fs::read(state_path).await.map_err(|e| {
-        TameshiError::CollectorError {
+    let data = tokio::fs::read(state_path)
+        .await
+        .map_err(|e| TameshiError::CollectorError {
             layer: "tofu".to_string(),
             message: format!("failed to read state file {}: {}", state_path, e),
-        }
-    })?;
+        })?;
 
     // Parse and re-serialize to canonical JSON for deterministic hashing
     let state: serde_json::Value =
@@ -206,7 +206,9 @@ mod tests {
             "serial": 1,
             "lineage": "abc-123"
         });
-        tokio::fs::write(&path, serde_json::to_vec_pretty(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec_pretty(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_state(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.layer, LayerType::Tofu);
@@ -225,7 +227,9 @@ mod tests {
                 {"type": "aws_s3_bucket", "name": "data"}
             ]
         });
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_state(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.inputs.len(), 3, "1 state + 2 resources");
@@ -243,7 +247,9 @@ mod tests {
                 {"type": "aws_vpc"}
             ]
         });
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_state(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.inputs.len(), 3);
@@ -256,7 +262,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("terraform.tfstate");
         let state = serde_json::json!({"version": 4, "serial": 1});
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig1 = hash_state(path.to_str().unwrap()).await.unwrap();
         let sig2 = hash_state(path.to_str().unwrap()).await.unwrap();
@@ -286,8 +294,12 @@ mod tests {
         let path2 = dir.path().join("state2.json");
         let state1 = serde_json::json!({"version": 4, "serial": 1});
         let state2 = serde_json::json!({"version": 4, "serial": 2});
-        tokio::fs::write(&path1, serde_json::to_vec(&state1).unwrap()).await.unwrap();
-        tokio::fs::write(&path2, serde_json::to_vec(&state2).unwrap()).await.unwrap();
+        tokio::fs::write(&path1, serde_json::to_vec(&state1).unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&path2, serde_json::to_vec(&state2).unwrap())
+            .await
+            .unwrap();
 
         let sig1 = hash_state(path1.to_str().unwrap()).await.unwrap();
         let sig2 = hash_state(path2.to_str().unwrap()).await.unwrap();

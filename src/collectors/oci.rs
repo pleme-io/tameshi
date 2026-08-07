@@ -295,7 +295,10 @@ mod tests {
         let bytes = serde_json::to_vec(&manifest).unwrap();
         let inputs1 = parse_manifest_layers(&bytes, "det:v1").unwrap();
         let inputs2 = parse_manifest_layers(&bytes, "det:v1").unwrap();
-        assert_eq!(inputs1[0].hash, inputs2[0].hash, "same digest must produce same hash");
+        assert_eq!(
+            inputs1[0].hash, inputs2[0].hash,
+            "same digest must produce same hash"
+        );
     }
 
     #[test]

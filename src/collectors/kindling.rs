@@ -224,7 +224,9 @@ mod tests {
             "cluster_id": "prod-east-1",
             "node_id": "node-001"
         });
-        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_identity(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.layer, LayerType::Kindling);
@@ -243,7 +245,9 @@ mod tests {
                 {"cn": "node-002", "issuer": "ca-root"}
             ]
         });
-        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_identity(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.inputs.len(), 3, "1 identity + 2 certificates");
@@ -256,7 +260,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("identity.json");
         let identity = serde_json::json!({"cluster_id": "test"});
-        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&identity).unwrap())
+            .await
+            .unwrap();
 
         let sig1 = hash_identity(path.to_str().unwrap()).await.unwrap();
         let sig2 = hash_identity(path.to_str().unwrap()).await.unwrap();
@@ -287,7 +293,9 @@ mod tests {
             "status": "compliant",
             "checks_passed": 42
         });
-        tokio::fs::write(&path, serde_json::to_vec(&report).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&report).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_report(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.layer, LayerType::Kindling);

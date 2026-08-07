@@ -12,9 +12,8 @@
 use chrono::Utc;
 
 use tameshi::certification::{
-    BuildAttestation, ChartAttestation, DeploymentAttestation,
-    DependencyHash, ImageAttestation, ProductCertification, SourceAttestation,
-    relaxed_staging_policy, strict_production_policy,
+    BuildAttestation, ChartAttestation, DependencyHash, DeploymentAttestation, ImageAttestation,
+    ProductCertification, SourceAttestation, relaxed_staging_policy, strict_production_policy,
 };
 use tameshi::collectors::akeyless::AkeylessCollector;
 use tameshi::collectors::mock::MockCollector;
@@ -23,16 +22,22 @@ use tameshi::compliance::akeyless::{
     AkeylessAuthMethod, AkeylessSecretAccess, AkeylessSecretAttestation, AkeylessSecretType,
     compute_akeyless_hash,
 };
-use tameshi::compliance::cve::{ScanTarget, ScanTargetType, VulnSummary, VulnerabilityScanner, VulnerabilityScan};
+use tameshi::compliance::cve::{
+    ScanTarget, ScanTargetType, VulnSummary, VulnerabilityScan, VulnerabilityScanner,
+};
 use tameshi::compliance::dimensions::{
     AttestationBuilder, ComplianceAttestation, ComplianceDimension, DimensionType,
 };
-use tameshi::compliance::sbom::{SbomAttestation, SbomFormat, SbomGenerator, SbomSubject, SbomSubjectType};
+use tameshi::compliance::sbom::{
+    SbomAttestation, SbomFormat, SbomGenerator, SbomSubject, SbomSubjectType,
+};
 use tameshi::compliance::slsa::{
     ArtifactType, BuildType, ProvenanceSubject, SlsaLevel, SlsaProvenance,
 };
 use tameshi::hash::Blake3Hash;
-use tameshi::merkle::{compute_merkle_root, compose_merkle, domain_separated_leaf, merkle_proof, verify_proof};
+use tameshi::merkle::{
+    compose_merkle, compute_merkle_root, domain_separated_leaf, merkle_proof, verify_proof,
+};
 use tameshi::signature::{InputHash, LayerSignature, LayerType};
 use tameshi::verify::verify_master;
 
@@ -299,23 +304,25 @@ async fn full_attestation_chain() {
     // 8. Verify master signature against its own gating signature
     let expected = secure_master.gating_signature().clone();
     let result = verify_master(&secure_master, &expected);
-    assert!(result.passed, "Full chain verification must pass: {}", result.description);
+    assert!(
+        result.passed,
+        "Full chain verification must pass: {}",
+        result.description
+    );
 
     // 9. Merkle proofs — verify inclusion proofs for each layer
     let mut sorted_sigs = signatures.clone();
     sorted_sigs.sort_by(|a, b| a.layer.cmp(&b.layer));
 
     for i in 0..sorted_sigs.len() {
-        let proof_hashes = merkle_proof(&signatures, i)
-            .expect("proof should exist for every layer");
-        let verified = verify_proof(
-            &proof_hashes,
-            &root,
-            &sorted_sigs[i],
-            i,
-            sorted_sigs.len(),
+        let proof_hashes =
+            merkle_proof(&signatures, i).expect("proof should exist for every layer");
+        let verified = verify_proof(&proof_hashes, &root, &sorted_sigs[i], i, sorted_sigs.len());
+        assert!(
+            verified,
+            "Proof for layer {} (sorted index {i}) should verify",
+            sorted_sigs[i].layer
         );
-        assert!(verified, "Proof for layer {} (sorted index {i}) should verify", sorted_sigs[i].layer);
     }
 
     // 10. Akeyless in the chain — verify it's present and non-trivial
@@ -372,7 +379,10 @@ async fn tamper_detection_invalidates_verification() {
     // Now verify with a wrong expected hash (simulating tampered record)
     let wrong_hash = Blake3Hash::digest(b"someone-changed-the-manifest");
     let result = verify_master(&master, &wrong_hash);
-    assert!(!result.passed, "Tampered expected hash must fail verification");
+    assert!(
+        !result.passed,
+        "Tampered expected hash must fail verification"
+    );
 
     // Original should still pass
     let result_ok = verify_master(&master, &original_gating);
@@ -410,7 +420,10 @@ async fn akeyless_secrets_in_attestation_chain() {
     let sig2 = collector2.collect().await.unwrap();
 
     // Different secrets = different hash
-    assert_ne!(sig1.hash, sig2.hash, "Different secrets must produce different hashes");
+    assert_ne!(
+        sig1.hash, sig2.hash,
+        "Different secrets must produce different hashes"
+    );
 
     // Both are Akeyless layers
     assert_eq!(sig1.layer, LayerType::Akeyless);
@@ -458,7 +471,7 @@ fn compliance_dimensions_compose_correctly() {
 
     // Optional failure should NOT block
     let optional_fail = AttestationBuilder::new("production", "myapp", "lenient")
-        .with_vuln_scan(&scan, true, true)  // passed, required
+        .with_vuln_scan(&scan, true, true) // passed, required
         .with_vuln_scan(&scan, false, false) // failed, optional
         .build();
 
@@ -573,7 +586,12 @@ fn empty_and_edge_cases() {
 
     // Master with no compliance is not fully attested
     let master = compose_merkle(
-        &[LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"x"), "t", vec![])],
+        &[LayerSignature::new(
+            LayerType::Nix,
+            Blake3Hash::digest(b"x"),
+            "t",
+            vec![],
+        )],
         "test",
     );
     assert!(!master.is_fully_attested());
@@ -622,15 +640,8 @@ async fn merkle_proofs_verify_all_layers() {
     sorted_sigs.sort_by(|a, b| a.layer.cmp(&b.layer));
 
     for i in 0..sorted_sigs.len() {
-        let proof_hashes = merkle_proof(&signatures, i)
-            .expect("proof must exist");
-        let verified = verify_proof(
-            &proof_hashes,
-            &root,
-            &sorted_sigs[i],
-            i,
-            sorted_sigs.len(),
-        );
+        let proof_hashes = merkle_proof(&signatures, i).expect("proof must exist");
+        let verified = verify_proof(&proof_hashes, &root, &sorted_sigs[i], i, sorted_sigs.len());
         assert!(
             verified,
             "Merkle proof for layer {} at sorted index {i} must verify",
@@ -721,7 +732,10 @@ fn strict_policy_catches_violations() {
         .certify()
         .unwrap();
 
-    assert!(!cert.is_certified(), "Unsigned image must fail strict policy");
+    assert!(
+        !cert.is_certified(),
+        "Unsigned image must fail strict policy"
+    );
 
     // High CVE count should fail
     let mut build = make_build("backend");
@@ -738,7 +752,10 @@ fn strict_policy_catches_violations() {
         .certify()
         .unwrap();
 
-    assert!(!cert2.is_certified(), "High CVE count must fail strict policy");
+    assert!(
+        !cert2.is_certified(),
+        "High CVE count must fail strict policy"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -777,8 +794,14 @@ async fn merkle_root_order_independence() {
         sig_oci.clone(),
     ]);
 
-    assert_eq!(root_a, root_b, "Different layer ordering must produce same root");
-    assert_eq!(root_b, root_c, "Different layer ordering must produce same root");
+    assert_eq!(
+        root_a, root_b,
+        "Different layer ordering must produce same root"
+    );
+    assert_eq!(
+        root_b, root_c,
+        "Different layer ordering must produce same root"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -921,12 +944,11 @@ async fn hackathon_demo_full_pipeline() {
     let sbom = make_sbom();
     let prov = make_provenance();
 
-    let compliance =
-        AttestationBuilder::new("production", "my-service", "strict-production")
-            .with_vuln_scan(&scan, true, true)
-            .with_sbom(&sbom, true)
-            .with_slsa(&prov, &SlsaLevel::L2, true)
-            .build();
+    let compliance = AttestationBuilder::new("production", "my-service", "strict-production")
+        .with_vuln_scan(&scan, true, true)
+        .with_sbom(&sbom, true)
+        .with_slsa(&prov, &SlsaLevel::L2, true)
+        .build();
 
     assert!(compliance.all_passed, "All compliance dimensions must pass");
     assert_eq!(compliance.dimensions.len(), 3, "3 compliance dimensions");
@@ -942,10 +964,7 @@ async fn hackathon_demo_full_pipeline() {
         master_with_compliance.verify_untested(),
         "Untested must still verify"
     );
-    assert!(
-        master_with_compliance.verify_secure(),
-        "Secure must verify"
-    );
+    assert!(master_with_compliance.verify_secure(), "Secure must verify");
 
     // Verify two-phase signature composition
     assert!(
@@ -1064,15 +1083,16 @@ async fn hackathon_demo_full_pipeline() {
         prefixed.starts_with("blake3:"),
         "Prefixed must start with blake3:"
     );
-    let roundtrip =
-        tameshi::verify::verify_prefixed(&master_with_compliance, &prefixed);
-    assert!(roundtrip.is_ok(), "Prefixed verification roundtrip must work");
+    let roundtrip = tameshi::verify::verify_prefixed(&master_with_compliance, &prefixed);
+    assert!(
+        roundtrip.is_ok(),
+        "Prefixed verification roundtrip must work"
+    );
 
     // === Step 11: Tamper Detection ===
     // Change one secret value and verify the hash changes at every level
     let mut tampered_attestation = akeyless_attestation;
-    tampered_attestation.secrets_accessed[0].value_hash =
-        Blake3Hash::digest(b"TAMPERED-password");
+    tampered_attestation.secrets_accessed[0].value_hash = Blake3Hash::digest(b"TAMPERED-password");
     let tampered_collector = AkeylessCollector::new(tampered_attestation);
     let tampered_sig = tampered_collector.collect().await.unwrap();
 
@@ -1097,8 +1117,8 @@ async fn hackathon_demo_full_pipeline() {
     );
 
     // Tampered master verification must fail against original gating signature
-    let tampered_master = compose_merkle(&tampered_sigs, "production")
-        .with_compliance(compliance_hash.clone());
+    let tampered_master =
+        compose_merkle(&tampered_sigs, "production").with_compliance(compliance_hash.clone());
     let tampered_verify = verify_master(&tampered_master, &gating_sig);
     assert!(
         !tampered_verify.passed,
@@ -1108,21 +1128,14 @@ async fn hackathon_demo_full_pipeline() {
     // === Step 12: Gate Decision ===
     let gate_policy = tameshi::gating::GatingPolicy {
         name: "production-gate".to_string(),
-        required_layers: vec![
-            "nix".to_string(),
-            "oci".to_string(),
-            "akeyless".to_string(),
-        ],
+        required_layers: vec!["nix".to_string(), "oci".to_string(), "akeyless".to_string()],
         require_compliance: true,
         max_signature_age_secs: Some(3600),
         fail_open: false,
         require_certification_artifacts: false,
     };
-    let decision = tameshi::gating::evaluate_gate(
-        &gate_policy,
-        &master_with_compliance,
-        &gating_sig,
-    );
+    let decision =
+        tameshi::gating::evaluate_gate(&gate_policy, &master_with_compliance, &gating_sig);
     assert!(
         decision.allowed,
         "Gate should allow valid certification: {}",
@@ -1143,11 +1156,8 @@ async fn hackathon_demo_full_pipeline() {
     // Gate must deny when compliance is missing
     let no_compliance_master = compose_merkle(&all_sigs, "production");
     let no_compliance_gating = no_compliance_master.gating_signature().clone();
-    let no_compliance_decision = tameshi::gating::evaluate_gate(
-        &gate_policy,
-        &no_compliance_master,
-        &no_compliance_gating,
-    );
+    let no_compliance_decision =
+        tameshi::gating::evaluate_gate(&gate_policy, &no_compliance_master, &no_compliance_gating);
     assert!(
         !no_compliance_decision.allowed,
         "Gate must DENY when compliance is required but missing"
@@ -1162,11 +1172,8 @@ async fn hackathon_demo_full_pipeline() {
         fail_open: false,
         require_certification_artifacts: false,
     };
-    let missing_decision = tameshi::gating::evaluate_gate(
-        &missing_layer_policy,
-        &master_with_compliance,
-        &gating_sig,
-    );
+    let missing_decision =
+        tameshi::gating::evaluate_gate(&missing_layer_policy, &master_with_compliance, &gating_sig);
     assert!(
         !missing_decision.allowed,
         "Gate must DENY when required layer is missing"
@@ -1178,13 +1185,7 @@ async fn hackathon_demo_full_pipeline() {
 
     for i in 0..sorted_sigs.len() {
         let proof = merkle_proof(&all_sigs, i).expect("Proof should exist");
-        let verified = verify_proof(
-            &proof,
-            &merkle_root,
-            &sorted_sigs[i],
-            i,
-            sorted_sigs.len(),
-        );
+        let verified = verify_proof(&proof, &merkle_root, &sorted_sigs[i], i, sorted_sigs.len());
         assert!(
             verified,
             "Proof for layer {} at index {} must verify",
@@ -1200,13 +1201,7 @@ async fn hackathon_demo_full_pipeline() {
         vec![],
     );
     let proof_0 = merkle_proof(&all_sigs, 0).unwrap();
-    let invalid_proof = verify_proof(
-        &proof_0,
-        &merkle_root,
-        &fake_sig,
-        0,
-        sorted_sigs.len(),
-    );
+    let invalid_proof = verify_proof(&proof_0, &merkle_root, &fake_sig, 0, sorted_sigs.len());
     assert!(!invalid_proof, "Wrong leaf data must NOT verify");
 
     // === Step 14: Certification determinism ===
@@ -1324,11 +1319,14 @@ async fn hackathon_demo_full_pipeline() {
 use tameshi::akeyless_client::MockAkeylessClient;
 use tameshi::collectors::akeyless_target::AkeylessTargetCollector;
 use tameshi::compliance::akeyless_target::{
-    AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation,
-    compute_multi_target_hash, compute_target_attestation_hash,
+    AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation, compute_multi_target_hash,
+    compute_target_attestation_hash,
 };
 
-fn make_target_attestation(name: &str, target_type: AkeylessTargetType) -> AkeylessTargetAttestation {
+fn make_target_attestation(
+    name: &str,
+    target_type: AkeylessTargetType,
+) -> AkeylessTargetAttestation {
     AkeylessTargetAttestation {
         target_name: name.to_string(),
         target_type,
@@ -1410,14 +1408,20 @@ fn e2e_multi_target_composition_deterministic_order_independent() {
 
     let h_forward = compute_multi_target_hash(&[att_db.clone(), att_api.clone(), att_ssh.clone()]);
     let h_reverse = compute_multi_target_hash(&[att_ssh, att_api, att_db]);
-    assert_eq!(h_forward, h_reverse, "Multi-target hash must be order-independent");
+    assert_eq!(
+        h_forward, h_reverse,
+        "Multi-target hash must be order-independent"
+    );
 
     // Determinism: same input -> same output
     let att_db2 = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
     let att_api2 = make_target_attestation("/targets/prod/api", AkeylessTargetType::Web);
     let att_ssh2 = make_target_attestation("/targets/prod/ssh", AkeylessTargetType::Ssh);
     let h_again = compute_multi_target_hash(&[att_db2, att_api2, att_ssh2]);
-    assert_eq!(h_forward, h_again, "Multi-target hash must be deterministic");
+    assert_eq!(
+        h_forward, h_again,
+        "Multi-target hash must be deterministic"
+    );
 }
 
 #[tokio::test]
@@ -1425,8 +1429,7 @@ async fn e2e_target_layer_in_merkle_tree_with_inclusion_proofs() {
     let att_db = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
     let att_api = make_target_attestation("/targets/prod/api", AkeylessTargetType::Web);
 
-    let target_collector =
-        AkeylessTargetCollector::new(vec![att_db.clone(), att_api.clone()]);
+    let target_collector = AkeylessTargetCollector::new(vec![att_db.clone(), att_api.clone()]);
     let target_sig = target_collector.collect().await.unwrap();
     assert_eq!(target_sig.layer, LayerType::AkeylessTarget);
     assert_eq!(target_sig.inputs.len(), 2);
@@ -1455,7 +1458,13 @@ async fn e2e_target_layer_in_merkle_tree_with_inclusion_proofs() {
         .position(|s| s.layer == LayerType::AkeylessTarget)
         .unwrap();
     let proof = merkle_proof(&all_sigs, target_idx).unwrap();
-    let verified = verify_proof(&proof, &root, &sorted_sigs[target_idx], target_idx, sorted_sigs.len());
+    let verified = verify_proof(
+        &proof,
+        &root,
+        &sorted_sigs[target_idx],
+        target_idx,
+        sorted_sigs.len(),
+    );
     assert!(verified, "Target layer inclusion proof must verify");
 }
 
@@ -1464,11 +1473,7 @@ async fn e2e_full_pipeline_source_build_image_chart_secrets_target_deploy_compli
     // === Source ===
     let source = make_source();
     let source_hash = Blake3Hash::digest(
-        format!(
-            "{}:{}:{}",
-            source.repository, source.commit, source.git_ref
-        )
-        .as_bytes(),
+        format!("{}:{}:{}", source.repository, source.commit, source.git_ref).as_bytes(),
     );
     let nix_sig = LayerSignature::new(LayerType::Nix, source_hash, "source", vec![]);
 
@@ -1562,12 +1567,7 @@ async fn e2e_tamper_detection_target_endpoint_changes_master_signature() {
     let target_collector = AkeylessTargetCollector::new(vec![att_db.clone()]);
     let original_sig = target_collector.collect().await.unwrap();
 
-    let nix_sig = LayerSignature::new(
-        LayerType::Nix,
-        Blake3Hash::digest(b"nix"),
-        "nix",
-        vec![],
-    );
+    let nix_sig = LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix"), "nix", vec![]);
 
     let original_sigs = vec![nix_sig.clone(), original_sig];
     let original_master = compose_merkle(&original_sigs, "production");

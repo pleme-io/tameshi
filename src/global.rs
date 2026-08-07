@@ -565,7 +565,11 @@ mod tests {
     fn node_blast_radius_serde_roundtrip() {
         let nbr = NodeBlastRadius {
             node: "worker-05".to_string(),
-            pods: vec!["api-1".to_string(), "api-2".to_string(), "api-3".to_string()],
+            pods: vec![
+                "api-1".to_string(),
+                "api-2".to_string(),
+                "api-3".to_string(),
+            ],
             binary_paths: vec!["/usr/bin/server".to_string(), "/usr/bin/worker".to_string()],
             first_execution: Utc::now(),
             last_execution: Utc::now(),
@@ -788,14 +792,9 @@ mod tests {
 
     #[test]
     fn compute_cluster_root_subset_differs() {
-        let roots: Vec<Blake3Hash> = (0..5u8)
-            .map(|i| Blake3Hash::digest(&[i]))
-            .collect();
+        let roots: Vec<Blake3Hash> = (0..5u8).map(|i| Blake3Hash::digest(&[i])).collect();
         let subset = roots[..3].to_vec();
-        assert_ne!(
-            compute_cluster_root(&roots),
-            compute_cluster_root(&subset)
-        );
+        assert_ne!(compute_cluster_root(&roots), compute_cluster_root(&subset));
     }
 
     #[test]
@@ -809,9 +808,24 @@ mod tests {
         let expected = compute_cluster_root(&roots);
         // Try several permutations
         let permutations: Vec<Vec<Blake3Hash>> = vec![
-            vec![roots[2].clone(), roots[0].clone(), roots[1].clone(), roots[3].clone()],
-            vec![roots[3].clone(), roots[2].clone(), roots[0].clone(), roots[1].clone()],
-            vec![roots[1].clone(), roots[3].clone(), roots[2].clone(), roots[0].clone()],
+            vec![
+                roots[2].clone(),
+                roots[0].clone(),
+                roots[1].clone(),
+                roots[3].clone(),
+            ],
+            vec![
+                roots[3].clone(),
+                roots[2].clone(),
+                roots[0].clone(),
+                roots[1].clone(),
+            ],
+            vec![
+                roots[1].clone(),
+                roots[3].clone(),
+                roots[2].clone(),
+                roots[0].clone(),
+            ],
         ];
         for perm in &permutations {
             assert_eq!(compute_cluster_root(perm), expected);
@@ -834,15 +848,10 @@ mod tests {
     #[test]
     fn compute_cluster_root_adjacent_inputs_differ() {
         // Two clusters differing by one artifact must have different roots
-        let base: Vec<Blake3Hash> = (0..10u8)
-            .map(|i| Blake3Hash::digest(&[i]))
-            .collect();
+        let base: Vec<Blake3Hash> = (0..10u8).map(|i| Blake3Hash::digest(&[i])).collect();
         let mut modified = base.clone();
         modified[5] = Blake3Hash::digest(b"modified-artifact");
-        assert_ne!(
-            compute_cluster_root(&base),
-            compute_cluster_root(&modified)
-        );
+        assert_ne!(compute_cluster_root(&base), compute_cluster_root(&modified));
     }
 
     #[test]
@@ -1081,8 +1090,7 @@ mod tests {
     async fn mock_client_revoke_everywhere_records() {
         let client = MockGlobalStateClient::new();
         let hash = Blake3Hash::digest(b"compromised");
-        *client.revocation_clusters.lock().unwrap() =
-            vec!["c1".to_string(), "c2".to_string()];
+        *client.revocation_clusters.lock().unwrap() = vec!["c1".to_string(), "c2".to_string()];
         let clusters = client
             .revoke_everywhere(&hash, "CVE-2026-0001")
             .await
@@ -1426,10 +1434,8 @@ mod tests {
             Blake3Hash::digest(b"a2-intent"),
             "prod",
         );
-        let cluster_a_root = compute_cluster_root(&[
-            a1.composed_root.clone(),
-            a2.composed_root.clone(),
-        ]);
+        let cluster_a_root =
+            compute_cluster_root(&[a1.composed_root.clone(), a2.composed_root.clone()]);
 
         // Create artifacts for cluster B
         let b1 = compose_certification_artifact(

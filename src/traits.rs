@@ -182,10 +182,7 @@ impl MockCommandRunner {
     /// Register a raw byte response for a command.
     pub fn add_raw_response(&self, cmd: &str, args: &[&str], stdout: Vec<u8>) {
         let key = format!("{} {}", cmd, args.join(" "));
-        self.raw_responses
-            .lock()
-            .unwrap()
-            .insert(key, Ok(stdout));
+        self.raw_responses.lock().unwrap().insert(key, Ok(stdout));
     }
 
     fn make_key(cmd: &str, args: &[&str]) -> String {
@@ -244,10 +241,7 @@ impl CommandRunner for MockCommandRunner {
 /// Kindling identity documents, Tatara state files, OpenTofu state).
 pub trait FileSystem: Send + Sync {
     /// Read a file's contents as bytes.
-    fn read_file(
-        &self,
-        path: &Path,
-    ) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
+    fn read_file(&self, path: &Path) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
 
     /// Read a directory, returning child paths.
     fn read_dir(
@@ -259,10 +253,7 @@ pub trait FileSystem: Send + Sync {
     fn exists(&self, path: &Path) -> bool;
 
     /// Read a symlink target.
-    fn read_link(
-        &self,
-        path: &Path,
-    ) -> impl std::future::Future<Output = Result<PathBuf>> + Send;
+    fn read_link(&self, path: &Path) -> impl std::future::Future<Output = Result<PathBuf>> + Send;
 
     /// Check whether a path is a directory.
     fn is_dir(&self, path: &Path) -> bool;
@@ -328,7 +319,10 @@ impl MockFileSystem {
 
     /// Add a file with the given contents.
     pub fn add_file(&self, path: impl Into<PathBuf>, contents: impl Into<Vec<u8>>) {
-        self.files.lock().unwrap().insert(path.into(), contents.into());
+        self.files
+            .lock()
+            .unwrap()
+            .insert(path.into(), contents.into());
     }
 
     /// Add a directory with child entries.
@@ -338,7 +332,10 @@ impl MockFileSystem {
 
     /// Add a symlink.
     pub fn add_link(&self, path: impl Into<PathBuf>, target: impl Into<PathBuf>) {
-        self.links.lock().unwrap().insert(path.into(), target.into());
+        self.links
+            .lock()
+            .unwrap()
+            .insert(path.into(), target.into());
     }
 }
 
@@ -355,20 +352,21 @@ impl FileSystem for MockFileSystem {
             .unwrap()
             .get(path)
             .cloned()
-            .ok_or_else(|| TameshiError::IoError(
-                std::io::Error::new(std::io::ErrorKind::NotFound, format!("mock: file not found: {}", path.display()))
-            ))
+            .ok_or_else(|| {
+                TameshiError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("mock: file not found: {}", path.display()),
+                ))
+            })
     }
 
     async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
-        self.dirs
-            .lock()
-            .unwrap()
-            .get(path)
-            .cloned()
-            .ok_or_else(|| TameshiError::IoError(
-                std::io::Error::new(std::io::ErrorKind::NotFound, format!("mock: dir not found: {}", path.display()))
+        self.dirs.lock().unwrap().get(path).cloned().ok_or_else(|| {
+            TameshiError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("mock: dir not found: {}", path.display()),
             ))
+        })
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -383,9 +381,12 @@ impl FileSystem for MockFileSystem {
             .unwrap()
             .get(path)
             .cloned()
-            .ok_or_else(|| TameshiError::IoError(
-                std::io::Error::new(std::io::ErrorKind::NotFound, format!("mock: link not found: {}", path.display()))
-            ))
+            .ok_or_else(|| {
+                TameshiError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("mock: link not found: {}", path.display()),
+                ))
+            })
     }
 
     fn is_dir(&self, path: &Path) -> bool {
@@ -407,10 +408,7 @@ impl FileSystem for MockFileSystem {
 /// (Tatara API, gate endpoint fetching, etc.).
 pub trait HttpClient: Send + Sync {
     /// Perform a GET request and return the response body as bytes.
-    fn get(
-        &self,
-        url: &str,
-    ) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
+    fn get(&self, url: &str) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
 
     /// Perform a GET request and deserialize the JSON response.
     fn get_json<T: serde::de::DeserializeOwned>(
@@ -733,7 +731,9 @@ impl MockGatingEngine {
         let hash = crate::hash::Blake3Hash::digest(b"mock");
         Self {
             decision: Mutex::new(Some(crate::api_types::GateDecision::allow(
-                &hash, &hash, "mock-gate",
+                &hash,
+                &hash,
+                "mock-gate",
             ))),
         }
     }
@@ -744,7 +744,10 @@ impl MockGatingEngine {
         let hash = crate::hash::Blake3Hash::digest(b"mock");
         Self {
             decision: Mutex::new(Some(crate::api_types::GateDecision::deny(
-                &hash, &hash, "mock-gate", reason,
+                &hash,
+                &hash,
+                "mock-gate",
+                reason,
             ))),
         }
     }
@@ -762,19 +765,15 @@ impl GatingEngine for MockGatingEngine {
         _master: &crate::signature::MasterSignature,
         _expected: &crate::hash::Blake3Hash,
     ) -> crate::api_types::GateDecision {
-        self.decision
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(|| {
-                let hash = crate::hash::Blake3Hash::digest(b"mock");
-                crate::api_types::GateDecision::deny(
-                    &hash,
-                    &hash,
-                    "mock-gate",
-                    "no decision configured",
-                )
-            })
+        self.decision.lock().unwrap().clone().unwrap_or_else(|| {
+            let hash = crate::hash::Blake3Hash::digest(b"mock");
+            crate::api_types::GateDecision::deny(
+                &hash,
+                &hash,
+                "mock-gate",
+                "no decision configured",
+            )
+        })
     }
 }
 
@@ -875,8 +874,8 @@ impl<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned> De
     }
 }
 
-impl<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + 'static>
-    Store<T> for MemStore<T>
+impl<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + 'static> Store<T>
+    for MemStore<T>
 {
     fn save(
         &self,
@@ -955,10 +954,7 @@ impl<T: Clone + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + '
 pub async fn collect_all_futures(
     futures: Vec<
         std::pin::Pin<
-            Box<
-                dyn std::future::Future<Output = Result<crate::signature::LayerSignature>>
-                    + Send,
-            >,
+            Box<dyn std::future::Future<Output = Result<crate::signature::LayerSignature>> + Send>,
         >,
     >,
 ) -> Result<Vec<crate::signature::LayerSignature>> {
@@ -1023,7 +1019,10 @@ mod tests {
     async fn mock_command_runner_run_in_dir_ignores_dir() {
         let runner = MockCommandRunner::new();
         runner.add_response("ls", &["-la"], "total 0\n");
-        let result = runner.run_in_dir("ls", &["-la"], "/some/dir").await.unwrap();
+        let result = runner
+            .run_in_dir("ls", &["-la"], "/some/dir")
+            .await
+            .unwrap();
         assert_eq!(result, "total 0\n");
     }
 
@@ -1047,10 +1046,7 @@ mod tests {
     #[tokio::test]
     async fn mock_filesystem_read_dir() {
         let fs = MockFileSystem::new();
-        let children = vec![
-            PathBuf::from("/dir/a.yaml"),
-            PathBuf::from("/dir/b.yaml"),
-        ];
+        let children = vec![PathBuf::from("/dir/a.yaml"), PathBuf::from("/dir/b.yaml")];
         fs.add_dir(PathBuf::from("/dir"), children.clone());
         let result = fs.read_dir(Path::new("/dir")).await.unwrap();
         assert_eq!(result, children);
@@ -1127,7 +1123,10 @@ mod tests {
         let client = MockHttpClient::new();
         client.add_response("https://example.com/post", b"ok".to_vec());
         let body = serde_json::json!({"foo": "bar"});
-        let result = client.post_json("https://example.com/post", &body).await.unwrap();
+        let result = client
+            .post_json("https://example.com/post", &body)
+            .await
+            .unwrap();
         assert_eq!(result, b"ok");
     }
 
@@ -1173,8 +1172,7 @@ mod tests {
             LayerSignature::new(LayerType::Oci, Blake3Hash::digest(b"oci"), "test", vec![]),
         ];
         let compliance = Blake3Hash::digest(b"compliance");
-        let master =
-            crate::merkle::compose_merkle(&layers, "test").with_compliance(compliance);
+        let master = crate::merkle::compose_merkle(&layers, "test").with_compliance(compliance);
         let expected = master.gating_signature().clone();
         (master, expected)
     }
@@ -1278,7 +1276,9 @@ mod tests {
         let (master, expected) = make_test_master();
         let engine = MockGatingEngine::always_deny("initial");
         engine.set_decision(crate::api_types::GateDecision::allow(
-            &expected, &expected, "custom-gate",
+            &expected,
+            &expected,
+            "custom-gate",
         ));
         let policy = crate::gating::GatingPolicy::default();
         let decision = engine.evaluate(&policy, &master, &expected);
@@ -1517,7 +1517,10 @@ mod tests {
             let store = Arc::clone(&store);
             handles.push(tokio::spawn(async move {
                 for i in 0..10 {
-                    store.save(&format!("batch-{batch}-item-{i}")).await.unwrap();
+                    store
+                        .save(&format!("batch-{batch}-item-{i}"))
+                        .await
+                        .unwrap();
                 }
             }));
         }
@@ -1527,7 +1530,11 @@ mod tests {
         }
 
         let items = store.list().await.unwrap();
-        assert_eq!(items.len(), 100, "All 100 items should be saved from concurrent tasks");
+        assert_eq!(
+            items.len(),
+            100,
+            "All 100 items should be saved from concurrent tasks"
+        );
     }
 
     #[tokio::test]
@@ -1550,7 +1557,10 @@ mod tests {
         let store = MemStore::<String>::new();
         let id1 = store.save(&"duplicate".to_string()).await.unwrap();
         let id2 = store.save(&"duplicate".to_string()).await.unwrap();
-        assert_ne!(id1, id2, "Saving the same value twice should produce different IDs");
+        assert_ne!(
+            id1, id2,
+            "Saving the same value twice should produce different IDs"
+        );
 
         let items = store.list().await.unwrap();
         assert_eq!(items.len(), 2, "Both entries should exist");

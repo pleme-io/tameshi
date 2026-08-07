@@ -33,7 +33,11 @@ impl MockDfcCloud {
     }
 
     /// Provide fragment only if the caller presents the correct intent token.
-    pub fn provide_with_intent(&self, _binary_hash: &Blake3Hash, intent_token: &str) -> Option<Share> {
+    pub fn provide_with_intent(
+        &self,
+        _binary_hash: &Blake3Hash,
+        intent_token: &str,
+    ) -> Option<Share> {
         if intent_token == self.required_intent_token {
             Some(self.fragment.clone())
         } else {
@@ -43,7 +47,9 @@ impl MockDfcCloud {
 }
 
 impl FragmentProvider for MockDfcCloud {
-    fn id(&self) -> &str { &self.id }
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn provide_fragment(&self, _binary_hash: &Blake3Hash) -> Option<Share> {
         Some(self.fragment.clone())
     }
@@ -57,12 +63,17 @@ pub struct MockBuildServer {
 
 impl MockBuildServer {
     pub fn new(id: &str, fragment: Share) -> Self {
-        Self { id: id.to_string(), fragment }
+        Self {
+            id: id.to_string(),
+            fragment,
+        }
     }
 }
 
 impl FragmentProvider for MockBuildServer {
-    fn id(&self) -> &str { &self.id }
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn provide_fragment(&self, _binary_hash: &Blake3Hash) -> Option<Share> {
         Some(self.fragment.clone())
     }
@@ -76,12 +87,17 @@ pub struct MockLocalHsm {
 
 impl MockLocalHsm {
     pub fn new(id: &str, fragment: Share) -> Self {
-        Self { id: id.to_string(), fragment }
+        Self {
+            id: id.to_string(),
+            fragment,
+        }
     }
 }
 
 impl FragmentProvider for MockLocalHsm {
-    fn id(&self) -> &str { &self.id }
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn provide_fragment(&self, _binary_hash: &Blake3Hash) -> Option<Share> {
         Some(self.fragment.clone())
     }
@@ -93,11 +109,15 @@ pub struct OfflineProvider {
 }
 
 impl OfflineProvider {
-    pub fn new(id: &str) -> Self { Self { id: id.to_string() } }
+    pub fn new(id: &str) -> Self {
+        Self { id: id.to_string() }
+    }
 }
 
 impl FragmentProvider for OfflineProvider {
-    fn id(&self) -> &str { &self.id }
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn provide_fragment(&self, _binary_hash: &Blake3Hash) -> Option<Share> {
         None
     }
@@ -126,7 +146,10 @@ pub struct FragmentCollector {
 impl FragmentCollector {
     pub fn new(providers: Vec<Box<dyn FragmentProvider>>, threshold: usize) -> Self {
         assert!(threshold > 0, "threshold must be > 0");
-        assert!(providers.len() >= threshold, "need at least {threshold} providers");
+        assert!(
+            providers.len() >= threshold,
+            "need at least {threshold} providers"
+        );
         Self {
             providers,
             threshold,
@@ -364,7 +387,10 @@ mod tests {
         let collector = FragmentCollector::new(providers, 3);
         let binary_hash = Blake3Hash::digest(b"test-binary");
         let result = collector.collect_and_reconstruct(&binary_hash);
-        assert!(!result.authorized, "2 of 3 must NOT authorize when threshold is 3");
+        assert!(
+            !result.authorized,
+            "2 of 3 must NOT authorize when threshold is 3"
+        );
 
         // Now with all 3 cooperating:
         let providers_all: Vec<Box<dyn FragmentProvider>> = vec![

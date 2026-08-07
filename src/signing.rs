@@ -293,14 +293,11 @@ impl AkeylessDfcSigner {
         let result: serde_json::Value = resp.json().await.map_err(|e| {
             crate::error::TameshiError::HashError(format!("DFC auth response parse failed: {e}"))
         })?;
-        result["token"]
-            .as_str()
-            .map(String::from)
-            .ok_or_else(|| {
-                crate::error::TameshiError::HashError(
-                    "missing 'token' in DFC auth response".to_string(),
-                )
-            })
+        result["token"].as_str().map(String::from).ok_or_else(|| {
+            crate::error::TameshiError::HashError(
+                "missing 'token' in DFC auth response".to_string(),
+            )
+        })
     }
 }
 
@@ -311,9 +308,8 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 /// Decode hex string to bytes (used for DFC API response parsing).
 fn hex_decode(hex: &str) -> crate::error::Result<Vec<u8>> {
-    const_hex::decode(hex).map_err(|e| {
-        crate::error::TameshiError::HashError(format!("hex decode failed: {e}"))
-    })
+    const_hex::decode(hex)
+        .map_err(|e| crate::error::TameshiError::HashError(format!("hex decode failed: {e}")))
 }
 
 impl MerkleRootSigner for AkeylessDfcSigner {
@@ -331,13 +327,9 @@ impl MerkleRootSigner for AkeylessDfcSigner {
             .json(&body)
             .send()
             .await
-            .map_err(|e| {
-                crate::error::TameshiError::HashError(format!("DFC sign failed: {e}"))
-            })?;
+            .map_err(|e| crate::error::TameshiError::HashError(format!("DFC sign failed: {e}")))?;
         let result: serde_json::Value = resp.json().await.map_err(|e| {
-            crate::error::TameshiError::HashError(format!(
-                "DFC sign response parse failed: {e}"
-            ))
+            crate::error::TameshiError::HashError(format!("DFC sign response parse failed: {e}"))
         })?;
         let sig_hex = result["result"].as_str().ok_or_else(|| {
             crate::error::TameshiError::HashError(
@@ -368,10 +360,7 @@ impl MerkleRootSigner for AkeylessDfcSigner {
         });
         let resp = self
             .client
-            .post(format!(
-                "{}/verify-data-with-classic-key",
-                self.endpoint
-            ))
+            .post(format!("{}/verify-data-with-classic-key", self.endpoint))
             .json(&body)
             .send()
             .await
@@ -379,9 +368,7 @@ impl MerkleRootSigner for AkeylessDfcSigner {
                 crate::error::TameshiError::HashError(format!("DFC verify failed: {e}"))
             })?;
         let result: serde_json::Value = resp.json().await.map_err(|e| {
-            crate::error::TameshiError::HashError(format!(
-                "DFC verify response parse failed: {e}"
-            ))
+            crate::error::TameshiError::HashError(format!("DFC verify response parse failed: {e}"))
         })?;
         Ok(result["result"].as_bool().unwrap_or(false))
     }
@@ -476,9 +463,7 @@ impl MockDfcSigner {
     }
 
     /// Read fragment A from `.tameshi_frag` file in the given search directories.
-    fn read_fragment_file(
-        search_dirs: &[std::path::PathBuf],
-    ) -> crate::error::Result<String> {
+    fn read_fragment_file(search_dirs: &[std::path::PathBuf]) -> crate::error::Result<String> {
         for dir in search_dirs {
             let path = dir.join(".tameshi_frag");
             if path.exists() {
@@ -726,9 +711,10 @@ impl Default for FailableDfcSigner {
 impl MerkleRootSigner for FailableDfcSigner {
     async fn sign(&self, root: &Blake3Hash) -> crate::error::Result<SignedRoot> {
         match &self.fail_mode {
-            Some(FailMode::Timeout(d)) => Err(crate::error::TameshiError::HashError(
-                format!("DFC sign timed out after {}ms", d.as_millis()),
-            )),
+            Some(FailMode::Timeout(d)) => Err(crate::error::TameshiError::HashError(format!(
+                "DFC sign timed out after {}ms",
+                d.as_millis()
+            ))),
             Some(FailMode::AuthFailure) => Err(crate::error::TameshiError::HashError(
                 "DFC authentication failed: invalid credentials".to_string(),
             )),
@@ -750,9 +736,10 @@ impl MerkleRootSigner for FailableDfcSigner {
 
     async fn verify(&self, signed: &SignedRoot) -> crate::error::Result<bool> {
         match &self.fail_mode {
-            Some(FailMode::Timeout(d)) => Err(crate::error::TameshiError::HashError(
-                format!("DFC verify timed out after {}ms", d.as_millis()),
-            )),
+            Some(FailMode::Timeout(d)) => Err(crate::error::TameshiError::HashError(format!(
+                "DFC verify timed out after {}ms",
+                d.as_millis()
+            ))),
             Some(FailMode::AuthFailure) => Err(crate::error::TameshiError::HashError(
                 "DFC authentication failed: invalid credentials".to_string(),
             )),
@@ -797,7 +784,10 @@ mod tests {
     fn signing_algorithm_display() {
         assert_eq!(SigningAlgorithm::Ed25519Local.to_string(), "ed25519_local");
         assert_eq!(
-            SigningAlgorithm::AkeylessDfc { key_name: "my-key".to_string() }.to_string(),
+            SigningAlgorithm::AkeylessDfc {
+                key_name: "my-key".to_string()
+            }
+            .to_string(),
             "akeyless_dfc:my-key"
         );
         assert_eq!(SigningAlgorithm::BreakGlass.to_string(), "break_glass");
@@ -807,7 +797,9 @@ mod tests {
     fn signing_algorithm_serde_roundtrip() {
         let algos = vec![
             SigningAlgorithm::Ed25519Local,
-            SigningAlgorithm::AkeylessDfc { key_name: "dfc-key-1".to_string() },
+            SigningAlgorithm::AkeylessDfc {
+                key_name: "dfc-key-1".to_string(),
+            },
             SigningAlgorithm::BreakGlass,
         ];
         for algo in &algos {
@@ -887,7 +879,11 @@ mod tests {
         // The signature is a 64-byte Ed25519 signature, not a 32-byte MAC.
         let signer = LocalSigner::for_testing();
         let signed = signer.sign(&Blake3Hash::digest(b"r")).await.unwrap();
-        assert_eq!(signed.signature.len(), 64, "Ed25519 signatures are 64 bytes");
+        assert_eq!(
+            signed.signature.len(),
+            64,
+            "Ed25519 signatures are 64 bytes"
+        );
         // The verifying key is the real 32-byte Ed25519 public key, distinct from
         // both the secret seed and the BLAKE3 hash of it.
         assert_eq!(signer.verifying_key().len(), 32);
@@ -918,7 +914,10 @@ mod tests {
         // A tampered root rejects under the public key.
         let mut tampered = signed.clone();
         tampered.root = Blake3Hash::digest(b"forged");
-        assert!(!verify_signed_root(&tampered, &pubkey), "tampered root must reject");
+        assert!(
+            !verify_signed_root(&tampered, &pubkey),
+            "tampered root must reject"
+        );
     }
 
     #[test]
@@ -1090,7 +1089,10 @@ mod tests {
         let token = BreakGlassToken::create_signed(
             "oncall@pleme.io",
             "INC-2847",
-            vec!["namespace:production".to_string(), "namespace:staging".to_string()],
+            vec![
+                "namespace:production".to_string(),
+                "namespace:staging".to_string(),
+            ],
             4,
             &signer,
         );
@@ -1114,7 +1116,10 @@ mod tests {
 
         // Tamper with the reason
         token.reason = "hacked reason".to_string();
-        assert!(!token.verify_signature(&signer), "Tampered token should fail verification");
+        assert!(
+            !token.verify_signature(&signer),
+            "Tampered token should fail verification"
+        );
     }
 
     #[test]
@@ -1175,7 +1180,10 @@ mod tests {
             "my-secret-key",
             &tls,
         );
-        assert!(signer.is_ok(), "with_tls with default TlsConfig should succeed");
+        assert!(
+            signer.is_ok(),
+            "with_tls with default TlsConfig should succeed"
+        );
         let signer = signer.unwrap();
         assert_eq!(signer.key_name, "prod-dfc-key");
         assert_eq!(signer.signer_id, "ci-pipeline");
@@ -1363,7 +1371,10 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains(".tameshi_frag"), "Error should mention the file: {err}");
+        assert!(
+            err.contains(".tameshi_frag"),
+            "Error should mention the file: {err}"
+        );
     }
 
     #[test]
@@ -1398,7 +1409,10 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("invalid hex") || err.contains("hex"), "Error should mention hex: {err}");
+        assert!(
+            err.contains("invalid hex") || err.contains("hex"),
+            "Error should mention hex: {err}"
+        );
     }
 
     #[test]
@@ -1441,7 +1455,10 @@ mod tests {
 
         // LocalSigner should not be able to verify a MockDfc signature
         let verified = local.verify(&signed_by_mock).await.unwrap();
-        assert!(!verified, "LocalSigner should not verify MockDfc signatures");
+        assert!(
+            !verified,
+            "LocalSigner should not verify MockDfc signatures"
+        );
     }
 
     #[test]
@@ -1550,7 +1567,10 @@ mod tests {
         let key = signer.reconstruct_key();
         // a XOR a = 0, so key = BLAKE3([0; 32])
         let expected = *blake3::hash(&[0u8; 32]).as_bytes();
-        assert_eq!(key, expected, "Same fragments should XOR to zero then BLAKE3");
+        assert_eq!(
+            key, expected,
+            "Same fragments should XOR to zero then BLAKE3"
+        );
     }
 
     // ---- Large payload signing (1MB) ----
@@ -1563,7 +1583,11 @@ mod tests {
         let root = Blake3Hash::digest(&large_data);
         let signed = signer.sign(&root).await.unwrap();
         assert!(signer.verify(&signed).await.unwrap());
-        assert_eq!(signed.signature.len(), 32, "BLAKE3 keyed hash is always 32 bytes");
+        assert_eq!(
+            signed.signature.len(),
+            32,
+            "BLAKE3 keyed hash is always 32 bytes"
+        );
     }
 
     // ---- Signature uniqueness: 1000 different roots ----
@@ -1577,7 +1601,11 @@ mod tests {
             let signed = signer.sign(&root).await.unwrap();
             sigs.insert(signed.signature);
         }
-        assert_eq!(sigs.len(), 1000, "1000 different roots should produce 1000 unique signatures");
+        assert_eq!(
+            sigs.len(),
+            1000,
+            "1000 different roots should produce 1000 unique signatures"
+        );
     }
 
     // ---- Determinism (clock independence): same root always same signature ----
@@ -1591,7 +1619,10 @@ mod tests {
         // Wait a tiny bit (not actually needed due to determinism, but for clarity)
         let signed2 = signer.sign(&root).await.unwrap();
 
-        assert_eq!(signed1.signature, signed2.signature, "Signature should be deterministic regardless of time");
+        assert_eq!(
+            signed1.signature, signed2.signature,
+            "Signature should be deterministic regardless of time"
+        );
         // But signed_at may differ (that's fine, it's metadata)
     }
 
@@ -1617,14 +1648,20 @@ mod tests {
         for h in handles {
             sigs.insert(h.await.unwrap());
         }
-        assert_eq!(sigs.len(), 8, "8 threads should produce 8 distinct signatures");
+        assert_eq!(
+            sigs.len(),
+            8,
+            "8 threads should produce 8 distinct signatures"
+        );
     }
 
     // ---- Cross-pillar: sign a CertificationArtifact's composed_root ----
 
     #[tokio::test]
     async fn mock_dfc_sign_certification_artifact_root() {
-        use crate::certification_artifact::{compose_certification_artifact, verify_certification_artifact};
+        use crate::certification_artifact::{
+            compose_certification_artifact, verify_certification_artifact,
+        };
 
         let art = compose_certification_artifact(
             "/bin/test",
@@ -1651,7 +1688,10 @@ mod tests {
 
         // Flip one bit in the signature
         signed.signature[0] ^= 0x01;
-        assert!(!signer.verify(&signed).await.unwrap(), "Tampered signature should fail");
+        assert!(
+            !signer.verify(&signed).await.unwrap(),
+            "Tampered signature should fail"
+        );
     }
 
     // ---- Swapped fragments produce different keys ----
@@ -1809,13 +1849,8 @@ mod tests {
     #[test]
     fn break_glass_token_empty_scope() {
         let signer = LocalSigner::for_testing();
-        let token = BreakGlassToken::create_signed(
-            "admin@pleme.io",
-            "empty scope",
-            vec![],
-            4,
-            &signer,
-        );
+        let token =
+            BreakGlassToken::create_signed("admin@pleme.io", "empty scope", vec![], 4, &signer);
         assert!(!token.covers_namespace("anything"));
     }
 
@@ -1851,8 +1886,7 @@ mod tests {
 
     #[tokio::test]
     async fn failable_dfc_timeout_returns_error() {
-        let signer =
-            FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+        let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
         let root = Blake3Hash::digest(b"timeout-test");
         let result = signer.sign(&root).await;
         assert!(result.is_err());
@@ -1875,10 +1909,7 @@ mod tests {
         // Verify against a clean signer should fail.
         let clean = MockDfcSigner::for_testing();
         let verified = clean.verify(&signed).await.unwrap();
-        assert!(
-            !verified,
-            "Corrupted signature should fail verification"
-        );
+        assert!(!verified, "Corrupted signature should fail verification");
 
         // Verify via the failable signer itself also fails
         // (delegates to inner, which rejects corrupted sig).
@@ -1916,10 +1947,7 @@ mod tests {
         );
 
         // Verify also fails with rate limit.
-        let dummy_signed = MockDfcSigner::for_testing()
-            .sign(&root)
-            .await
-            .unwrap();
+        let dummy_signed = MockDfcSigner::for_testing().sign(&root).await.unwrap();
         let verify_result = signer.verify(&dummy_signed).await;
         assert!(verify_result.is_err());
     }
@@ -1928,8 +1956,7 @@ mod tests {
     async fn failable_dfc_timeout_does_not_block_indefinitely() {
         use std::time::Instant;
 
-        let signer =
-            FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+        let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
         let root = Blake3Hash::digest(b"no-block-test");
 
         let start = Instant::now();
@@ -2002,8 +2029,7 @@ mod tests {
         use crate::gating::{GatingPolicy, evaluate_gate};
         use crate::signature::MasterSignature;
 
-        let signer =
-            FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+        let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
         let root = Blake3Hash::digest(b"gate-timeout-root");
 
         // Attempt to sign fails, so we cannot produce a valid MasterSignature.

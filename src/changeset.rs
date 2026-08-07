@@ -107,11 +107,7 @@ pub struct CertifiedChangeset {
 /// For DELETE: hash the object being deleted
 #[inline]
 #[must_use]
-pub fn hash_changeset(
-    operation: &Operation,
-    resource: &ResourceId,
-    content: &[u8],
-) -> Blake3Hash {
+pub fn hash_changeset(operation: &Operation, resource: &ResourceId, content: &[u8]) -> Blake3Hash {
     let op_str = operation.to_string();
     let canonical = resource.canonical();
     let mut data = Vec::with_capacity(op_str.len() + canonical.len() + content.len());
@@ -308,7 +304,12 @@ mod tests {
 
     #[test]
     fn operation_serde_roundtrip() {
-        for op in &[Operation::Create, Operation::Update, Operation::Patch, Operation::Delete] {
+        for op in &[
+            Operation::Create,
+            Operation::Update,
+            Operation::Patch,
+            Operation::Delete,
+        ] {
             let json = serde_json::to_string(op).unwrap();
             let deserialized: Operation = serde_json::from_str(&json).unwrap();
             assert_eq!(*op, deserialized);
@@ -338,8 +339,14 @@ mod tests {
         };
         let env_sig = Blake3Hash::digest(b"env");
         let changeset = certify_changeset(
-            Operation::Create, resource, b"data",
-            None, None, &env_sig, None, "admin",
+            Operation::Create,
+            resource,
+            b"data",
+            None,
+            None,
+            &env_sig,
+            None,
+            "admin",
         );
         let json = serde_json::to_string(&changeset).unwrap();
         let deserialized: CertifiedChangeset = serde_json::from_str(&json).unwrap();
@@ -354,13 +361,19 @@ mod tests {
         let env_sig = Blake3Hash::digest(b"env");
         let compliance = Blake3Hash::digest(b"compliance");
 
-        let h1 = compute_certification_hash(
-            &changeset_hash, None, None, &env_sig, None, "user",
-        );
+        let h1 = compute_certification_hash(&changeset_hash, None, None, &env_sig, None, "user");
         let h2 = compute_certification_hash(
-            &changeset_hash, None, None, &env_sig, Some(&compliance), "user",
+            &changeset_hash,
+            None,
+            None,
+            &env_sig,
+            Some(&compliance),
+            "user",
         );
-        assert_ne!(h1, h2, "compliance signature should change certification hash");
+        assert_ne!(
+            h1, h2,
+            "compliance signature should change certification hash"
+        );
     }
 
     #[test]
@@ -376,7 +389,10 @@ mod tests {
         let first = hash_changeset(&op, &resource, b"patch-body");
         for _ in 0..1000 {
             let h = hash_changeset(&op, &resource, b"patch-body");
-            assert_eq!(first, h, "hash_changeset must be deterministic across 1000 iterations");
+            assert_eq!(
+                first, h,
+                "hash_changeset must be deterministic across 1000 iterations"
+            );
         }
     }
 
@@ -418,8 +434,14 @@ mod tests {
         assert_eq!(deserialized.after_state_hash, Some(after));
         assert_eq!(deserialized.environment_signature, env_sig);
         assert_eq!(deserialized.compliance_signature, Some(compliance));
-        assert_eq!(deserialized.initiated_by, "system:serviceaccount:ci:deployer");
-        assert_eq!(deserialized.certification_hash, changeset.certification_hash);
+        assert_eq!(
+            deserialized.initiated_by,
+            "system:serviceaccount:ci:deployer"
+        );
+        assert_eq!(
+            deserialized.certification_hash,
+            changeset.certification_hash
+        );
 
         // Deserialized changeset still verifies
         assert!(verify_changeset(&deserialized));
@@ -485,13 +507,13 @@ mod tests {
         let changeset_hash = Blake3Hash::digest(b"change");
         let env_sig = Blake3Hash::digest(b"env");
 
-        let h1 = compute_certification_hash(
-            &changeset_hash, None, None, &env_sig, None, "admin",
+        let h1 = compute_certification_hash(&changeset_hash, None, None, &env_sig, None, "admin");
+        let h2 =
+            compute_certification_hash(&changeset_hash, None, None, &env_sig, None, "attacker");
+        assert_ne!(
+            h1, h2,
+            "Different initiators must produce different certification hashes"
         );
-        let h2 = compute_certification_hash(
-            &changeset_hash, None, None, &env_sig, None, "attacker",
-        );
-        assert_ne!(h1, h2, "Different initiators must produce different certification hashes");
     }
 
     #[test]
@@ -506,8 +528,14 @@ mod tests {
         let env_sig = Blake3Hash::digest(b"env");
         let before = Blake3Hash::digest(b"before-state");
         let changeset = certify_changeset(
-            Operation::Delete, resource, b"pod-manifest",
-            Some(&before), None, &env_sig, None, "kubectl",
+            Operation::Delete,
+            resource,
+            b"pod-manifest",
+            Some(&before),
+            None,
+            &env_sig,
+            None,
+            "kubectl",
         );
         assert!(verify_changeset(&changeset));
         assert!(changeset.before_state_hash.is_some());

@@ -7,12 +7,14 @@ use tameshi::certification_artifact::{
 };
 use tameshi::changeset::{Operation, ResourceId, certify_changeset, verify_changeset};
 use tameshi::gating::{GatingPolicy, evaluate_gate};
-use tameshi::global::{compute_cluster_root, compute_global_root, ClusterRootEntry, ClusterStatus};
+use tameshi::global::{ClusterRootEntry, ClusterStatus, compute_cluster_root, compute_global_root};
 use tameshi::hash::Blake3Hash;
 use tameshi::heartbeat::{HeartbeatChain, HeartbeatEvent, VerificationOutcome, VerifierIdentity};
-use tameshi::merkle::{compose_merkle, compute_merkle_root, domain_separated_leaf, merkle_proof, verify_proof};
+use tameshi::merkle::{
+    compose_merkle, compute_merkle_root, domain_separated_leaf, merkle_proof, verify_proof,
+};
 use tameshi::signature::{LayerSignature, LayerType, MasterSignature};
-use tameshi::signing::{LocalSigner, MockDfcSigner, MerkleRootSigner};
+use tameshi::signing::{LocalSigner, MerkleRootSigner, MockDfcSigner};
 
 fn arb_layer_type() -> impl Strategy<Value = LayerType> {
     prop_oneof![
@@ -32,13 +34,9 @@ fn arb_layer_type() -> impl Strategy<Value = LayerType> {
 }
 
 fn arb_layer_sig() -> impl Strategy<Value = LayerSignature> {
-    (
-        arb_layer_type(),
-        prop::collection::vec(any::<u8>(), 1..256),
-    )
-        .prop_map(|(lt, data)| {
-            LayerSignature::new(lt, Blake3Hash::digest(&data), "proptest", vec![])
-        })
+    (arb_layer_type(), prop::collection::vec(any::<u8>(), 1..256)).prop_map(|(lt, data)| {
+        LayerSignature::new(lt, Blake3Hash::digest(&data), "proptest", vec![])
+    })
 }
 
 proptest! {

@@ -311,9 +311,8 @@ impl AttestationHasher for Blake3Hasher {
     }
 
     fn from_hex(hex: &str) -> crate::error::Result<Blake3Hash> {
-        Blake3Hash::from_hex(hex).map_err(|e| {
-            crate::error::TameshiError::InvalidInput(format!("invalid hex: {e}"))
-        })
+        Blake3Hash::from_hex(hex)
+            .map_err(|e| crate::error::TameshiError::InvalidInput(format!("invalid hex: {e}")))
     }
 }
 
@@ -366,9 +365,8 @@ impl AttestationHasher for Sha256Hasher {
     }
 
     fn from_hex(hex: &str) -> crate::error::Result<Sha256Hash> {
-        Sha256Hash::from_hex(hex).map_err(|e| {
-            crate::error::TameshiError::InvalidInput(format!("invalid hex: {e}"))
-        })
+        Sha256Hash::from_hex(hex)
+            .map_err(|e| crate::error::TameshiError::InvalidInput(format!("invalid hex: {e}")))
     }
 }
 
@@ -488,10 +486,11 @@ mod tests {
 
     #[test]
     fn const_hex_encode_decode() {
-        let original = [0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33,
-                        0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
-                        0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02, 0x03, 0x04,
-                        0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c];
+        let original = [
+            0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a, 0x0b, 0x0c,
+        ];
         let encoded = const_hex::encode(original);
         let decoded = const_hex::decode(&encoded).unwrap();
         assert_eq!(&original[..], &decoded[..]);
@@ -689,7 +688,11 @@ mod tests {
         for byte in 0u8..=255 {
             hashes.insert(Blake3Hash::digest(&[byte]));
         }
-        assert_eq!(hashes.len(), 256, "Every single-byte input must produce a unique hash");
+        assert_eq!(
+            hashes.len(),
+            256,
+            "Every single-byte input must produce a unique hash"
+        );
     }
 
     #[test]
@@ -704,7 +707,10 @@ mod tests {
         }
         let final_hash = Blake3Hash::digest(&combined);
         let final_hash2 = Blake3Hash::digest(&combined);
-        assert_eq!(final_hash, final_hash2, "Large composite must be deterministic");
+        assert_eq!(
+            final_hash, final_hash2,
+            "Large composite must be deterministic"
+        );
     }
 
     #[test]
@@ -753,7 +759,9 @@ mod tests {
         rt.block_on(async {
             let dir = tempfile::tempdir().unwrap();
             let file_path = dir.path().join("async-test.bin");
-            tokio::fs::write(&file_path, b"async file content").await.unwrap();
+            tokio::fs::write(&file_path, b"async file content")
+                .await
+                .unwrap();
             let h1 = blake3_file_async(&file_path).await.unwrap();
             let h2 = blake3_file(&file_path).unwrap();
             assert_eq!(h1, h2, "Async and sync file hashing must agree");
@@ -779,7 +787,13 @@ mod tests {
         let mixed: String = hex
             .chars()
             .enumerate()
-            .map(|(i, c)| if i % 2 == 0 { c.to_uppercase().next().unwrap() } else { c })
+            .map(|(i, c)| {
+                if i % 2 == 0 {
+                    c.to_uppercase().next().unwrap()
+                } else {
+                    c
+                }
+            })
             .collect();
         let parsed = Blake3Hash::from_hex(&mixed);
         assert!(parsed.is_ok(), "Mixed-case hex should parse successfully");

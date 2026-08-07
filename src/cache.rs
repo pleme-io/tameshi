@@ -25,7 +25,11 @@ impl CacheStats {
     #[must_use]
     pub fn hit_rate(&self) -> f64 {
         let total = self.hits + self.misses;
-        if total == 0 { 0.0 } else { (self.hits as f64 / total as f64) * 100.0 }
+        if total == 0 {
+            0.0
+        } else {
+            (self.hits as f64 / total as f64) * 100.0
+        }
     }
 }
 
@@ -205,7 +209,10 @@ mod tests {
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.hits, 3);
         let rate = stats.hit_rate();
-        assert!((rate - 75.0).abs() < f64::EPSILON, "Expected 75.0, got {rate}");
+        assert!(
+            (rate - 75.0).abs() < f64::EPSILON,
+            "Expected 75.0, got {rate}"
+        );
 
         // Empty stats should return 0.0
         let empty = CacheStats::default();
@@ -228,7 +235,10 @@ mod tests {
         // Second call after expiry: miss again
         let _ = cached.collect().await.unwrap();
         let stats = cached.stats();
-        assert_eq!(stats.misses, 2, "Should have 2 misses (initial + after expiry)");
+        assert_eq!(
+            stats.misses, 2,
+            "Should have 2 misses (initial + after expiry)"
+        );
         assert_eq!(stats.hits, 0);
     }
 
@@ -281,7 +291,10 @@ mod tests {
         // Next collect should be a miss
         let _ = cached.collect().await.unwrap();
         let stats = cached.stats();
-        assert_eq!(stats.misses, 2, "Post-invalidation collect should be a miss");
+        assert_eq!(
+            stats.misses, 2,
+            "Post-invalidation collect should be a miss"
+        );
         assert_eq!(stats.hits, 0);
     }
 
@@ -313,7 +326,10 @@ mod tests {
 
         // Hit rate = 14 / (14 + 2) = 87.5%
         let rate = stats.hit_rate();
-        assert!((rate - 87.5).abs() < f64::EPSILON, "Expected 87.5%, got {rate}");
+        assert!(
+            (rate - 87.5).abs() < f64::EPSILON,
+            "Expected 87.5%, got {rate}"
+        );
     }
 
     #[tokio::test]

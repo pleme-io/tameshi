@@ -286,7 +286,10 @@ mod tests {
 
     #[test]
     fn audit_action_display() {
-        assert_eq!(AuditAction::SignatureComputed.to_string(), "signature_computed");
+        assert_eq!(
+            AuditAction::SignatureComputed.to_string(),
+            "signature_computed"
+        );
         assert_eq!(AuditAction::GateDenied.to_string(), "gate_denied");
     }
 
@@ -375,7 +378,10 @@ mod tests {
         let json = serde_json::to_string(&entry).unwrap();
         let deserialized: AuditEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.action, AuditAction::SignatureComputed);
-        assert_eq!(deserialized.resource, Some("apps/v1/Deployment/my-app".to_string()));
+        assert_eq!(
+            deserialized.resource,
+            Some("apps/v1/Deployment/my-app".to_string())
+        );
         assert_eq!(deserialized.allowed, Some(true));
     }
 

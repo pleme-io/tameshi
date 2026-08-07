@@ -253,7 +253,10 @@ mod tests {
         let composed = Blake3Hash::digest(b"composed-data");
         let salt = Blake3Hash::digest(b"salt-value");
         let sr = salted_root(&composed, &salt);
-        assert_ne!(sr, composed, "salted root must differ from the original composed root");
+        assert_ne!(
+            sr, composed,
+            "salted root must differ from the original composed root"
+        );
     }
 
     #[test]
@@ -270,6 +273,10 @@ mod tests {
     fn empty_node_name_produces_valid_salt() {
         let salt = MockTpmSalt::from_node_name("");
         let s = salt.salt();
-        assert_ne!(s, Blake3Hash::from([0u8; 32]), "empty name should still produce a non-zero hash");
+        assert_ne!(
+            s,
+            Blake3Hash::from([0u8; 32]),
+            "empty name should still produce a non-zero hash"
+        );
     }
 }

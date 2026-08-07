@@ -78,11 +78,8 @@ pub fn run_compliance_heartbeat(
     maps: &dyn BpfMapOps,
     chain: &HeartbeatChain,
 ) -> HeartbeatCycleResult {
-    let verifier = VerifierIdentity::new(
-        "tameshi",
-        "compliance-heartbeat",
-        env!("CARGO_PKG_VERSION"),
-    );
+    let verifier =
+        VerifierIdentity::new("tameshi", "compliance-heartbeat", env!("CARGO_PKG_VERSION"));
     let mut passed = 0;
     let mut revoked = 0;
     let mut revoked_hashes = Vec::new();
@@ -96,10 +93,7 @@ pub fn run_compliance_heartbeat(
                     verifier.clone(),
                     HeartbeatEvent::ComplianceRecheck,
                     VerificationOutcome::Allowed,
-                    &format!(
-                        "compliance-recheck:{}",
-                        &binary_hash.to_hex()[..16]
-                    ),
+                    &format!("compliance-recheck:{}", &binary_hash.to_hex()[..16]),
                     binary_hash.clone(),
                 );
             }
@@ -112,10 +106,7 @@ pub fn run_compliance_heartbeat(
                     verifier.clone(),
                     HeartbeatEvent::ComplianceRecheck,
                     VerificationOutcome::Denied,
-                    &format!(
-                        "compliance-drift:{}",
-                        &binary_hash.to_hex()[..16]
-                    ),
+                    &format!("compliance-drift:{}", &binary_hash.to_hex()[..16]),
                     binary_hash.clone(),
                 );
             }
@@ -160,11 +151,7 @@ mod tests {
         provider.set_root(b2.clone(), r2.clone());
         provider.set_root(b3.clone(), r3.clone());
 
-        let attested = vec![
-            (b1, r1),
-            (b2, r2),
-            (b3, r3),
-        ];
+        let attested = vec![(b1, r1), (b2, r2), (b3, r3)];
 
         let result = run_compliance_heartbeat(&attested, &provider, &maps, &chain);
 
@@ -274,11 +261,7 @@ mod tests {
         provider.set_root(b1.clone(), r1.clone());
         provider.set_root(b2.clone(), make_root(b"er-2-new"));
 
-        let attested = vec![
-            (b1, r1),
-            (b2, r2),
-            (b3, r3),
-        ];
+        let attested = vec![(b1, r1), (b2, r2), (b3, r3)];
 
         run_compliance_heartbeat(&attested, &provider, &maps, &chain);
 

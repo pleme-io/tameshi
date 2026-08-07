@@ -201,8 +201,7 @@ mod tests {
         use crate::akeyless_client::MockAkeylessClient;
 
         let client = MockAkeylessClient::new();
-        let collector =
-            LiveAkeylessCollector::new(client, vec!["/mock/secret".to_string()]);
+        let collector = LiveAkeylessCollector::new(client, vec!["/mock/secret".to_string()]);
         let sig = collector.collect().await.unwrap();
 
         assert_eq!(sig.layer, LayerType::Akeyless);
@@ -215,8 +214,7 @@ mod tests {
         use crate::akeyless_client::MockAkeylessClient;
 
         let client = MockAkeylessClient::new();
-        let collector =
-            LiveAkeylessCollector::new(client, vec!["/mock/secret".to_string()]);
+        let collector = LiveAkeylessCollector::new(client, vec!["/mock/secret".to_string()]);
         assert_eq!(collector.layer_type(), LayerType::Akeyless);
     }
 

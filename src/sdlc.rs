@@ -244,16 +244,19 @@ mod tests {
     #[test]
     fn sdlc_phase_display_all_variants() {
         let displays: Vec<String> = ALL_PHASES.iter().map(|p| p.to_string()).collect();
-        assert_eq!(displays, vec![
-            "source_commit",
-            "ci_build",
-            "nix_evaluation",
-            "container_build",
-            "helm_package",
-            "gitops_sync",
-            "k8s_admission",
-            "runtime_execution",
-        ]);
+        assert_eq!(
+            displays,
+            vec![
+                "source_commit",
+                "ci_build",
+                "nix_evaluation",
+                "container_build",
+                "helm_package",
+                "gitops_sync",
+                "k8s_admission",
+                "runtime_execution",
+            ]
+        );
     }
 
     #[test]
@@ -523,9 +526,7 @@ mod tests {
         // The chain hash should be the artifact_hash input
         assert_eq!(artifact.artifact_hash, chain.chain_hash);
         // The composed root should be a valid 3-leaf Merkle commitment
-        assert!(crate::certification_artifact::verify_certification_artifact(
-            &artifact
-        ));
+        assert!(crate::certification_artifact::verify_certification_artifact(&artifact));
     }
 
     #[test]
@@ -543,9 +544,19 @@ mod tests {
         chain.add_checkpoint(make_checkpoint(SdlcPhase::NixEvaluation, b"n", true));
         assert!(!chain.all_gates_passed);
         // Verify individual gate statuses are accessible
-        assert!(!chain.get_phase(&SdlcPhase::SourceCommit).unwrap().gate_passed);
+        assert!(
+            !chain
+                .get_phase(&SdlcPhase::SourceCommit)
+                .unwrap()
+                .gate_passed
+        );
         assert!(!chain.get_phase(&SdlcPhase::CiBuild).unwrap().gate_passed);
-        assert!(chain.get_phase(&SdlcPhase::NixEvaluation).unwrap().gate_passed);
+        assert!(
+            chain
+                .get_phase(&SdlcPhase::NixEvaluation)
+                .unwrap()
+                .gate_passed
+        );
     }
 
     #[test]

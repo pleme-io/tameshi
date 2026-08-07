@@ -102,10 +102,12 @@ pub struct MockSecretSharing;
 
 impl SecretSharingScheme for MockSecretSharing {
     fn split(&self, secret: &[u8], _k: u8, n: u8) -> Vec<Share> {
-        (1..=n).map(|x| Share {
-            x,
-            y: secret.to_vec(),
-        }).collect()
+        (1..=n)
+            .map(|x| Share {
+                x,
+                y: secret.to_vec(),
+            })
+            .collect()
     }
 
     fn reconstruct(&self, shares: &[Share]) -> Vec<u8> {
@@ -150,7 +152,8 @@ pub fn split(secret: &[u8], k: u8, n: u8) -> Vec<Share> {
         for _ in 1..k {
             // Simple deterministic PRNG for reproducibility in tests.
             // In production, use a CSPRNG.
-            rng_state = rng_state.wrapping_mul(6_364_136_223_846_793_005)
+            rng_state = rng_state
+                .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1_442_695_040_888_963_407);
             coeffs.push((rng_state >> 33) as u8);
         }
@@ -221,7 +224,10 @@ pub fn split_deterministic(secret: &[u8], k: u8, n: u8, random_bytes: &[u8]) -> 
 pub fn reconstruct(shares: &[Share]) -> Vec<u8> {
     assert!(!shares.is_empty(), "need at least one share");
     let len = shares[0].y.len();
-    assert!(shares.iter().all(|s| s.y.len() == len), "shares must have equal length");
+    assert!(
+        shares.iter().all(|s| s.y.len() == len),
+        "shares must have equal length"
+    );
 
     let mut secret = vec![0u8; len];
 
@@ -271,7 +277,10 @@ impl std::fmt::Debug for ShamirDfcSigner {
         f.debug_struct("ShamirDfcSigner")
             .field("signer_id", &self.signer_id)
             .field("threshold", &self.threshold)
-            .field("shares", &format!("[{} shares REDACTED]", self.shares.len()))
+            .field(
+                "shares",
+                &format!("[{} shares REDACTED]", self.shares.len()),
+            )
             .finish()
     }
 }
@@ -389,11 +398,7 @@ mod tests {
     fn gf256_inv_roundtrip() {
         for a in 1..=255u8 {
             let inv = gf256_inv(a);
-            assert_eq!(
-                gf256_mul(a, inv),
-                1,
-                "a * a^(-1) = 1 for a={a}"
-            );
+            assert_eq!(gf256_mul(a, inv), 1, "a * a^(-1) = 1 for a={a}");
         }
     }
 
@@ -542,11 +547,7 @@ mod tests {
         let all_shares = split(&key, 3, 5);
 
         // Signer with all 5 shares, threshold 3 (correct)
-        let correct_signer = ShamirDfcSigner::from_shares(
-            all_shares.clone(),
-            3,
-            "correct",
-        );
+        let correct_signer = ShamirDfcSigner::from_shares(all_shares.clone(), 3, "correct");
 
         // Signer with only 2 shares but claiming threshold 2
         // (reconstructing with fewer shares gives a DIFFERENT key)
@@ -560,7 +561,10 @@ mod tests {
 
         // Verify with wrong key should fail
         let wrong_sig = blake3::keyed_hash(&wrong_key, &root.0).as_bytes().to_vec();
-        assert_ne!(signed.signature, wrong_sig, "below-threshold key must differ");
+        assert_ne!(
+            signed.signature, wrong_sig,
+            "below-threshold key must differ"
+        );
     }
 
     #[test]

@@ -100,16 +100,15 @@ impl AgentRuntimeCollector {
 
 impl LayerCollector for AgentRuntimeCollector {
     async fn collect(&self) -> Result<LayerSignature> {
-        let policy_canonical =
-            serde_json::to_string(&self.config.policy).unwrap_or_default();
+        let policy_canonical = serde_json::to_string(&self.config.policy).unwrap_or_default();
         let policy_hash = Blake3Hash::digest(policy_canonical.as_bytes());
 
         let oversight_canonical =
             serde_json::to_string(&self.config.policy.human_oversight).unwrap_or_default();
         let oversight_hash = Blake3Hash::digest(oversight_canonical.as_bytes());
 
-        let sandbox_str = serde_json::to_string(&self.config.policy.sandbox_mode)
-            .unwrap_or_default();
+        let sandbox_str =
+            serde_json::to_string(&self.config.policy.sandbox_mode).unwrap_or_default();
         let sandbox_hash = Blake3Hash::digest(sandbox_str.as_bytes());
 
         let inputs = vec![

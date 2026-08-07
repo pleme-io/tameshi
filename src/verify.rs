@@ -250,7 +250,10 @@ mod tests {
         let master = merkle::compose_merkle(&layers, "staging");
         assert!(!master.is_fully_attested());
         let expected = master.gating_signature().clone();
-        assert_eq!(expected, master.untested, "without compliance, gating = untested");
+        assert_eq!(
+            expected, master.untested,
+            "without compliance, gating = untested"
+        );
         let result = verify_master(&master, &expected);
         assert!(result.passed);
     }
@@ -270,8 +273,11 @@ mod tests {
         let wrong = Blake3Hash::digest(b"wrong");
         let err = verify_untested(&master, &wrong).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("expected") || msg.contains("got") || msg.contains("verification"),
-            "error should describe the mismatch: {}", msg);
+        assert!(
+            msg.contains("expected") || msg.contains("got") || msg.contains("verification"),
+            "error should describe the mismatch: {}",
+            msg
+        );
     }
 
     #[test]
@@ -281,8 +287,10 @@ mod tests {
         let master = merkle::compose_merkle(&layers, "prod").with_compliance(compliance);
         let wrong = Blake3Hash::digest(b"wrong");
         let err = verify_secure(&master, &wrong).unwrap_err();
-        assert!(err.to_string().contains(wrong.to_hex().as_str()) ||
-                err.to_string().contains("expected"));
+        assert!(
+            err.to_string().contains(wrong.to_hex().as_str())
+                || err.to_string().contains("expected")
+        );
     }
 
     #[test]

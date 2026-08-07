@@ -12,7 +12,7 @@ use tameshi::ai_threat::{
 use tameshi::certification_artifact::{
     compose_certification_artifact, verify_certification_artifact,
 };
-use tameshi::gating::{evaluate_gate, evaluate_gate_with_clock, GatingPolicy};
+use tameshi::gating::{GatingPolicy, evaluate_gate, evaluate_gate_with_clock};
 use tameshi::hash::Blake3Hash;
 use tameshi::heartbeat::{HeartbeatChain, HeartbeatEvent, VerificationOutcome, VerifierIdentity};
 use tameshi::merkle::{compose_merkle, compute_merkle_root};
@@ -30,8 +30,18 @@ use tameshi::traits::FixedClock;
 /// CertificationArtifact. Returns (master, expected_gating_hash).
 fn make_attested_master(environment: &str) -> (MasterSignature, Blake3Hash) {
     let layers = vec![
-        LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix-closure"), "test", vec![]),
-        LayerSignature::new(LayerType::Oci, Blake3Hash::digest(b"oci-manifest"), "test", vec![]),
+        LayerSignature::new(
+            LayerType::Nix,
+            Blake3Hash::digest(b"nix-closure"),
+            "test",
+            vec![],
+        ),
+        LayerSignature::new(
+            LayerType::Oci,
+            Blake3Hash::digest(b"oci-manifest"),
+            "test",
+            vec![],
+        ),
     ];
     let compliance = Blake3Hash::digest(b"compliance-passed");
     let cert = make_valid_artifact();
@@ -81,12 +91,7 @@ fn make_ai_request(
 }
 
 /// Record a gate decision in the heartbeat chain.
-fn record_decision(
-    chain: &HeartbeatChain,
-    allowed: bool,
-    resource: &str,
-    hash: Blake3Hash,
-) {
+fn record_decision(chain: &HeartbeatChain, allowed: bool, resource: &str, hash: Blake3Hash) {
     let verifier = VerifierIdentity::new("test-harness", "matrix", "0.1.0");
     let outcome = if allowed {
         VerificationOutcome::Allowed
@@ -344,8 +349,7 @@ async fn v06_ai_warn_valid_gate_allow_with_log() {
     assert!(decision.allowed, "V-06: gate should ALLOW");
 
     // Pipeline: WARN does not block, but is logged
-    let pipeline_allowed =
-        decision.allowed && response.decision != AiDecision::Deny;
+    let pipeline_allowed = decision.allowed && response.decision != AiDecision::Deny;
     assert!(pipeline_allowed, "V-06: WARN + valid gate = ALLOW");
 
     // INV-6: both gate and AI events recorded
@@ -372,8 +376,7 @@ fn v07_toctou_hash_changes_deny() {
     let (master, expected_at_admission) = make_attested_master("production");
 
     // Admission: hash matches -> ALLOW
-    let admission_decision =
-        evaluate_gate(&strict_policy(), &master, &expected_at_admission);
+    let admission_decision = evaluate_gate(&strict_policy(), &master, &expected_at_admission);
     assert!(admission_decision.allowed, "V-07: admission should ALLOW");
 
     // At execve time, the binary has been replaced. The BPF map has the
@@ -396,7 +399,12 @@ fn v07_toctou_hash_changes_deny() {
     );
 
     let chain = HeartbeatChain::new();
-    record_decision(&chain, true, "/usr/bin/app (admission)", expected_at_admission);
+    record_decision(
+        &chain,
+        true,
+        "/usr/bin/app (admission)",
+        expected_at_admission,
+    );
     record_decision(
         &chain,
         false,
@@ -564,9 +572,12 @@ async fn v12_all_services_down_deny() {
     assert!(ai_result.is_err(), "V-12: AI must fail");
 
     // Gate without compliance (simulating no compliance service)
-    let layers = vec![
-        LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix"), "test", vec![]),
-    ];
+    let layers = vec![LayerSignature::new(
+        LayerType::Nix,
+        Blake3Hash::digest(b"nix"),
+        "test",
+        vec![],
+    )];
     let master = compose_merkle(&layers, "production"); // no compliance, no artifacts
     let expected = master.gating_signature().clone();
     let policy = strict_policy();
@@ -614,10 +625,7 @@ fn v13_tampered_certification_artifact_deny() {
 
     let policy = strict_policy();
     let decision = evaluate_gate(&policy, &master, &expected);
-    assert!(
-        !decision.allowed,
-        "V-13: gate must DENY tampered artifact"
-    );
+    assert!(!decision.allowed, "V-13: gate must DENY tampered artifact");
     assert!(decision.reason.contains("Invalid certification artifact"));
 
     let chain = HeartbeatChain::new();
@@ -743,10 +751,7 @@ fn v16_valid_cert_expired_signature_deny() {
     let clock = FixedClock::new(future_time);
     let decision = evaluate_gate_with_clock(&policy, &master, &expected, &clock);
 
-    assert!(
-        !decision.allowed,
-        "V-16: expired signature must DENY"
-    );
+    assert!(!decision.allowed, "V-16: expired signature must DENY");
     assert!(
         decision.reason.contains("stale"),
         "V-16: reason should mention staleness"
@@ -768,7 +773,10 @@ fn v17_break_glass_valid_allow_with_audit() {
     let token = BreakGlassToken::create_signed(
         "ops@pleme.io",
         "attestation service outage",
-        vec!["namespace:default".to_string(), "namespace:production".to_string()],
+        vec![
+            "namespace:default".to_string(),
+            "namespace:production".to_string(),
+        ],
         4, // valid for 4 hours
         &signer,
     );
@@ -897,7 +905,11 @@ fn v19_multiple_artifacts_one_invalid_deny() {
         !decision.allowed,
         "V-19 / INV-4: one invalid artifact out of many must DENY"
     );
-    assert!(decision.reason.contains("Invalid certification artifact at index 1"));
+    assert!(
+        decision
+            .reason
+            .contains("Invalid certification artifact at index 1")
+    );
 
     let chain = HeartbeatChain::new();
     record_decision(&chain, false, "/usr/bin/app", expected);
@@ -953,10 +965,7 @@ async fn inv05_wrong_fragments_verify_false() {
 
     let signed = signer_a.sign(&root).await.unwrap();
     let verified_by_b = signer_b.verify(&signed).await.unwrap();
-    assert!(
-        !verified_by_b,
-        "INV-5: different fragments must not verify"
-    );
+    assert!(!verified_by_b, "INV-5: different fragments must not verify");
 
     // Same signer verifies its own signature
     let verified_by_a = signer_a.verify(&signed).await.unwrap();
@@ -1033,7 +1042,10 @@ fn inv11_collision_resistance() {
         ),
     ];
     let root_c = compute_merkle_root(&layers_c);
-    assert_ne!(root_a, root_c, "INV-11: single layer change -> different root");
+    assert_ne!(
+        root_a, root_c,
+        "INV-11: single layer change -> different root"
+    );
 }
 
 /// INV-12: Same inputs always produce same Merkle roots.
@@ -1054,10 +1066,7 @@ fn inv12_determinism() {
     // Order independence (layers are sorted internally)
     let layers_reversed: Vec<LayerSignature> = layers.iter().rev().cloned().collect();
     let root_reversed = compute_merkle_root(&layers_reversed);
-    assert_eq!(
-        root1, root_reversed,
-        "INV-12: order must not affect root"
-    );
+    assert_eq!(root1, root_reversed, "INV-12: order must not affect root");
 }
 
 /// INV-6: HeartbeatChain records BOTH ALLOW and DENY.

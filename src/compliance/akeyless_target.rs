@@ -211,13 +211,11 @@ pub fn compute_target_attestation_hash(attestation: &AkeylessTargetAttestation) 
     if let Some(ref tls_hash) = attestation.backend_tls_cert_hash {
         data.extend_from_slice(tls_hash.as_ref());
     }
-    data.extend_from_slice(
-        if attestation.backend_tls_verified {
-            b"tls:verified"
-        } else {
-            b"tls:unverified"
-        },
-    );
+    data.extend_from_slice(if attestation.backend_tls_verified {
+        b"tls:verified"
+    } else {
+        b"tls:unverified"
+    });
 
     // Sort producers by name for determinism.
     let mut sorted_producers = attestation.associated_producers.clone();

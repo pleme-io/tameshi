@@ -85,12 +85,14 @@ pub fn parse_inspec_output(
     framework_hash: Blake3Hash,
     catalog_hash: Blake3Hash,
 ) -> Result<AssessmentResult> {
-    let output: InSpecOutput =
-        serde_json::from_slice(json_bytes).map_err(|e| TameshiError::ComplianceError(
-            format!("failed to parse InSpec output: {}", e),
-        ))?;
+    let output: InSpecOutput = serde_json::from_slice(json_bytes).map_err(|e| {
+        TameshiError::ComplianceError(format!("failed to parse InSpec output: {}", e))
+    })?;
 
-    let version = output.version.clone().unwrap_or_else(|| "unknown".to_string());
+    let version = output
+        .version
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
 
     let mut activities = Vec::new();
     let mut results = Vec::new();
@@ -103,7 +105,10 @@ pub fn parse_inspec_output(
         profile_hashes.push(ProfileHash {
             name: profile.name.clone(),
             hash: profile_hash,
-            version: profile.version.clone().unwrap_or_else(|| "0.0.0".to_string()),
+            version: profile
+                .version
+                .clone()
+                .unwrap_or_else(|| "0.0.0".to_string()),
         });
 
         let activity_uuid = Uuid::new_v4();

@@ -180,13 +180,19 @@ impl Default for MockIacTestAttester {
 
 impl IacTestAttester for MockIacTestAttester {
     fn attest_phase(&self, result: &IacTestPhaseResult) -> crate::error::Result<()> {
-        self.phases.lock().expect("lock poisoned").push(result.clone());
+        self.phases
+            .lock()
+            .expect("lock poisoned")
+            .push(result.clone());
         Ok(())
     }
 
     fn attest_suite(&self, report: &IacTestSuiteReport) -> crate::error::Result<Blake3Hash> {
         let hash = report.suite_hash.clone();
-        self.suites.lock().expect("lock poisoned").push(report.clone());
+        self.suites
+            .lock()
+            .expect("lock poisoned")
+            .push(report.clone());
         Ok(hash)
     }
 }
@@ -566,8 +572,7 @@ mod tests {
             make_phase(IacTestPhase::Verify, true, b"ci-verify"),
             make_phase(IacTestPhase::Teardown, true, b"ci-teardown"),
         ];
-        let report =
-            IacTestSuiteReport::from_phases("integration", "terraform", "prod", phases);
+        let report = IacTestSuiteReport::from_phases("integration", "terraform", "prod", phases);
 
         let artifact = compose_certification_artifact(
             "/usr/bin/iac-test-runner",
@@ -577,9 +582,7 @@ mod tests {
             "production",
         );
 
-        assert!(crate::certification_artifact::verify_certification_artifact(
-            &artifact
-        ));
+        assert!(crate::certification_artifact::verify_certification_artifact(&artifact));
         // The control_hash in the artifact should match the suite_hash.
         assert_eq!(artifact.control_hash, report.suite_hash);
     }
@@ -589,10 +592,7 @@ mod tests {
         use crate::heartbeat::HeartbeatEvent;
         assert_eq!(HeartbeatEvent::IacTestInit.to_string(), "iac_test_init");
         assert_eq!(HeartbeatEvent::IacTestApply.to_string(), "iac_test_apply");
-        assert_eq!(
-            HeartbeatEvent::IacTestVerify.to_string(),
-            "iac_test_verify"
-        );
+        assert_eq!(HeartbeatEvent::IacTestVerify.to_string(), "iac_test_verify");
         assert_eq!(
             HeartbeatEvent::IacTestTeardown.to_string(),
             "iac_test_teardown"

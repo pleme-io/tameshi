@@ -12,12 +12,11 @@ use crate::signature::{InputHash, LayerSignature, LayerType};
 /// Extracts per-example results as [`InputHash`] entries and computes a
 /// composite hash over the full report bytes.
 pub async fn hash_rspec_output(json_bytes: &[u8], source: &str) -> Result<LayerSignature> {
-    let value: serde_json::Value = serde_json::from_slice(json_bytes).map_err(|e| {
-        TameshiError::CollectorError {
+    let value: serde_json::Value =
+        serde_json::from_slice(json_bytes).map_err(|e| TameshiError::CollectorError {
             layer: "rspec_result".to_string(),
             message: format!("invalid RSpec JSON: {e}"),
-        }
-    })?;
+        })?;
 
     let mut inputs = Vec::new();
 
@@ -55,12 +54,12 @@ pub async fn hash_rspec_output(json_bytes: &[u8], source: &str) -> Result<LayerS
 
 /// Hash RSpec JSON output from a file.
 pub async fn hash_rspec_file(path: &str) -> Result<LayerSignature> {
-    let bytes = tokio::fs::read(path).await.map_err(|e| {
-        TameshiError::CollectorError {
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| TameshiError::CollectorError {
             layer: "rspec_result".to_string(),
             message: format!("failed to read {path}: {e}"),
-        }
-    })?;
+        })?;
     hash_rspec_output(&bytes, path).await
 }
 
@@ -234,9 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn hash_rspec_output_many_examples() {
-        let examples: Vec<(&str, &str)> = (0..50)
-            .map(|_| ("test example", "passed"))
-            .collect();
+        let examples: Vec<(&str, &str)> = (0..50).map(|_| ("test example", "passed")).collect();
         let json = rspec_json(&examples);
         let sig = hash_rspec_output(&json, "test").await.unwrap();
         assert_eq!(sig.inputs.len(), 50);

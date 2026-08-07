@@ -169,8 +169,9 @@ impl Canonicalizer for HclCanonicalizer {
                 // Try JSON parse first (Tofu state files are JSON)
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(content_str) {
                     let normalized = normalize_json_value(&value);
-                    return Cow::Owned(serde_json::to_vec(&normalized)
-                        .unwrap_or_else(|_| content.to_vec()));
+                    return Cow::Owned(
+                        serde_json::to_vec(&normalized).unwrap_or_else(|_| content.to_vec()),
+                    );
                 }
                 // For actual HCL (.tf files), we hash raw content since
                 // HCL parsing requires the hcl-rs crate which is optional.
@@ -273,10 +274,22 @@ mod tests {
 
     #[test]
     fn canonical_mode_from_str() {
-        assert_eq!("strict".parse::<CanonicalMode>().unwrap(), CanonicalMode::Strict);
-        assert_eq!("logical".parse::<CanonicalMode>().unwrap(), CanonicalMode::Logical);
-        assert_eq!("STRICT".parse::<CanonicalMode>().unwrap(), CanonicalMode::Strict);
-        assert_eq!("Logical".parse::<CanonicalMode>().unwrap(), CanonicalMode::Logical);
+        assert_eq!(
+            "strict".parse::<CanonicalMode>().unwrap(),
+            CanonicalMode::Strict
+        );
+        assert_eq!(
+            "logical".parse::<CanonicalMode>().unwrap(),
+            CanonicalMode::Logical
+        );
+        assert_eq!(
+            "STRICT".parse::<CanonicalMode>().unwrap(),
+            CanonicalMode::Strict
+        );
+        assert_eq!(
+            "Logical".parse::<CanonicalMode>().unwrap(),
+            CanonicalMode::Logical
+        );
         assert!("invalid".parse::<CanonicalMode>().is_err());
     }
 
@@ -399,7 +412,11 @@ mod tests {
         let json = b"[3,1,2]";
         let result = JsonCanonicalizer.canonicalize(json, CanonicalMode::Logical);
         let parsed: serde_json::Value = serde_json::from_slice(&result).unwrap();
-        assert_eq!(parsed, serde_json::json!([3, 1, 2]), "Arrays should preserve order");
+        assert_eq!(
+            parsed,
+            serde_json::json!([3, 1, 2]),
+            "Arrays should preserve order"
+        );
     }
 
     #[test]
@@ -515,7 +532,10 @@ mod tests {
         let json = b"{\"a\":1,\"b\":2}";
         let h_yaml = canonical_hash(yaml, CanonicalMode::Logical, &YamlCanonicalizer);
         let h_json = canonical_hash(json, CanonicalMode::Logical, &JsonCanonicalizer);
-        assert_eq!(h_yaml, h_json, "Same content in YAML/JSON should hash identically");
+        assert_eq!(
+            h_yaml, h_json,
+            "Same content in YAML/JSON should hash identically"
+        );
     }
 
     // =========================================================================
@@ -550,7 +570,10 @@ metadata:
 "#;
         let h1 = canonical_hash(manifest1, CanonicalMode::Logical, &YamlCanonicalizer);
         let h2 = canonical_hash(manifest2, CanonicalMode::Logical, &YamlCanonicalizer);
-        assert_eq!(h1, h2, "K8s manifests with reordered keys should hash identically");
+        assert_eq!(
+            h1, h2,
+            "K8s manifests with reordered keys should hash identically"
+        );
     }
 
     #[test]

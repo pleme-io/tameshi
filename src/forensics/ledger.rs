@@ -212,11 +212,7 @@ impl MerkleLedger {
     ///
     /// Returns an error if `from_seq > to_seq` or if either sequence number
     /// is beyond the current ledger length.
-    pub fn consistency_proof(
-        &self,
-        from_seq: u64,
-        to_seq: u64,
-    ) -> error::Result<ConsistencyProof> {
+    pub fn consistency_proof(&self, from_seq: u64, to_seq: u64) -> error::Result<ConsistencyProof> {
         let inner = self.inner.read().expect("MerkleLedger lock poisoned");
 
         if from_seq > to_seq {
@@ -447,9 +443,15 @@ impl MerkleLedgerStore for InMemoryLedgerStore {
         entry: MerkleLedgerEntry,
     ) -> Pin<Box<dyn Future<Output = error::Result<u64>> + Send + '_>> {
         Box::pin(async move {
-            let mut entries = self.entries.lock().expect("InMemoryLedgerStore lock poisoned");
+            let mut entries = self
+                .entries
+                .lock()
+                .expect("InMemoryLedgerStore lock poisoned");
             let seq = entry.sequence;
-            let mut index = self.index.lock().expect("InMemoryLedgerStore index lock poisoned");
+            let mut index = self
+                .index
+                .lock()
+                .expect("InMemoryLedgerStore index lock poisoned");
             index.insert(&entry);
             entries.push(entry);
             Ok(seq)
@@ -461,7 +463,10 @@ impl MerkleLedgerStore for InMemoryLedgerStore {
         sequence: u64,
     ) -> Pin<Box<dyn Future<Output = error::Result<Option<MerkleLedgerEntry>>> + Send + '_>> {
         Box::pin(async move {
-            let entries = self.entries.lock().expect("InMemoryLedgerStore lock poisoned");
+            let entries = self
+                .entries
+                .lock()
+                .expect("InMemoryLedgerStore lock poisoned");
             Ok(entries.iter().find(|e| e.sequence == sequence).cloned())
         })
     }
@@ -472,7 +477,10 @@ impl MerkleLedgerStore for InMemoryLedgerStore {
         to_seq: u64,
     ) -> Pin<Box<dyn Future<Output = error::Result<Vec<MerkleLedgerEntry>>> + Send + '_>> {
         Box::pin(async move {
-            let entries = self.entries.lock().expect("InMemoryLedgerStore lock poisoned");
+            let entries = self
+                .entries
+                .lock()
+                .expect("InMemoryLedgerStore lock poisoned");
             Ok(entries
                 .iter()
                 .filter(|e| e.sequence >= from_seq && e.sequence <= to_seq)
@@ -485,14 +493,20 @@ impl MerkleLedgerStore for InMemoryLedgerStore {
         &self,
     ) -> Pin<Box<dyn Future<Output = error::Result<Option<MerkleLedgerEntry>>> + Send + '_>> {
         Box::pin(async move {
-            let entries = self.entries.lock().expect("InMemoryLedgerStore lock poisoned");
+            let entries = self
+                .entries
+                .lock()
+                .expect("InMemoryLedgerStore lock poisoned");
             Ok(entries.last().cloned())
         })
     }
 
     fn len(&self) -> Pin<Box<dyn Future<Output = error::Result<u64>> + Send + '_>> {
         Box::pin(async move {
-            let entries = self.entries.lock().expect("InMemoryLedgerStore lock poisoned");
+            let entries = self
+                .entries
+                .lock()
+                .expect("InMemoryLedgerStore lock poisoned");
             Ok(entries.len() as u64)
         })
     }
@@ -589,7 +603,11 @@ mod tests {
     fn test_append_multiple_entries_chain_linkage() {
         let ledger = MerkleLedger::new();
         let e0 = ledger.append(sample_artifact(), sample_signed_root(), sample_context());
-        let e1 = ledger.append(sample_artifact_2(), sample_signed_root(), sample_context_2());
+        let e1 = ledger.append(
+            sample_artifact_2(),
+            sample_signed_root(),
+            sample_context_2(),
+        );
 
         assert_eq!(e0.sequence, 0);
         assert_eq!(e1.sequence, 1);
@@ -715,7 +733,11 @@ mod tests {
     fn test_last_returns_most_recent() {
         let ledger = MerkleLedger::new();
         let _e0 = ledger.append(sample_artifact(), sample_signed_root(), sample_context());
-        let e1 = ledger.append(sample_artifact_2(), sample_signed_root(), sample_context_2());
+        let e1 = ledger.append(
+            sample_artifact_2(),
+            sample_signed_root(),
+            sample_context_2(),
+        );
 
         let last = ledger.last().unwrap();
         assert_eq!(last.sequence, e1.sequence);
@@ -758,9 +780,24 @@ mod tests {
         let t3 = t1 + chrono::Duration::seconds(20);
         let clock3 = FixedClock::new(t3);
 
-        ledger.append_with_clock(sample_artifact(), sample_signed_root(), sample_context(), &clock1);
-        ledger.append_with_clock(sample_artifact(), sample_signed_root(), sample_context(), &clock2);
-        ledger.append_with_clock(sample_artifact(), sample_signed_root(), sample_context(), &clock3);
+        ledger.append_with_clock(
+            sample_artifact(),
+            sample_signed_root(),
+            sample_context(),
+            &clock1,
+        );
+        ledger.append_with_clock(
+            sample_artifact(),
+            sample_signed_root(),
+            sample_context(),
+            &clock2,
+        );
+        ledger.append_with_clock(
+            sample_artifact(),
+            sample_signed_root(),
+            sample_context(),
+            &clock3,
+        );
 
         let range = ledger.entries_in_range(t1, t2);
         assert_eq!(range.len(), 2);
@@ -771,7 +808,12 @@ mod tests {
         let ledger = MerkleLedger::new();
         let t1 = Utc::now();
         let clock = FixedClock::new(t1);
-        ledger.append_with_clock(sample_artifact(), sample_signed_root(), sample_context(), &clock);
+        ledger.append_with_clock(
+            sample_artifact(),
+            sample_signed_root(),
+            sample_context(),
+            &clock,
+        );
 
         let future = t1 + chrono::Duration::hours(1);
         let range = ledger.entries_in_range(future, future + chrono::Duration::hours(1));
@@ -785,9 +827,24 @@ mod tests {
         let t2 = t1 + chrono::Duration::seconds(60);
         let t3 = t1 + chrono::Duration::seconds(120);
 
-        ledger.append_with_clock(sample_artifact(), sample_signed_root(), sample_context(), &FixedClock::new(t1));
-        ledger.append_with_clock(sample_artifact(), sample_signed_root(), sample_context(), &FixedClock::new(t2));
-        ledger.append_with_clock(sample_artifact(), sample_signed_root(), sample_context(), &FixedClock::new(t3));
+        ledger.append_with_clock(
+            sample_artifact(),
+            sample_signed_root(),
+            sample_context(),
+            &FixedClock::new(t1),
+        );
+        ledger.append_with_clock(
+            sample_artifact(),
+            sample_signed_root(),
+            sample_context(),
+            &FixedClock::new(t2),
+        );
+        ledger.append_with_clock(
+            sample_artifact(),
+            sample_signed_root(),
+            sample_context(),
+            &FixedClock::new(t3),
+        );
 
         // Only the middle entry
         let range = ledger.entries_in_range(

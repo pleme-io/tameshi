@@ -396,7 +396,10 @@ mod tests {
     fn rendered_helm_collector_new() {
         let collector = RenderedHelmCollector::new(
             "./charts/myapp",
-            vec!["values-prod.yaml".to_string(), "values-secrets.yaml".to_string()],
+            vec![
+                "values-prod.yaml".to_string(),
+                "values-secrets.yaml".to_string(),
+            ],
             "my-release",
             "production",
         );
@@ -412,8 +415,10 @@ mod tests {
     fn different_values_produce_different_rendered_hashes() {
         // Simulate what hash_rendered_chart does: canonicalize rendered YAML then hash.
         // Different rendered outputs must produce different hashes.
-        let rendered_a = b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\ndata:\n  replicas: \"3\"\n";
-        let rendered_b = b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\ndata:\n  replicas: \"5\"\n";
+        let rendered_a =
+            b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\ndata:\n  replicas: \"3\"\n";
+        let rendered_b =
+            b"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\ndata:\n  replicas: \"5\"\n";
 
         let canonical_a = YamlCanonicalizer.canonicalize(rendered_a, CanonicalMode::Logical);
         let canonical_b = YamlCanonicalizer.canonicalize(rendered_b, CanonicalMode::Logical);
@@ -496,8 +501,10 @@ mod tests {
         let chart_rendered = b"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 1\n";
         let deployed_actual = b"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: myapp\nspec:\n  replicas: 5\n";
 
-        let chart_canonical = YamlCanonicalizer.canonicalize(chart_rendered, CanonicalMode::Logical);
-        let deployed_canonical = YamlCanonicalizer.canonicalize(deployed_actual, CanonicalMode::Logical);
+        let chart_canonical =
+            YamlCanonicalizer.canonicalize(chart_rendered, CanonicalMode::Logical);
+        let deployed_canonical =
+            YamlCanonicalizer.canonicalize(deployed_actual, CanonicalMode::Logical);
 
         let chart_hash = Blake3Hash::digest(chart_canonical.as_ref());
         let deployed_hash = Blake3Hash::digest(deployed_canonical.as_ref());
@@ -515,7 +522,8 @@ mod tests {
         let err = TameshiError::CommandFailed {
             command: "kubectl get deployment myapp --namespace default -o yaml".to_string(),
             code: 1,
-            stderr: "Error from server (NotFound): deployments.apps \"myapp\" not found".to_string(),
+            stderr: "Error from server (NotFound): deployments.apps \"myapp\" not found"
+                .to_string(),
         };
         let msg = err.to_string();
         assert!(msg.contains("kubectl get deployment"));

@@ -26,24 +26,24 @@ const DOMAIN: &str = "kernel";
 /// Sysctl control definition: (id, title, description, sysctl_key, expected_value, required, nist_ids).
 /// Controls using exact match (check_sysctl).
 type SysctlExactDef = (
-    &'static str, // id
-    &'static str, // title
-    &'static str, // description
-    &'static str, // sysctl_key
-    &'static str, // expected_value
-    bool,         // required
+    &'static str,            // id
+    &'static str,            // title
+    &'static str,            // description
+    &'static str,            // sysctl_key
+    &'static str,            // expected_value
+    bool,                    // required
     &'static [&'static str], // nist_control_ids
     ControlSeverity,
 );
 
 /// Sysctl control definition for >= comparison.
 type SysctlGteDef = (
-    &'static str, // id
-    &'static str, // title
-    &'static str, // description
-    &'static str, // sysctl_key
-    i64,          // min_value
-    bool,         // required
+    &'static str,            // id
+    &'static str,            // title
+    &'static str,            // description
+    &'static str,            // sysctl_key
+    i64,                     // min_value
+    bool,                    // required
     &'static [&'static str], // nist_control_ids
     ControlSeverity,
 );
@@ -310,7 +310,9 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KernelPlugin<C> {
         for &(id, title, desc, _key, _expected, required, nist_ids, ref severity) in
             REQUIRED_SYSCTL_EXACT
         {
-            controls.push(make_sysctl_control(id, title, desc, required, nist_ids, severity));
+            controls.push(make_sysctl_control(
+                id, title, desc, required, nist_ids, severity,
+            ));
         }
 
         // MAC enforcement (special — not a simple sysctl check)
@@ -327,10 +329,11 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KernelPlugin<C> {
         });
 
         // Required GTE sysctl controls
-        for &(id, title, desc, _key, _min, required, nist_ids, ref severity) in
-            REQUIRED_SYSCTL_GTE
+        for &(id, title, desc, _key, _min, required, nist_ids, ref severity) in REQUIRED_SYSCTL_GTE
         {
-            controls.push(make_sysctl_control(id, title, desc, required, nist_ids, severity));
+            controls.push(make_sysctl_control(
+                id, title, desc, required, nist_ids, severity,
+            ));
         }
 
         // Advisory controls
@@ -363,7 +366,8 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KernelPlugin<C> {
 
             for control in &controls {
                 let start = std::time::Instant::now();
-                let (passed, message) = evaluate_control(&control.id, &sysctl_output, &*runner).await;
+                let (passed, message) =
+                    evaluate_control(&control.id, &sysctl_output, &*runner).await;
                 let duration_ms = start.elapsed().as_millis() as u64;
 
                 evaluations.push(ControlEvaluation {
@@ -378,9 +382,7 @@ impl<C: CommandRunner + 'static> CompliancePlugin for KernelPlugin<C> {
 
             let domain_hash = DomainEvaluation::compute_domain_hash(DOMAIN, &evaluations);
             let total_duration_ms = evaluations.iter().map(|e| e.duration_ms).sum();
-            let all_required_passed = evaluations
-                .iter()
-                .all(|e| !e.control.required || e.passed);
+            let all_required_passed = evaluations.iter().all(|e| !e.control.required || e.passed);
 
             Ok(DomainEvaluation {
                 domain: DOMAIN.to_string(),
@@ -447,10 +449,7 @@ fn check_sysctl(
                     let v = v.trim();
                     if k == key {
                         let passed = v == expected;
-                        return (
-                            passed,
-                            format!("{key} = {v} (expected {expected})"),
-                        );
+                        return (passed, format!("{key} = {v} (expected {expected})"));
                     }
                 }
             }
@@ -475,10 +474,7 @@ fn check_sysctl_gte(
                         return match v.parse::<i64>() {
                             Ok(val) => {
                                 let passed = val >= min_value;
-                                (
-                                    passed,
-                                    format!("{key} = {val} (expected >= {min_value})"),
-                                )
+                                (passed, format!("{key} = {val} (expected >= {min_value})"))
                             }
                             Err(_) => (false, format!("{key} = {v} (not a valid integer)")),
                         };
@@ -504,7 +500,10 @@ async fn check_mac_enforcement<C: CommandRunner>(runner: &C) -> (bool, String) {
     // Try AppArmor
     match runner.run("aa-status", &["--enabled"]).await {
         Ok(_) => (true, "AppArmor: enabled".to_string()),
-        Err(_) => (false, "No MAC enforcement detected (SELinux/AppArmor)".to_string()),
+        Err(_) => (
+            false,
+            "No MAC enforcement detected (SELinux/AppArmor)".to_string(),
+        ),
     }
 }
 
@@ -552,7 +551,11 @@ mod tests {
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
         // 11 required exact + 1 MAC + 4 required GTE = 16 required
-        assert!(controls.len() >= 16, "expected >= 16 required controls, got {}", controls.len());
+        assert!(
+            controls.len() >= 16,
+            "expected >= 16 required controls, got {}",
+            controls.len()
+        );
         assert!(controls.iter().all(|c| c.domain == "kernel"));
     }
 
@@ -564,7 +567,11 @@ mod tests {
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
         // 16 required + 4 advisory = 20
-        assert!(controls.len() >= 20, "expected >= 20 total controls, got {}", controls.len());
+        assert!(
+            controls.len() >= 20,
+            "expected >= 20 total controls, got {}",
+            controls.len()
+        );
     }
 
     #[test]
@@ -589,7 +596,11 @@ mod tests {
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
         for c in &controls {
-            assert!(!c.nist_control_ids.is_empty(), "Control {} has no NIST IDs", c.id);
+            assert!(
+                !c.nist_control_ids.is_empty(),
+                "Control {} has no NIST IDs",
+                c.id
+            );
         }
     }
 
@@ -632,12 +643,19 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(result.all_required_passed);
         assert_eq!(result.domain, "kernel");
         for eval in &result.evaluations {
-            assert!(eval.passed, "Control {} should pass: {}", eval.control.id, eval.message);
+            assert!(
+                eval.passed,
+                "Control {} should pass: {}",
+                eval.control.id, eval.message
+            );
         }
     }
 
@@ -650,10 +668,17 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(!result.all_required_passed);
-        let ip_fwd = result.evaluations.iter().find(|e| e.control.id == "KERN-001").unwrap();
+        let ip_fwd = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-001")
+            .unwrap();
         assert!(!ip_fwd.passed);
         assert!(ip_fwd.message.contains("1"));
     }
@@ -680,9 +705,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ip_fwd = result.evaluations.iter().find(|e| e.control.id == "KERN-001").unwrap();
+        let ip_fwd = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-001")
+            .unwrap();
         assert!(!ip_fwd.passed);
         assert!(ip_fwd.message.contains("not found"));
     }
@@ -695,11 +727,22 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         // Sysctl controls should all fail
-        for eval in result.evaluations.iter().filter(|e| e.control.id != "KERN-005") {
-            assert!(!eval.passed, "{} should fail when sysctl fails", eval.control.id);
+        for eval in result
+            .evaluations
+            .iter()
+            .filter(|e| e.control.id != "KERN-005")
+        {
+            assert!(
+                !eval.passed,
+                "{} should fail when sysctl fails",
+                eval.control.id
+            );
         }
     }
 
@@ -710,9 +753,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let mac = result.evaluations.iter().find(|e| e.control.id == "KERN-005").unwrap();
+        let mac = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-005")
+            .unwrap();
         assert!(!mac.passed);
         assert!(mac.message.contains("Permissive"));
     }
@@ -725,9 +775,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let mac = result.evaluations.iter().find(|e| e.control.id == "KERN-005").unwrap();
+        let mac = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-005")
+            .unwrap();
         assert!(mac.passed);
         assert!(mac.message.contains("AppArmor"));
     }
@@ -740,9 +797,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let mac = result.evaluations.iter().find(|e| e.control.id == "KERN-005").unwrap();
+        let mac = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-005")
+            .unwrap();
         assert!(!mac.passed);
     }
 
@@ -761,7 +825,10 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         let json = serde_json::to_string(&result).unwrap();
         let back: DomainEvaluation = serde_json::from_str(&json).unwrap();
@@ -777,7 +844,10 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         for eval in &result.evaluations {
             assert!(eval.evidence_hash.is_some());
@@ -801,9 +871,17 @@ mod tests {
         let result = plugin.evaluate(&controls, &config).await.unwrap();
 
         // Advisory controls fail but all_required_passed is still true
-        let advisory_006 = result.evaluations.iter().find(|e| e.control.id == "KERN-006").unwrap();
+        let advisory_006 = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-006")
+            .unwrap();
         assert!(!advisory_006.passed);
-        let advisory_011 = result.evaluations.iter().find(|e| e.control.id == "KERN-011").unwrap();
+        let advisory_011 = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-011")
+            .unwrap();
         assert!(!advisory_011.passed);
         assert!(result.all_required_passed);
     }
@@ -821,9 +899,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ptrace = result.evaluations.iter().find(|e| e.control.id == "KERN-007").unwrap();
+        let ptrace = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-007")
+            .unwrap();
         assert!(!ptrace.passed);
         assert!(ptrace.message.contains("0"));
     }
@@ -841,9 +926,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ptrace = result.evaluations.iter().find(|e| e.control.id == "KERN-007").unwrap();
+        let ptrace = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-007")
+            .unwrap();
         assert!(ptrace.passed);
     }
 
@@ -860,9 +952,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let kptr = result.evaluations.iter().find(|e| e.control.id == "KERN-008").unwrap();
+        let kptr = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-008")
+            .unwrap();
         assert!(!kptr.passed);
     }
 
@@ -879,9 +978,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let dmesg = result.evaluations.iter().find(|e| e.control.id == "KERN-009").unwrap();
+        let dmesg = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-009")
+            .unwrap();
         assert!(!dmesg.passed);
     }
 
@@ -898,9 +1004,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let suid = result.evaluations.iter().find(|e| e.control.id == "KERN-010").unwrap();
+        let suid = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-010")
+            .unwrap();
         assert!(!suid.passed);
     }
 
@@ -920,7 +1033,11 @@ mod tests {
         let controls = plugin.generate_controls(&config);
         let result = plugin.evaluate(&controls, &config).await.unwrap();
 
-        let exec_shield = result.evaluations.iter().find(|e| e.control.id == "KERN-011").unwrap();
+        let exec_shield = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-011")
+            .unwrap();
         assert!(exec_shield.passed);
     }
 
@@ -939,9 +1056,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-012").unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-012")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -958,9 +1082,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-013").unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-013")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -977,9 +1108,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-014").unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-014")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -996,9 +1134,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-015").unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-015")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -1015,9 +1160,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-018").unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-018")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -1034,9 +1186,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-019").unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-019")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -1053,9 +1212,16 @@ mod tests {
 
         let plugin = KernelPlugin::new(runner);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let ctrl = result.evaluations.iter().find(|e| e.control.id == "KERN-020").unwrap();
+        let ctrl = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-020")
+            .unwrap();
         assert!(!ctrl.passed);
     }
 
@@ -1075,9 +1241,17 @@ mod tests {
         let controls = plugin.generate_controls(&config);
         let result = plugin.evaluate(&controls, &config).await.unwrap();
 
-        let ipv6_ra = result.evaluations.iter().find(|e| e.control.id == "KERN-016").unwrap();
+        let ipv6_ra = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-016")
+            .unwrap();
         assert!(ipv6_ra.passed);
-        let ipv6_redir = result.evaluations.iter().find(|e| e.control.id == "KERN-017").unwrap();
+        let ipv6_redir = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "KERN-017")
+            .unwrap();
         assert!(ipv6_redir.passed);
     }
 }

@@ -3,9 +3,9 @@
 //! Attestations expire after a configurable TTL. Expired attestations
 //! must be re-authorized through the fragment collection pipeline.
 
-use chrono::{DateTime, Duration, Utc};
-use crate::hash::Blake3Hash;
 use crate::bpf_loader::BpfMapOps;
+use crate::hash::Blake3Hash;
+use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -59,14 +59,26 @@ impl EphemeralAttestationManager {
     }
 
     /// Attest a binary with the default TTL.
-    pub fn attest(&self, binary_hash: Blake3Hash, composed_root: Blake3Hash) -> EphemeralAttestation {
+    pub fn attest(
+        &self,
+        binary_hash: Blake3Hash,
+        composed_root: Blake3Hash,
+    ) -> EphemeralAttestation {
         self.attest_with_ttl(binary_hash, composed_root, self.default_ttl_secs)
     }
 
     /// Attest a binary with a custom TTL.
-    pub fn attest_with_ttl(&self, binary_hash: Blake3Hash, composed_root: Blake3Hash, ttl_secs: u64) -> EphemeralAttestation {
+    pub fn attest_with_ttl(
+        &self,
+        binary_hash: Blake3Hash,
+        composed_root: Blake3Hash,
+        ttl_secs: u64,
+    ) -> EphemeralAttestation {
         let att = EphemeralAttestation::new(binary_hash.clone(), composed_root, ttl_secs);
-        self.attestations.lock().unwrap().insert(binary_hash, att.clone());
+        self.attestations
+            .lock()
+            .unwrap()
+            .insert(binary_hash, att.clone());
         att
     }
 
@@ -80,7 +92,8 @@ impl EphemeralAttestationManager {
     pub fn sweep_expired(&self) -> Vec<Blake3Hash> {
         let mut guard = self.attestations.lock().unwrap();
         let now = Utc::now();
-        let expired: Vec<Blake3Hash> = guard.iter()
+        let expired: Vec<Blake3Hash> = guard
+            .iter()
             .filter(|(_, a)| a.is_expired_at(now))
             .map(|(k, _)| k.clone())
             .collect();
@@ -122,11 +135,7 @@ mod tests {
 
     #[test]
     fn new_attestation_not_expired() {
-        let att = EphemeralAttestation::new(
-            test_hash(b"bin"),
-            test_hash(b"root"),
-            60,
-        );
+        let att = EphemeralAttestation::new(test_hash(b"bin"), test_hash(b"root"), 60);
         assert!(!att.is_expired());
         assert!(att.remaining_secs() > 0);
         assert_eq!(att.ttl_secs, 60);
@@ -134,11 +143,7 @@ mod tests {
 
     #[test]
     fn zero_ttl_immediately_expires() {
-        let att = EphemeralAttestation::new(
-            test_hash(b"bin"),
-            test_hash(b"root"),
-            0,
-        );
+        let att = EphemeralAttestation::new(test_hash(b"bin"), test_hash(b"root"), 0);
         assert!(att.is_expired());
         assert_eq!(att.remaining_secs(), 0);
     }
@@ -221,7 +226,11 @@ mod tests {
         mgr.attest(hash.clone(), root1);
         mgr.attest(hash.clone(), root2);
 
-        assert_eq!(mgr.total_count(), 1, "same binary hash should replace, not duplicate");
+        assert_eq!(
+            mgr.total_count(),
+            1,
+            "same binary hash should replace, not duplicate"
+        );
         assert!(mgr.is_attested(&hash));
     }
 
@@ -237,7 +246,10 @@ mod tests {
         let swept = mgr.sweep_expired();
         assert_eq!(swept.len(), 1);
         assert_eq!(swept[0], expired_hash);
-        assert!(mgr.is_attested(&active_hash), "active attestation must survive sweep");
+        assert!(
+            mgr.is_attested(&active_hash),
+            "active attestation must survive sweep"
+        );
         assert!(!mgr.is_attested(&expired_hash), "expired should be gone");
     }
 
@@ -262,11 +274,7 @@ mod tests {
 
     #[test]
     fn is_expired_at_boundary() {
-        let att = EphemeralAttestation::new(
-            test_hash(b"boundary"),
-            test_hash(b"root"),
-            60,
-        );
+        let att = EphemeralAttestation::new(test_hash(b"boundary"), test_hash(b"root"), 60);
         assert!(!att.is_expired_at(att.attested_at));
         assert!(att.is_expired_at(att.expires_at));
         assert!(att.is_expired_at(att.expires_at + chrono::Duration::seconds(1)));

@@ -89,7 +89,10 @@ mod tests {
 
         let entry_a = maps_a.lookup_poms(&binary.0).unwrap();
         let entry_b = maps_b.lookup_poms(&binary.0).unwrap();
-        assert_ne!(entry_a.poms_hash, entry_b.poms_hash, "different salts must produce different map entries");
+        assert_ne!(
+            entry_a.poms_hash, entry_b.poms_hash,
+            "different salts must produce different map entries"
+        );
     }
 
     #[test]

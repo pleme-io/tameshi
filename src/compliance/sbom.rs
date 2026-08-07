@@ -212,16 +212,16 @@ pub fn combine_sbom_hashes(attestations: &[SbomAttestation]) -> Blake3Hash {
 /// NIST controls satisfied by SBOM generation and tracking.
 pub fn sbom_nist_controls() -> Vec<&'static str> {
     vec![
-        "CM-8",  // System Component Inventory
+        "CM-8",    // System Component Inventory
         "CM-8(1)", // Updates During Installation and Removal
-        "SR-3",  // Supply Chain Controls and Processes
-        "SR-4",  // Provenance
+        "SR-3",    // Supply Chain Controls and Processes
+        "SR-4",    // Provenance
         "SR-4(1)", // Identity
         "SR-4(2)", // Track and Trace
         "SR-4(3)", // Validate as Genuine and Not Altered
-        "SR-11", // Component Authenticity
-        "SA-10", // Developer Configuration Management
-        "SA-17", // Developer Security and Privacy Architecture and Design
+        "SR-11",   // Component Authenticity
+        "SA-10",   // Developer Configuration Management
+        "SA-17",   // Developer Security and Privacy Architecture and Design
     ]
 }
 
@@ -243,8 +243,14 @@ mod tests {
             component_count: 142,
             dependency_count: 89,
             licenses: vec![
-                LicenseSummary { spdx_id: "MIT".to_string(), count: 80 },
-                LicenseSummary { spdx_id: "Apache-2.0".to_string(), count: 45 },
+                LicenseSummary {
+                    spdx_id: "MIT".to_string(),
+                    count: 80,
+                },
+                LicenseSummary {
+                    spdx_id: "Apache-2.0".to_string(),
+                    count: 45,
+                },
             ],
             generated_at: Utc::now(),
             ntia_compliant: true,

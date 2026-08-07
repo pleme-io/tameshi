@@ -161,9 +161,7 @@ pub fn build_tls_client(tls: &TlsConfig) -> Result<reqwest::Client, AkeylessClie
     }
 
     // Client certificate + key for mTLS.
-    if let (Some(cert_path), Some(key_path)) =
-        (&tls.client_cert_path, &tls.client_key_path)
-    {
+    if let (Some(cert_path), Some(key_path)) = (&tls.client_cert_path, &tls.client_key_path) {
         let cert_pem = std::fs::read(cert_path).map_err(|e| {
             AkeylessClientError::TlsConfigError(format!(
                 "failed to read client cert at {cert_path}: {e}"
@@ -279,8 +277,7 @@ pub trait AkeylessClient: Send + Sync {
         &self,
         path: &str,
         token: &str,
-    ) -> impl std::future::Future<Output = Result<AkeylessSecretAccess, AkeylessClientError>>
-           + Send;
+    ) -> impl std::future::Future<Output = Result<AkeylessSecretAccess, AkeylessClientError>> + Send;
 
     /// List secret paths under a given prefix.
     fn list_secrets(
@@ -298,8 +295,7 @@ pub trait AkeylessClient: Send + Sync {
     fn build_attestation(
         &self,
         secret_paths: &[String],
-    ) -> impl std::future::Future<Output = Result<AkeylessSecretAttestation, AkeylessClientError>>
-           + Send;
+    ) -> impl std::future::Future<Output = Result<AkeylessSecretAttestation, AkeylessClientError>> + Send;
 
     /// Get target details by name.
     fn get_target(
@@ -397,9 +393,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         resp.get("token")
             .and_then(|t| t.as_str())
             .map(String::from)
-            .ok_or_else(|| {
-                AkeylessClientError::InvalidResponse("missing token field".to_string())
-            })
+            .ok_or_else(|| AkeylessClientError::InvalidResponse("missing token field".to_string()))
     }
 
     async fn get_secret_hash(
@@ -423,12 +417,11 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .map_err(|e| AkeylessClientError::InvalidResponse(e.to_string()))?;
 
         // The Akeyless API returns {"/path/to/secret": "value"}.
-        let value = resp
-            .get(path)
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| AkeylessClientError::SecretNotFound {
+        let value = resp.get(path).and_then(|v| v.as_str()).ok_or_else(|| {
+            AkeylessClientError::SecretNotFound {
                 path: path.to_string(),
-            })?;
+            }
+        })?;
 
         // CRITICAL: Hash the value, NEVER store it.
         // Salt with path + gateway URL to defeat rainbow table attacks
@@ -524,11 +517,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         })
     }
 
-    async fn get_target(
-        &self,
-        name: &str,
-        token: &str,
-    ) -> Result<TargetInfo, AkeylessClientError> {
+    async fn get_target(&self, name: &str, token: &str) -> Result<TargetInfo, AkeylessClientError> {
         let url = format!("{}/api/v1/target-get-details", self.config.gateway_url);
         let body = serde_json::json!({
             "name": name,
@@ -588,8 +577,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             })
             .unwrap_or_default();
 
-        let config_json = serde_json::to_string(&resp)
-            .unwrap_or_default();
+        let config_json = serde_json::to_string(&resp).unwrap_or_default();
 
         Ok(TargetInfo {
             name: name.to_string(),
@@ -602,10 +590,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         })
     }
 
-    async fn list_targets(
-        &self,
-        token: &str,
-    ) -> Result<Vec<String>, AkeylessClientError> {
+    async fn list_targets(&self, token: &str) -> Result<Vec<String>, AkeylessClientError> {
         let url = format!("{}/api/v1/list-targets", self.config.gateway_url);
         let body = serde_json::json!({
             "token": token
@@ -897,10 +882,7 @@ impl AkeylessClient for MockAkeylessClient {
         })
     }
 
-    async fn list_targets(
-        &self,
-        _token: &str,
-    ) -> Result<Vec<String>, AkeylessClientError> {
+    async fn list_targets(&self, _token: &str) -> Result<Vec<String>, AkeylessClientError> {
         let atts = self.target_attestations.lock().unwrap();
         Ok(atts
             .as_ref()
@@ -1059,9 +1041,7 @@ mod tests {
     #[tokio::test]
     async fn mock_get_secret_hash_returns_not_found_for_missing() {
         let client = MockAkeylessClient::new();
-        let result = client
-            .get_secret_hash("/nonexistent/secret", "token")
-            .await;
+        let result = client.get_secret_hash("/nonexistent/secret", "token").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -1154,15 +1134,11 @@ mod tests {
         assert_eq!(access.path, "/prod/db/password");
         assert_eq!(access.secret_type, AkeylessSecretType::Static);
         // The hash should be salted: BLAKE3(gateway_url:path:value)
-        let expected_salted = Blake3Hash::digest(
-            b"https://gw.test.com:/prod/db/password:super-secret-123",
-        );
+        let expected_salted =
+            Blake3Hash::digest(b"https://gw.test.com:/prod/db/password:super-secret-123");
         assert_eq!(access.value_hash, expected_salted);
         // Should NOT equal unsalted hash of just the value
-        assert_ne!(
-            access.value_hash,
-            Blake3Hash::digest(b"super-secret-123")
-        );
+        assert_ne!(access.value_hash, Blake3Hash::digest(b"super-secret-123"));
     }
 
     #[tokio::test]
@@ -1177,9 +1153,7 @@ mod tests {
         );
 
         let client = HttpAkeylessClient::new(config, http);
-        let result = client
-            .get_secret_hash("/missing/secret", "t-token")
-            .await;
+        let result = client.get_secret_hash("/missing/secret", "t-token").await;
         assert!(result.is_err());
         assert!(
             matches!(result.unwrap_err(), AkeylessClientError::SecretNotFound { path } if path == "/missing/secret")
@@ -1285,10 +1259,7 @@ mod tests {
             att.secrets_accessed[0].value_hash,
             Blake3Hash::digest(b"https://gw.test.com:/db/pass:db-password-value")
         );
-        assert_eq!(
-            att.session_hash,
-            Blake3Hash::digest(b"t-live-token")
-        );
+        assert_eq!(att.session_hash, Blake3Hash::digest(b"t-live-token"));
     }
 
     #[tokio::test]
@@ -1298,9 +1269,7 @@ mod tests {
         // No auth response registered -> failure.
 
         let client = HttpAkeylessClient::new(config, http);
-        let result = client
-            .build_attestation(&["/secret".to_string()])
-            .await;
+        let result = client.build_attestation(&["/secret".to_string()]).await;
         assert!(result.is_err());
     }
 
@@ -1404,9 +1373,7 @@ mod tests {
     #[tokio::test]
     async fn mock_get_target_not_found() {
         let client = MockAkeylessClient::new().with_target_attestations(vec![]);
-        let result = client
-            .get_target("/targets/missing", "token")
-            .await;
+        let result = client.get_target("/targets/missing", "token").await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -1659,7 +1626,10 @@ mod tests {
     fn build_tls_client_default_config() {
         let tls = TlsConfig::default();
         let client = build_tls_client(&tls);
-        assert!(client.is_ok(), "default TlsConfig should produce a working client");
+        assert!(
+            client.is_ok(),
+            "default TlsConfig should produce a working client"
+        );
     }
 
     #[test]

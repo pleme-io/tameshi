@@ -135,7 +135,10 @@ mod tests {
         let blinding_2 = Blake3Hash::digest(b"blinding-two");
         let c1 = commit(&value, &blinding_1);
         let c2 = commit(&value, &blinding_2);
-        assert_ne!(c1, c2, "same value with different blindings must produce different commitments");
+        assert_ne!(
+            c1, c2,
+            "same value with different blindings must produce different commitments"
+        );
     }
 
     #[test]
@@ -145,7 +148,10 @@ mod tests {
         let blinding = Blake3Hash::digest(b"same-blinding");
         let c1 = commit(&value_1, &blinding);
         let c2 = commit(&value_2, &blinding);
-        assert_ne!(c1, c2, "different values with same blinding must produce different commitments");
+        assert_ne!(
+            c1, c2,
+            "different values with same blinding must produce different commitments"
+        );
     }
 
     #[test]

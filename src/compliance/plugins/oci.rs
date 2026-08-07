@@ -119,7 +119,9 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
         controls.push(ComplianceControl {
             id: "OCI-009".to_string(),
             title: "No secrets in env vars".to_string(),
-            description: "Container must not have SECRET/PASSWORD/KEY/TOKEN in environment variable names".to_string(),
+            description:
+                "Container must not have SECRET/PASSWORD/KEY/TOKEN in environment variable names"
+                    .to_string(),
             severity: ControlSeverity::Critical,
             nist_control_ids: vec!["SC-28".to_string(), "IA-5".to_string()],
             domain: DOMAIN.to_string(),
@@ -167,9 +169,8 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
             controls.push(ComplianceControl {
                 id: "OCI-008".to_string(),
                 title: "Required OCI labels present".to_string(),
-                description:
-                    "Image should have org.opencontainers.image.source and version labels"
-                        .to_string(),
+                description: "Image should have org.opencontainers.image.source and version labels"
+                    .to_string(),
                 severity: ControlSeverity::Low,
                 nist_control_ids: vec!["CM-8".to_string()],
                 domain: DOMAIN.to_string(),
@@ -187,7 +188,8 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
             controls.push(ComplianceControl {
                 id: "OCI-014".to_string(),
                 title: "Multi-stage build used".to_string(),
-                description: "Image should use multi-stage builds for minimal final image size".to_string(),
+                description: "Image should use multi-stage builds for minimal final image size"
+                    .to_string(),
                 severity: ControlSeverity::Low,
                 nist_control_ids: vec!["CM-7".to_string()],
                 domain: DOMAIN.to_string(),
@@ -196,7 +198,8 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
             controls.push(ComplianceControl {
                 id: "OCI-015".to_string(),
                 title: "No ADD instructions".to_string(),
-                description: "Image should use COPY instead of ADD to avoid unexpected behavior".to_string(),
+                description: "Image should use COPY instead of ADD to avoid unexpected behavior"
+                    .to_string(),
                 severity: ControlSeverity::Low,
                 nist_control_ids: vec!["CM-7".to_string()],
                 domain: DOMAIN.to_string(),
@@ -262,9 +265,7 @@ impl<C: CommandRunner + 'static> CompliancePlugin for OciPlugin<C> {
 
             let domain_hash = DomainEvaluation::compute_domain_hash(DOMAIN, &evaluations);
             let total_duration_ms = evaluations.iter().map(|e| e.duration_ms).sum();
-            let all_required_passed = evaluations
-                .iter()
-                .all(|e| !e.control.required || e.passed);
+            let all_required_passed = evaluations.iter().all(|e| !e.control.required || e.passed);
 
             Ok(DomainEvaluation {
                 domain: DOMAIN.to_string(),
@@ -371,7 +372,10 @@ fn check_readonly_rootfs(inspect_result: &crate::error::Result<String>) -> (bool
                     .and_then(|l| l.as_object());
 
                 let has_readonly = labels
-                    .map(|l| l.keys().any(|k| k.contains("read-only") || k.contains("readonly")))
+                    .map(|l| {
+                        l.keys()
+                            .any(|k| k.contains("read-only") || k.contains("readonly"))
+                    })
                     .unwrap_or(false);
 
                 if has_readonly {
@@ -399,9 +403,7 @@ fn check_image_labels(inspect_result: &crate::error::Result<String>) -> (bool, S
                     .and_then(|l| l.as_object());
 
                 match labels {
-                    Some(l) if !l.is_empty() => {
-                        (true, format!("{} labels present", l.len()))
-                    }
+                    Some(l) if !l.is_empty() => (true, format!("{} labels present", l.len())),
                     _ => (false, "No image labels found".to_string()),
                 }
             }
@@ -415,14 +417,15 @@ fn check_healthcheck(inspect_result: &crate::error::Result<String>) -> (bool, St
     match inspect_result {
         Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
             Ok(config) => {
-                let healthcheck = config
-                    .get("config")
-                    .and_then(|c| c.get("Healthcheck"));
+                let healthcheck = config.get("config").and_then(|c| c.get("Healthcheck"));
                 match healthcheck {
                     Some(hc) if !hc.is_null() => {
                         (true, "Container has HEALTHCHECK defined".to_string())
                     }
-                    _ => (false, "No HEALTHCHECK defined in container image".to_string()),
+                    _ => (
+                        false,
+                        "No HEALTHCHECK defined in container image".to_string(),
+                    ),
                 }
             }
             Err(e) => (false, format!("Invalid config JSON: {e}")),
@@ -433,10 +436,7 @@ fn check_healthcheck(inspect_result: &crate::error::Result<String>) -> (bool, St
 
 fn check_no_latest_tag(image_ref: &str) -> (bool, String) {
     if image_ref.ends_with(":latest") {
-        (
-            false,
-            format!("Image uses :latest tag: {image_ref}"),
-        )
+        (false, format!("Image uses :latest tag: {image_ref}"))
     } else if image_ref.contains('@') {
         (true, "Image pinned by digest".to_string())
     } else if image_ref.contains(':') {
@@ -460,12 +460,8 @@ fn check_required_oci_labels(inspect_result: &crate::error::Result<String>) -> (
                     .and_then(|l| l.as_object());
                 match labels {
                     Some(l) => {
-                        let has_source = l
-                            .keys()
-                            .any(|k| k == "org.opencontainers.image.source");
-                        let has_version = l
-                            .keys()
-                            .any(|k| k == "org.opencontainers.image.version");
+                        let has_source = l.keys().any(|k| k == "org.opencontainers.image.source");
+                        let has_version = l.keys().any(|k| k == "org.opencontainers.image.version");
                         let mut missing = Vec::new();
                         if !has_source {
                             missing.push("org.opencontainers.image.source");
@@ -591,9 +587,7 @@ fn check_entrypoint_set(inspect_result: &crate::error::Result<String>) -> (bool,
     match inspect_result {
         Ok(output) => match serde_json::from_str::<serde_json::Value>(output) {
             Ok(config) => {
-                let entrypoint = config
-                    .get("config")
-                    .and_then(|c| c.get("Entrypoint"));
+                let entrypoint = config.get("config").and_then(|c| c.get("Entrypoint"));
                 match entrypoint {
                     Some(ep) if !ep.is_null() => {
                         if let Some(arr) = ep.as_array() {
@@ -606,7 +600,10 @@ fn check_entrypoint_set(inspect_result: &crate::error::Result<String>) -> (bool,
                             (true, "ENTRYPOINT is set".to_string())
                         }
                     }
-                    _ => (false, "No ENTRYPOINT defined in container image".to_string()),
+                    _ => (
+                        false,
+                        "No ENTRYPOINT defined in container image".to_string(),
+                    ),
                 }
             }
             Err(e) => (false, format!("Invalid config JSON: {e}")),
@@ -629,10 +626,7 @@ fn check_exposed_ports(inspect_result: &crate::error::Result<String>) -> (bool, 
                         if count <= 5 {
                             (true, format!("{count} port(s) exposed (reasonable)"))
                         } else {
-                            (
-                                false,
-                                format!("{count} ports exposed (unusually many)"),
-                            )
+                            (false, format!("{count} ports exposed (unusually many)"))
                         }
                     }
                     None => (true, "No ports exposed".to_string()),
@@ -689,12 +683,18 @@ fn check_no_add(inspect_result: &crate::error::Result<String>) -> (bool, String)
                                 .is_some_and(|s| s.starts_with("ADD "))
                         });
                         if has_add {
-                            (false, "Image uses ADD instruction (use COPY instead)".to_string())
+                            (
+                                false,
+                                "Image uses ADD instruction (use COPY instead)".to_string(),
+                            )
                         } else {
                             (true, "No ADD instructions found".to_string())
                         }
                     }
-                    None => (true, "No build history available (advisory pass)".to_string()),
+                    None => (
+                        true,
+                        "No build history available (advisory pass)".to_string(),
+                    ),
                 }
             }
             Err(e) => (false, format!("Invalid config JSON: {e}")),
@@ -713,9 +713,7 @@ mod tests {
     }
 
     fn config_json(user: &str, labels: &str) -> String {
-        format!(
-            r#"{{"config":{{"User":"{user}","Labels":{labels}}}}}"#
-        )
+        format!(r#"{{"config":{{"User":"{user}","Labels":{labels}}}}}"#)
     }
 
     fn config_json_with_healthcheck(user: &str, labels: &str) -> String {
@@ -767,7 +765,11 @@ mod tests {
         let mut config = PluginConfig::default();
         config.include_advisory = true;
         let controls = plugin.generate_controls(&config);
-        assert!(controls.len() >= 15, "expected >= 15 controls, got {}", controls.len());
+        assert!(
+            controls.len() >= 15,
+            "expected >= 15 controls, got {}",
+            controls.len()
+        );
     }
 
     #[test]
@@ -788,7 +790,11 @@ mod tests {
         let plugin = OciPlugin::new(make_runner(), "docker://test");
         let controls = plugin.generate_controls(&PluginConfig::default());
         for c in &controls {
-            assert!(!c.nist_control_ids.is_empty(), "Control {} has no NIST IDs", c.id);
+            assert!(
+                !c.nist_control_ids.is_empty(),
+                "Control {} has no NIST IDs",
+                c.id
+            );
         }
     }
 
@@ -823,10 +829,21 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        assert!(result.all_required_passed, "Expected all required to pass. Failures: {:?}",
-            result.evaluations.iter().filter(|e| !e.passed).map(|e| format!("{}: {}", e.control.id, e.message)).collect::<Vec<_>>());
+        assert!(
+            result.all_required_passed,
+            "Expected all required to pass. Failures: {:?}",
+            result
+                .evaluations
+                .iter()
+                .filter(|e| !e.passed)
+                .map(|e| format!("{}: {}", e.control.id, e.message))
+                .collect::<Vec<_>>()
+        );
         assert_eq!(result.domain, "oci");
     }
 
@@ -847,9 +864,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let user = result.evaluations.iter().find(|e| e.control.id == "OCI-002").unwrap();
+        let user = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-002")
+            .unwrap();
         assert!(!user.passed);
         assert!(user.message.contains("root"));
     }
@@ -871,9 +895,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let user = result.evaluations.iter().find(|e| e.control.id == "OCI-002").unwrap();
+        let user = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-002")
+            .unwrap();
         assert!(!user.passed);
     }
 
@@ -894,9 +925,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let digest = result.evaluations.iter().find(|e| e.control.id == "OCI-001").unwrap();
+        let digest = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-001")
+            .unwrap();
         assert!(!digest.passed);
     }
 
@@ -909,7 +947,10 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(!result.all_required_passed);
         for eval in &result.evaluations {
@@ -934,9 +975,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let caps = result.evaluations.iter().find(|e| e.control.id == "OCI-003").unwrap();
+        let caps = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-003")
+            .unwrap();
         assert!(!caps.passed);
     }
 
@@ -957,7 +1005,10 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         let json = serde_json::to_string(&result).unwrap();
         let back: DomainEvaluation = serde_json::from_str(&json).unwrap();
@@ -982,7 +1033,10 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
         for eval in &result.evaluations {
             assert!(eval.evidence_hash.is_some());
@@ -1010,7 +1064,11 @@ mod tests {
         let controls = plugin.generate_controls(&config);
         let result = plugin.evaluate(&controls, &config).await.unwrap();
 
-        let labels = result.evaluations.iter().find(|e| e.control.id == "OCI-005").unwrap();
+        let labels = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-005")
+            .unwrap();
         assert!(labels.passed);
     }
 
@@ -1031,9 +1089,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let hc = result.evaluations.iter().find(|e| e.control.id == "OCI-006").unwrap();
+        let hc = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-006")
+            .unwrap();
         assert!(!hc.passed);
         assert!(hc.message.contains("No HEALTHCHECK"));
     }
@@ -1055,9 +1120,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let hc = result.evaluations.iter().find(|e| e.control.id == "OCI-006").unwrap();
+        let hc = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-006")
+            .unwrap();
         assert!(hc.passed);
     }
 
@@ -1078,9 +1150,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let tag = result.evaluations.iter().find(|e| e.control.id == "OCI-007").unwrap();
+        let tag = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-007")
+            .unwrap();
         assert!(!tag.passed);
         assert!(tag.message.contains("latest"));
     }
@@ -1102,9 +1181,16 @@ mod tests {
 
         let plugin = OciPlugin::new(runner, img);
         let controls = plugin.generate_controls(&PluginConfig::default());
-        let result = plugin.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = plugin
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
 
-        let tag = result.evaluations.iter().find(|e| e.control.id == "OCI-007").unwrap();
+        let tag = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-007")
+            .unwrap();
         assert!(tag.passed);
     }
 
@@ -1129,7 +1215,11 @@ mod tests {
         let controls = plugin.generate_controls(&config);
         let result = plugin.evaluate(&controls, &config).await.unwrap();
 
-        let labels = result.evaluations.iter().find(|e| e.control.id == "OCI-008").unwrap();
+        let labels = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-008")
+            .unwrap();
         assert!(labels.passed);
     }
 
@@ -1154,7 +1244,11 @@ mod tests {
         let controls = plugin.generate_controls(&config);
         let result = plugin.evaluate(&controls, &config).await.unwrap();
 
-        let labels = result.evaluations.iter().find(|e| e.control.id == "OCI-008").unwrap();
+        let labels = result
+            .evaluations
+            .iter()
+            .find(|e| e.control.id == "OCI-008")
+            .unwrap();
         assert!(!labels.passed);
         assert!(labels.message.contains("Missing"));
     }

@@ -125,9 +125,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_all_with_empty_registry() {
-        let registry = Arc::new(
-            crate::compliance::registry::PluginRegistryBuilder::new().build(),
-        );
+        let registry = Arc::new(crate::compliance::registry::PluginRegistryBuilder::new().build());
         let orchestrator = ComplianceOrchestrator::new(registry);
         let report = orchestrator.run_all(&default_config()).await.unwrap();
         assert!(report.all_passed);
@@ -205,7 +203,9 @@ mod tests {
         let registry = Arc::new(
             crate::compliance::registry::PluginRegistryBuilder::new()
                 .register(Arc::new(MockPlugin::new("pass-domain").with_pass_all(true)))
-                .register(Arc::new(MockPlugin::new("fail-domain").with_pass_all(false)))
+                .register(Arc::new(
+                    MockPlugin::new("fail-domain").with_pass_all(false),
+                ))
                 .build(),
         );
         let orchestrator = ComplianceOrchestrator::new(registry);

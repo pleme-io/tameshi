@@ -14,9 +14,9 @@ use chrono::Utc;
 use tameshi::certification_artifact::{
     compose_certification_artifact, verify_certification_artifact,
 };
+use tameshi::collectors::inspec_result::hash_inspec_output;
 use tameshi::collectors::pangea::hash_synthesis_json;
 use tameshi::collectors::rspec::hash_rspec_output;
-use tameshi::collectors::inspec_result::hash_inspec_output;
 use tameshi::compliance::plugin::{MockPlugin, PluginConfig};
 use tameshi::compliance::plugin_orchestrator::{ComplianceOrchestrator, FullComplianceReport};
 use tameshi::compliance::registry::PluginRegistryBuilder;
@@ -25,7 +25,7 @@ use tameshi::hash::Blake3Hash;
 use tameshi::heartbeat::{HeartbeatChain, HeartbeatEvent, VerificationOutcome, VerifierIdentity};
 use tameshi::iac_attestation::{IacTestPhase, IacTestPhaseResult, IacTestSuiteReport};
 use tameshi::merkle::compose_merkle;
-use tameshi::sdlc::{SdlcChain, SdlcCheckpoint, SdlcPhase, ALL_PHASES};
+use tameshi::sdlc::{ALL_PHASES, SdlcChain, SdlcCheckpoint, SdlcPhase};
 use tameshi::signature::{LayerSignature, LayerType};
 use tameshi::signing::{MerkleRootSigner, MockDfcSigner};
 use tameshi::verify::verify_master;
@@ -201,9 +201,9 @@ async fn full_chain_end_to_end() {
     // -----------------------------------------------------------------------
     let artifact = compose_certification_artifact(
         "/usr/bin/myapp",
-        nix_sig.hash.clone(),            // artifact = Nix derivation hash
-        rspec_sig.hash.clone(),          // control = RSpec result hash
-        pangea_sig.hash.clone(),         // intent  = Pangea synthesis hash
+        nix_sig.hash.clone(),    // artifact = Nix derivation hash
+        rspec_sig.hash.clone(),  // control = RSpec result hash
+        pangea_sig.hash.clone(), // intent  = Pangea synthesis hash
         "production",
     );
 
@@ -223,7 +223,10 @@ async fn full_chain_end_to_end() {
         inspec_sig.clone(),
     ];
     let master = compose_merkle(&layers, "production");
-    assert!(master.verify_untested(), "Untested Merkle root verification failed");
+    assert!(
+        master.verify_untested(),
+        "Untested Merkle root verification failed"
+    );
 
     // -----------------------------------------------------------------------
     // Step 6: Run ComplianceOrchestrator with MockPlugins
@@ -252,8 +255,14 @@ async fn full_chain_end_to_end() {
     let master = master
         .with_compliance(compliance_report.compliance_hash.clone())
         .with_certification_artifacts(vec![artifact.clone()]);
-    assert!(master.verify_secure(), "Secure signature verification failed");
-    assert!(master.is_fully_attested(), "Master should be fully attested");
+    assert!(
+        master.verify_secure(),
+        "Secure signature verification failed"
+    );
+    assert!(
+        master.is_fully_attested(),
+        "Master should be fully attested"
+    );
 
     // -----------------------------------------------------------------------
     // Step 8: Sign the Merkle root with MockDfcSigner
@@ -313,7 +322,10 @@ async fn full_chain_end_to_end() {
         master.gating_signature().clone(),
     );
     assert_eq!(heartbeat.len(), 1);
-    assert!(heartbeat.verify_integrity(), "Heartbeat chain integrity failed");
+    assert!(
+        heartbeat.verify_integrity(),
+        "Heartbeat chain integrity failed"
+    );
 
     // -----------------------------------------------------------------------
     // Step 12: IacTestSuiteReport and suite hash verification
@@ -330,7 +342,10 @@ async fn full_chain_end_to_end() {
     // Step 13: SdlcChain with all 8 phases
     // -----------------------------------------------------------------------
     let sdlc_chain = make_sdlc_chain();
-    assert!(sdlc_chain.is_complete(), "SDLC chain should have all 8 phases");
+    assert!(
+        sdlc_chain.is_complete(),
+        "SDLC chain should have all 8 phases"
+    );
     assert!(sdlc_chain.all_gates_passed, "All SDLC gates should pass");
 
     // -----------------------------------------------------------------------
@@ -491,8 +506,8 @@ async fn gate_denies_without_certification_artifacts() {
         vec![],
     );
 
-    let master = compose_merkle(&[nix_sig], "production")
-        .with_compliance(Blake3Hash::digest(b"compliance"));
+    let master =
+        compose_merkle(&[nix_sig], "production").with_compliance(Blake3Hash::digest(b"compliance"));
 
     // No certification artifacts attached
     let policy = GatingPolicy {
@@ -556,7 +571,10 @@ fn sdlc_chain_failed_gate_tracks_failure() {
     });
 
     assert!(!chain.all_gates_passed, "Chain should track failed gate");
-    assert!(!chain.is_complete(), "Chain with only 2 phases is not complete");
+    assert!(
+        !chain.is_complete(),
+        "Chain with only 2 phases is not complete"
+    );
 }
 
 #[test]

@@ -73,11 +73,13 @@ async fn hash_local(config_path: &str, disk_path: &str) -> Result<LayerSignature
     let mut inputs = Vec::new();
 
     // Hash the VM config JSON (deterministic via serde)
-    let config_content = tokio::fs::read(config_path).await
-        .map_err(|e| TameshiError::CollectorError {
-            layer: "kasou".into(),
-            message: format!("reading config {config_path}: {e}"),
-        })?;
+    let config_content =
+        tokio::fs::read(config_path)
+            .await
+            .map_err(|e| TameshiError::CollectorError {
+                layer: "kasou".into(),
+                message: format!("reading config {config_path}: {e}"),
+            })?;
     let config_hash = Blake3Hash::digest(&config_content);
     debug!(path = config_path, hash = %config_hash, "hashed VM config");
     inputs.push(InputHash {
@@ -88,10 +90,7 @@ async fn hash_local(config_path: &str, disk_path: &str) -> Result<LayerSignature
 
     // Hash the disk image (can be large — use file hashing)
     let disk_hash = hash_file(disk_path).await?;
-    let disk_size = tokio::fs::metadata(disk_path)
-        .await
-        .map(|m| m.len())
-        .ok();
+    let disk_size = tokio::fs::metadata(disk_path).await.map(|m| m.len()).ok();
     debug!(path = disk_path, hash = %disk_hash, "hashed disk image");
     inputs.push(InputHash {
         name: "disk-image".to_string(),
@@ -110,7 +109,8 @@ async fn hash_local(config_path: &str, disk_path: &str) -> Result<LayerSignature
 
 /// Hash a VmInfo JSON file.
 async fn hash_vm_info(info_path: &str) -> Result<LayerSignature> {
-    let content = tokio::fs::read(info_path).await
+    let content = tokio::fs::read(info_path)
+        .await
         .map_err(|e| TameshiError::CollectorError {
             layer: "kasou".into(),
             message: format!("reading vm info {info_path}: {e}"),
@@ -134,7 +134,8 @@ async fn hash_vm_info(info_path: &str) -> Result<LayerSignature> {
 
 /// Hash a file using BLAKE3.
 async fn hash_file(path: &str) -> Result<Blake3Hash> {
-    let content = tokio::fs::read(path).await
+    let content = tokio::fs::read(path)
+        .await
         .map_err(|e| TameshiError::CollectorError {
             layer: "kasou".into(),
             message: format!("reading {path}: {e}"),
@@ -211,7 +212,10 @@ mod tests {
         .await
         .unwrap();
 
-        assert_ne!(sig1.hash, sig2.hash, "different config should produce different hash");
+        assert_ne!(
+            sig1.hash, sig2.hash,
+            "different config should produce different hash"
+        );
     }
 
     #[tokio::test]
@@ -267,8 +271,16 @@ mod tests {
 
     #[test]
     fn composite_hash_order_independent() {
-        let a = InputHash { name: "a".into(), hash: Blake3Hash::digest(b"x"), size_bytes: None };
-        let b = InputHash { name: "b".into(), hash: Blake3Hash::digest(b"y"), size_bytes: None };
+        let a = InputHash {
+            name: "a".into(),
+            hash: Blake3Hash::digest(b"x"),
+            size_bytes: None,
+        };
+        let b = InputHash {
+            name: "b".into(),
+            hash: Blake3Hash::digest(b"y"),
+            size_bytes: None,
+        };
 
         let h_ab = compute_composite_hash(&[a.clone(), b.clone()]);
         let h_ba = compute_composite_hash(&[b, a]);

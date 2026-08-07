@@ -91,9 +91,7 @@ mod tests {
     #[test]
     fn builder_registers_single_plugin() {
         let plugin = Arc::new(MockPlugin::new("test"));
-        let registry = PluginRegistryBuilder::new()
-            .register(plugin)
-            .build();
+        let registry = PluginRegistryBuilder::new().register(plugin).build();
         assert_eq!(registry.plugins().len(), 1);
         assert_eq!(registry.domains(), vec!["test"]);
     }
@@ -133,8 +131,12 @@ mod tests {
     fn available_filters_unavailable_plugins() {
         let registry = PluginRegistryBuilder::new()
             .register(Arc::new(MockPlugin::new("available").with_available(true)))
-            .register(Arc::new(MockPlugin::new("unavailable").with_available(false)))
-            .register(Arc::new(MockPlugin::new("also-available").with_available(true)))
+            .register(Arc::new(
+                MockPlugin::new("unavailable").with_available(false),
+            ))
+            .register(Arc::new(
+                MockPlugin::new("also-available").with_available(true),
+            ))
             .build();
 
         let avail = registry.available();

@@ -29,13 +29,13 @@ const DOMAIN: &str = "agent-attestation";
 /// `settings_key` is the key looked up in [`PluginConfig::settings`]; when the
 /// value is a JSON `true` the control passes.
 type ControlDef = (
-    &'static str,        // id
-    &'static str,        // title
-    &'static str,        // description
-    ControlSeverity,     // severity
-    bool,                // required
+    &'static str,            // id
+    &'static str,            // title
+    &'static str,            // description
+    ControlSeverity,         // severity
+    bool,                    // required
     &'static [&'static str], // nist_control_ids
-    &'static str,        // settings_key
+    &'static str,            // settings_key
 );
 
 /// Required controls.
@@ -207,9 +207,7 @@ impl CompliancePlugin for AgentLayerPlugin {
 
             let domain_hash = DomainEvaluation::compute_domain_hash(DOMAIN, &evaluations);
             let total_duration_ms = evaluations.iter().map(|e| e.duration_ms).sum();
-            let all_required_passed = evaluations
-                .iter()
-                .all(|e| !e.control.required || e.passed);
+            let all_required_passed = evaluations.iter().all(|e| !e.control.required || e.passed);
 
             Ok(DomainEvaluation {
                 domain: DOMAIN.to_string(),

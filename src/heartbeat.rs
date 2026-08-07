@@ -378,7 +378,9 @@ impl HeartbeatChain {
     #[must_use]
     pub fn entries_in_range(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<HeartbeatEntry> {
         let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
-        inner.entries.iter()
+        inner
+            .entries
+            .iter()
             .filter(|e| e.timestamp >= from && e.timestamp <= to)
             .cloned()
             .collect()
@@ -388,7 +390,9 @@ impl HeartbeatChain {
     #[must_use]
     pub fn entries_by_event(&self, event: &HeartbeatEvent) -> Vec<HeartbeatEntry> {
         let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
-        inner.entries.iter()
+        inner
+            .entries
+            .iter()
             .filter(|e| &e.event == event)
             .cloned()
             .collect()
@@ -398,8 +402,16 @@ impl HeartbeatChain {
     #[must_use]
     pub fn outcome_counts(&self) -> (usize, usize) {
         let inner = self.inner.read().expect("HeartbeatChain lock poisoned");
-        let allowed = inner.entries.iter().filter(|e| e.result == VerificationOutcome::Allowed).count();
-        let denied = inner.entries.iter().filter(|e| e.result == VerificationOutcome::Denied).count();
+        let allowed = inner
+            .entries
+            .iter()
+            .filter(|e| e.result == VerificationOutcome::Allowed)
+            .count();
+        let denied = inner
+            .entries
+            .iter()
+            .filter(|e| e.result == VerificationOutcome::Denied)
+            .count();
         (allowed, denied)
     }
 }
@@ -665,11 +677,7 @@ impl HttpEmitter {
 
 impl HeartbeatEmitter for HttpEmitter {
     async fn emit(&self, entry: &HeartbeatEntry) -> crate::error::Result<()> {
-        self.client
-            .post(&self.endpoint)
-            .json(entry)
-            .send()
-            .await?;
+        self.client.post(&self.endpoint).json(entry).send().await?;
         Ok(())
     }
 }
@@ -802,7 +810,10 @@ impl std::fmt::Debug for S3EmitterConfig {
             .field("access_key_id", &self.access_key_id)
             .field("secret_access_key", &"[REDACTED]")
             .field("region", &self.region)
-            .field("session_token", &self.session_token.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "session_token",
+                &self.session_token.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -841,12 +852,12 @@ impl S3Emitter {
             builder = builder.with_token(token);
         }
 
-        let store = builder.build().map_err(|e| {
-            crate::error::TameshiError::CollectorError {
+        let store = builder
+            .build()
+            .map_err(|e| crate::error::TameshiError::CollectorError {
                 layer: "s3".to_string(),
                 message: format!("failed to build S3 client: {e}"),
-            }
-        })?;
+            })?;
 
         Ok(Self {
             store: Box::new(store),
@@ -865,10 +876,7 @@ impl S3Emitter {
     /// Serializes the chain's entries as pretty-printed JSON and PUTs to
     /// `{key_prefix}chain-{timestamp}.json`.
     /// Returns the S3 object key on success.
-    pub async fn upload_chain(
-        &self,
-        chain: &HeartbeatChain,
-    ) -> crate::error::Result<String> {
+    pub async fn upload_chain(&self, chain: &HeartbeatChain) -> crate::error::Result<String> {
         let now = Utc::now();
         let key = self.chain_key(&now);
         let body = chain.export_json()?;
@@ -890,10 +898,7 @@ impl S3Emitter {
     /// Serializes the entry as a single JSON line and PUTs to
     /// `{key_prefix}entries/{sequence:08}.jsonl`.
     /// Returns the S3 object key on success.
-    pub async fn upload_entry(
-        &self,
-        entry: &HeartbeatEntry,
-    ) -> crate::error::Result<String> {
+    pub async fn upload_entry(&self, entry: &HeartbeatEntry) -> crate::error::Result<String> {
         let key = self.entry_key(entry);
         let mut body = serde_json::to_vec(entry)?;
         body.push(b'\n');
@@ -1019,7 +1024,10 @@ mod tests {
             "system",
             test_signature(),
         );
-        assert_eq!(chain.entries()[0].previous_hash, Blake3Hash::from([0u8; 32]));
+        assert_eq!(
+            chain.entries()[0].previous_hash,
+            Blake3Hash::from([0u8; 32])
+        );
     }
 
     #[test]
@@ -1064,7 +1072,10 @@ mod tests {
         // Tamper with the first entry
         chain.inner.write().expect("lock").entries[0].resource = "ns/Deploy/EVIL".to_string();
 
-        assert!(!chain.verify_integrity(), "Tampered chain should fail verification");
+        assert!(
+            !chain.verify_integrity(),
+            "Tampered chain should fail verification"
+        );
     }
 
     #[test]
@@ -1088,7 +1099,10 @@ mod tests {
         // Break the link
         chain.inner.write().expect("lock").entries[1].previous_hash = Blake3Hash::digest(b"wrong");
 
-        assert!(!chain.verify_integrity(), "Broken link should fail verification");
+        assert!(
+            !chain.verify_integrity(),
+            "Broken link should fail verification"
+        );
     }
 
     #[test]
@@ -1116,12 +1130,24 @@ mod tests {
         let prev = Blake3Hash::from([0u8; 32]);
 
         let h1 = compute_entry_hash(
-            0, &ts, &verifier, &HeartbeatEvent::GateCheck,
-            &VerificationOutcome::Allowed, "res", &sig, &prev,
+            0,
+            &ts,
+            &verifier,
+            &HeartbeatEvent::GateCheck,
+            &VerificationOutcome::Allowed,
+            "res",
+            &sig,
+            &prev,
         );
         let h2 = compute_entry_hash(
-            0, &ts, &verifier, &HeartbeatEvent::GateCheck,
-            &VerificationOutcome::Allowed, "res", &sig, &prev,
+            0,
+            &ts,
+            &verifier,
+            &HeartbeatEvent::GateCheck,
+            &VerificationOutcome::Allowed,
+            "res",
+            &sig,
+            &prev,
         );
         assert_eq!(h1, h2);
     }
@@ -1134,12 +1160,24 @@ mod tests {
         let prev = Blake3Hash::from([0u8; 32]);
 
         let h1 = compute_entry_hash(
-            0, &ts, &verifier, &HeartbeatEvent::GateCheck,
-            &VerificationOutcome::Allowed, "res", &sig, &prev,
+            0,
+            &ts,
+            &verifier,
+            &HeartbeatEvent::GateCheck,
+            &VerificationOutcome::Allowed,
+            "res",
+            &sig,
+            &prev,
         );
         let h2 = compute_entry_hash(
-            0, &ts, &verifier, &HeartbeatEvent::AdmissionDecision,
-            &VerificationOutcome::Allowed, "res", &sig, &prev,
+            0,
+            &ts,
+            &verifier,
+            &HeartbeatEvent::AdmissionDecision,
+            &VerificationOutcome::Allowed,
+            "res",
+            &sig,
+            &prev,
         );
         assert_ne!(h1, h2);
     }
@@ -1220,7 +1258,10 @@ mod tests {
 
     #[test]
     fn heartbeat_event_display() {
-        assert_eq!(HeartbeatEvent::AdmissionDecision.to_string(), "admission_decision");
+        assert_eq!(
+            HeartbeatEvent::AdmissionDecision.to_string(),
+            "admission_decision"
+        );
         assert_eq!(HeartbeatEvent::BreakGlass.to_string(), "break_glass");
         assert_eq!(HeartbeatEvent::Revocation.to_string(), "revocation");
     }
@@ -1628,7 +1669,8 @@ mod tests {
         let proof = chain.consistency_proof(2, 7).unwrap();
 
         // Tamper with an entry hash directly
-        chain.inner.write().expect("lock").entries[5].entry_hash = Blake3Hash::digest(b"forged-hash");
+        chain.inner.write().expect("lock").entries[5].entry_hash =
+            Blake3Hash::digest(b"forged-hash");
 
         assert!(
             !chain.verify_consistency_proof(&proof),
@@ -1651,10 +1693,7 @@ mod tests {
     fn consistency_proof_invalid_range() {
         let chain = build_chain(5);
         let result = chain.consistency_proof(4, 2);
-        assert!(
-            result.is_err(),
-            "from_seq > to_seq should return an error"
-        );
+        assert!(result.is_err(), "from_seq > to_seq should return an error");
     }
 
     #[test]
@@ -1699,7 +1738,8 @@ mod tests {
 
     fn in_memory_emitter() -> (std::sync::Arc<object_store::memory::InMemory>, S3Emitter) {
         let store = std::sync::Arc::new(object_store::memory::InMemory::new());
-        let emitter = S3Emitter::with_store(Box::new(std::sync::Arc::clone(&store)), test_s3_config());
+        let emitter =
+            S3Emitter::with_store(Box::new(std::sync::Arc::clone(&store)), test_s3_config());
         (store, emitter)
     }
 
@@ -1723,7 +1763,10 @@ mod tests {
         config.session_token = Some("FwoGZX...EXAMPLE".to_string());
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: S3EmitterConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.session_token, Some("FwoGZX...EXAMPLE".to_string()));
+        assert_eq!(
+            deserialized.session_token,
+            Some("FwoGZX...EXAMPLE".to_string())
+        );
     }
 
     #[test]
@@ -1731,8 +1774,14 @@ mod tests {
         let mut config = test_s3_config();
         config.session_token = Some("secret-token".to_string());
         let debug = format!("{config:?}");
-        assert!(!debug.contains("wJalrXUtnFEMI"), "secret_access_key must be redacted");
-        assert!(!debug.contains("secret-token"), "session_token must be redacted");
+        assert!(
+            !debug.contains("wJalrXUtnFEMI"),
+            "secret_access_key must be redacted"
+        );
+        assert!(
+            !debug.contains("secret-token"),
+            "session_token must be redacted"
+        );
         assert!(debug.contains("[REDACTED]"));
     }
 
@@ -1891,7 +1940,10 @@ mod tests {
             &clock,
         );
 
-        assert_eq!(entry.timestamp, fixed_time, "Entry must use the injected clock timestamp");
+        assert_eq!(
+            entry.timestamp, fixed_time,
+            "Entry must use the injected clock timestamp"
+        );
     }
 
     #[test]

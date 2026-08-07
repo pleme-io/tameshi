@@ -58,7 +58,7 @@ pub trait MerkleTreeOps: Send + Sync {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SparseMerkleTree {
     leaves: HashMap<Blake3Hash, Blake3Hash>, // key -> value
-    depth: usize, // tree depth (number of bits used from key), max 256
+    depth: usize,                            // tree depth (number of bits used from key), max 256
 }
 
 /// A proof of inclusion or non-inclusion in the SMT.
@@ -344,7 +344,7 @@ impl MerkleTreeOps for MockMerkleTree {
             return Blake3Hash::digest(b"mock-empty-root");
         }
         let mut sorted: Vec<_> = self.entries.iter().collect();
-        sorted.sort_by(|a, b| a.0 .0.cmp(&b.0 .0));
+        sorted.sort_by(|a, b| a.0.0.cmp(&b.0.0));
         let mut data = Vec::new();
         for (k, v) in &sorted {
             data.extend_from_slice(&k.0);
@@ -407,7 +407,10 @@ mod tests {
         tree.insert(key, value);
 
         let new_root = tree.root();
-        assert_ne!(empty_root, new_root, "inserting a value must change the root");
+        assert_ne!(
+            empty_root, new_root,
+            "inserting a value must change the root"
+        );
     }
 
     #[test]
@@ -658,7 +661,10 @@ mod tests {
     fn multiple_entries_len() {
         let mut tree = SparseMerkleTree::new(8);
         for i in 0u32..10 {
-            tree.insert(Blake3Hash::digest(&i.to_le_bytes()), Blake3Hash::digest(&i.to_le_bytes()));
+            tree.insert(
+                Blake3Hash::digest(&i.to_le_bytes()),
+                Blake3Hash::digest(&i.to_le_bytes()),
+            );
         }
         assert_eq!(tree.len(), 10);
     }

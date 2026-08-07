@@ -69,8 +69,7 @@ impl LayerCollector for AgentDependenciesCollector {
     async fn collect(&self) -> Result<LayerSignature> {
         let sbom_hash = Blake3Hash::digest(&self.config.sbom_content);
 
-        let format_canonical =
-            serde_json::to_string(&self.config.sbom_format).unwrap_or_default();
+        let format_canonical = serde_json::to_string(&self.config.sbom_format).unwrap_or_default();
         let format_hash = Blake3Hash::digest(format_canonical.as_bytes());
 
         let mut inputs = vec![

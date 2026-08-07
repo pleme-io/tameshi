@@ -55,7 +55,7 @@ impl Default for GatingPolicy {
             name: "default".to_string(),
             required_layers: vec![],
             require_compliance: true,
-            fail_open: false, // Fail closed by default
+            fail_open: false,                   // Fail closed by default
             max_signature_age_secs: Some(3600), // 1 hour
             require_certification_artifacts: false,
         }
@@ -138,7 +138,8 @@ pub fn evaluate_gate_with_clock(
 
     // Check signature age if configured
     if let Some(max_age) = policy.max_signature_age_secs {
-        let age = clock.now()
+        let age = clock
+            .now()
             .signed_duration_since(master.computed_at)
             .num_seconds();
         if age > max_age as i64 {
@@ -146,23 +147,26 @@ pub fn evaluate_gate_with_clock(
                 master.gating_signature(),
                 expected,
                 &policy.name,
-                &format!(
-                    "Signature is stale: {}s old (max {}s)",
-                    age, max_age
-                ),
+                &format!("Signature is stale: {}s old (max {}s)", age, max_age),
             );
         }
     }
 
     // Check required layers
     for required_layer in &policy.required_layers {
-        let found = master.layers.iter().any(|l| l.layer.to_string() == *required_layer);
+        let found = master
+            .layers
+            .iter()
+            .any(|l| l.layer.to_string() == *required_layer);
         if !found {
             return GateDecision::deny(
                 master.gating_signature(),
                 expected,
                 &policy.name,
-                &format!("Required layer '{}' not in master signature", required_layer),
+                &format!(
+                    "Required layer '{}' not in master signature",
+                    required_layer
+                ),
             );
         }
     }
@@ -170,12 +174,7 @@ pub fn evaluate_gate_with_clock(
     // Verify the signature
     let gating_sig = master.gating_signature();
     if *gating_sig != *expected {
-        return GateDecision::deny(
-            gating_sig,
-            expected,
-            &policy.name,
-            "Signature mismatch",
-        );
+        return GateDecision::deny(gating_sig, expected, &policy.name, "Signature mismatch");
     }
 
     // Verify internal consistency
@@ -205,7 +204,12 @@ pub fn evaluate_gate_with_clock(
 /// Uses the default [`ReqwestHttpClient`](crate::traits::ReqwestHttpClient).
 /// For testing, use [`fetch_expected_signature_with`] with a mock client.
 pub async fn fetch_expected_signature(endpoint: &str, environment: &str) -> Result<Blake3Hash> {
-    fetch_expected_signature_with(endpoint, environment, &crate::traits::ReqwestHttpClient::new()).await
+    fetch_expected_signature_with(
+        endpoint,
+        environment,
+        &crate::traits::ReqwestHttpClient::new(),
+    )
+    .await
 }
 
 /// Fetch the expected signature from a remote endpoint using an injected HTTP client.
@@ -216,12 +220,14 @@ pub async fn fetch_expected_signature_with(
 ) -> Result<Blake3Hash> {
     let url = format!("{}/api/v1/gates/{}/verify", endpoint, environment);
 
-    let body: serde_json::Value = client.get_json(&url).await.map_err(|_| {
-        TameshiError::CollectorError {
-            layer: "gate".to_string(),
-            message: format!("failed to fetch signature from {}", url),
-        }
-    })?;
+    let body: serde_json::Value =
+        client
+            .get_json(&url)
+            .await
+            .map_err(|_| TameshiError::CollectorError {
+                layer: "gate".to_string(),
+                message: format!("failed to fetch signature from {}", url),
+            })?;
 
     let sig_str = body
         .get("expected_signature")
@@ -231,9 +237,8 @@ pub async fn fetch_expected_signature_with(
             message: "gate response missing expected_signature field".to_string(),
         })?;
 
-    Blake3Hash::from_prefixed(sig_str).map_err(|e| {
-        TameshiError::InvalidInput(format!("invalid signature format: {}", e))
-    })
+    Blake3Hash::from_prefixed(sig_str)
+        .map_err(|e| TameshiError::InvalidInput(format!("invalid signature format: {}", e)))
 }
 
 /// Tatara-specific gating: verify a job submission has a valid signature.
@@ -362,9 +367,12 @@ mod tests {
 
     #[test]
     fn gate_denies_missing_compliance() {
-        let layers = vec![
-            LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix"), "test", vec![]),
-        ];
+        let layers = vec![LayerSignature::new(
+            LayerType::Nix,
+            Blake3Hash::digest(b"nix"),
+            "test",
+            vec![],
+        )];
         let master = merkle::compose_merkle(&layers, "test");
         let expected = master.gating_signature().clone();
         let policy = GatingPolicy {
@@ -559,11 +567,8 @@ mod tests {
             &response,
         );
 
-        let result = fetch_expected_signature_with(
-            "https://gate.example.com",
-            "production",
-            &client,
-        ).await;
+        let result =
+            fetch_expected_signature_with("https://gate.example.com", "production", &client).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_hash);
     }
@@ -577,11 +582,8 @@ mod tests {
             &response,
         );
 
-        let result = fetch_expected_signature_with(
-            "https://gate.example.com",
-            "staging",
-            &client,
-        ).await;
+        let result =
+            fetch_expected_signature_with("https://gate.example.com", "staging", &client).await;
         assert!(result.is_err());
     }
 
@@ -619,16 +621,32 @@ mod tests {
         let boundary_time = master.computed_at + chrono::Duration::seconds(60);
         let clock = FixedClock::new(boundary_time);
         let decision = evaluate_gate_with_clock(&policy, &master, &expected, &clock);
-        assert!(decision.allowed, "Signature at exactly max_age should be allowed");
+        assert!(
+            decision.allowed,
+            "Signature at exactly max_age should be allowed"
+        );
     }
 
     #[test]
     fn gate_fail_open_is_not_default() {
         let policy = GatingPolicy::default();
-        assert!(!policy.fail_open, "Default policy must NOT be fail_open (secure by default)");
-        assert!(policy.require_compliance, "Default policy must require compliance");
-        assert!(policy.max_signature_age_secs.is_some(), "Default policy must set max age");
-        assert_eq!(policy.max_signature_age_secs, Some(3600), "Default max age should be 1 hour");
+        assert!(
+            !policy.fail_open,
+            "Default policy must NOT be fail_open (secure by default)"
+        );
+        assert!(
+            policy.require_compliance,
+            "Default policy must require compliance"
+        );
+        assert!(
+            policy.max_signature_age_secs.is_some(),
+            "Default policy must set max age"
+        );
+        assert_eq!(
+            policy.max_signature_age_secs,
+            Some(3600),
+            "Default max age should be 1 hour"
+        );
     }
 
     #[test]
@@ -650,13 +668,17 @@ mod tests {
     fn gate_100_required_layers_all_present() {
         // Build a master with 100 unique layer types (using the same type but different hash)
         // Since required_layers checks layer.to_string(), we need actual matching types
-        let all_types = vec![
-            LayerType::Nix,
-            LayerType::Oci,
-        ];
+        let all_types = vec![LayerType::Nix, LayerType::Oci];
         let layers: Vec<LayerSignature> = all_types
             .iter()
-            .map(|lt| LayerSignature::new(lt.clone(), Blake3Hash::digest(lt.to_string().as_bytes()), "test", vec![]))
+            .map(|lt| {
+                LayerSignature::new(
+                    lt.clone(),
+                    Blake3Hash::digest(lt.to_string().as_bytes()),
+                    "test",
+                    vec![],
+                )
+            })
             .collect();
         let compliance = Blake3Hash::digest(b"compliance-passed");
         let master = merkle::compose_merkle(&layers, "test").with_compliance(compliance);
@@ -670,7 +692,10 @@ mod tests {
             ..Default::default()
         };
         let decision = evaluate_gate(&policy, &master, &expected);
-        assert!(decision.allowed, "All required layers present should pass gate");
+        assert!(
+            decision.allowed,
+            "All required layers present should pass gate"
+        );
     }
 
     #[test]
@@ -708,7 +733,10 @@ mod tests {
             ..Default::default()
         };
         let decision = evaluate_gate(&policy, &master, &expected);
-        assert!(decision.allowed, "require_certification_artifacts=false should allow empty artifacts");
+        assert!(
+            decision.allowed,
+            "require_certification_artifacts=false should allow empty artifacts"
+        );
     }
 
     #[test]
@@ -749,7 +777,11 @@ mod tests {
             ..Default::default()
         };
         let decision = evaluate_gate(&policy, &master, &expected);
-        assert!(decision.allowed, "Valid artifacts should pass gate: {}", decision.reason);
+        assert!(
+            decision.allowed,
+            "Valid artifacts should pass gate: {}",
+            decision.reason
+        );
     }
 
     #[test]

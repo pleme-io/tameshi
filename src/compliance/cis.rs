@@ -136,11 +136,15 @@ impl CisSummary {
             match c.status {
                 CisCheckStatus::Pass => {
                     summary.pass += 1;
-                    if c.scored { summary.scored_pass += 1; }
+                    if c.scored {
+                        summary.scored_pass += 1;
+                    }
                 }
                 CisCheckStatus::Fail => {
                     summary.fail += 1;
-                    if c.scored { summary.scored_fail += 1; }
+                    if c.scored {
+                        summary.scored_fail += 1;
+                    }
                 }
                 CisCheckStatus::Warn => summary.warn += 1,
                 CisCheckStatus::Info => summary.info += 1,
@@ -164,7 +168,13 @@ pub fn kubernetes_benchmark_nist_mappings() -> Vec<CisBenchmarkMapping> {
         CisBenchmarkMapping {
             section: "1".to_string(),
             title: "Control Plane Components".to_string(),
-            nist_controls: vec!["CM-2".into(), "CM-6".into(), "CM-7".into(), "SC-7".into(), "AC-3".into()],
+            nist_controls: vec![
+                "CM-2".into(),
+                "CM-6".into(),
+                "CM-7".into(),
+                "SC-7".into(),
+                "AC-3".into(),
+            ],
         },
         CisBenchmarkMapping {
             section: "2".to_string(),
@@ -174,7 +184,13 @@ pub fn kubernetes_benchmark_nist_mappings() -> Vec<CisBenchmarkMapping> {
         CisBenchmarkMapping {
             section: "3".to_string(),
             title: "Control Plane Configuration".to_string(),
-            nist_controls: vec!["AC-2".into(), "AC-3".into(), "AC-6".into(), "IA-2".into(), "IA-5".into()],
+            nist_controls: vec![
+                "AC-2".into(),
+                "AC-3".into(),
+                "AC-6".into(),
+                "IA-2".into(),
+                "IA-5".into(),
+            ],
         },
         CisBenchmarkMapping {
             section: "4".to_string(),
@@ -184,7 +200,13 @@ pub fn kubernetes_benchmark_nist_mappings() -> Vec<CisBenchmarkMapping> {
         CisBenchmarkMapping {
             section: "5".to_string(),
             title: "Policies".to_string(),
-            nist_controls: vec!["AC-3".into(), "AC-6".into(), "CM-7".into(), "SC-7".into(), "SC-8".into()],
+            nist_controls: vec![
+                "AC-3".into(),
+                "AC-6".into(),
+                "CM-7".into(),
+                "SC-7".into(),
+                "SC-8".into(),
+            ],
         },
     ]
 }

@@ -15,8 +15,8 @@ use crate::hash::Blake3Hash;
 use super::index::LedgerIndex;
 use super::ledger::MerkleLedger;
 use super::types::{
-    ActiveArtifact, AffectedNodeDetail, BlastRadiusReport, CoResidentArtifact,
-    ProvenanceSnapshot, TimeRange, TimelineEvent,
+    ActiveArtifact, AffectedNodeDetail, BlastRadiusReport, CoResidentArtifact, ProvenanceSnapshot,
+    TimeRange, TimelineEvent,
 };
 
 // =============================================================================
@@ -51,8 +51,9 @@ pub fn blast_radius(
 
     for entry in &matched_entries {
         let ctx = &entry.deployment_context;
-        let builder = node_map.entry(ctx.node.clone()).or_insert_with(|| {
-            AffectedNodeBuilder {
+        let builder = node_map
+            .entry(ctx.node.clone())
+            .or_insert_with(|| AffectedNodeBuilder {
                 node: ctx.node.clone(),
                 cluster: ctx.cluster.clone(),
                 first_execution: entry.timestamp,
@@ -60,8 +61,7 @@ pub fn blast_radius(
                 execution_count: 0,
                 pods: BTreeSet::new(),
                 namespaces: BTreeSet::new(),
-            }
-        });
+            });
 
         builder.execution_count += 1;
         if entry.timestamp < builder.first_execution {
@@ -182,10 +182,7 @@ pub fn timeline(
         .iter()
         .filter(|r| r.timestamp >= from && r.timestamp <= to)
         .filter_map(|r| entries.iter().find(|e| e.sequence == r.sequence))
-        .filter(|entry| {
-            node_filter
-                .map_or(true, |node| entry.deployment_context.node == node)
-        })
+        .filter(|entry| node_filter.map_or(true, |node| entry.deployment_context.node == node))
         .map(|entry| TimelineEvent {
             timestamp: entry.timestamp,
             event_type: "deployment".to_string(),
@@ -518,10 +515,12 @@ mod tests {
 
         // "worker" was co-resident on node-1
         assert!(!report.co_resident_artifacts.is_empty());
-        assert!(report
-            .co_resident_artifacts
-            .iter()
-            .any(|c| c.binary_path == "/usr/bin/worker"));
+        assert!(
+            report
+                .co_resident_artifacts
+                .iter()
+                .any(|c| c.binary_path == "/usr/bin/worker")
+        );
     }
 
     #[test]

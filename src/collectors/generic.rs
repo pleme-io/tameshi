@@ -132,8 +132,7 @@ impl<C: CommandRunner> LayerCollector for GenericOciCollector<C> {
             .await?;
 
         let manifest_hash = Blake3Hash::digest(&manifest_bytes);
-        let inputs =
-            super::oci::parse_manifest_layers(&manifest_bytes, &self.image_ref)?;
+        let inputs = super::oci::parse_manifest_layers(&manifest_bytes, &self.image_ref)?;
 
         debug!(
             image = self.image_ref.as_str(),
@@ -201,9 +200,7 @@ impl<C: CommandRunner> LayerCollector for GenericKubernetesCollector<C> {
                 .await
             {
                 Ok(output) => {
-                    if let Ok(mut resources) =
-                        serde_json::from_str::<serde_json::Value>(&output)
-                    {
+                    if let Ok(mut resources) = serde_json::from_str::<serde_json::Value>(&output) {
                         super::kubernetes::strip_volatile_fields(&mut resources);
                         let canonical = serde_json::to_vec(&resources)?;
                         inputs.push(InputHash {
@@ -331,10 +328,7 @@ impl<C: CommandRunner> LayerCollector for GenericTofuCollector<C> {
     async fn collect(&self) -> Result<LayerSignature> {
         match &self.source {
             GenericTofuSource::PlanFile(path) => {
-                let output = self
-                    .cmd
-                    .run("tofu", &["show", "-json", path])
-                    .await?;
+                let output = self.cmd.run("tofu", &["show", "-json", path]).await?;
                 let plan_hash = Blake3Hash::digest(output.as_bytes());
                 let inputs = vec![InputHash {
                     name: "plan".to_string(),
@@ -349,12 +343,9 @@ impl<C: CommandRunner> LayerCollector for GenericTofuCollector<C> {
                 ))
             }
             GenericTofuSource::RemoteState(dir) => {
-                let output = self
-                    .cmd
-                    .run_in_dir("tofu", &["state", "pull"], dir)
-                    .await?;
-                let state: serde_json::Value = serde_json::from_str(&output)
-                    .map_err(|e| TameshiError::CollectorError {
+                let output = self.cmd.run_in_dir("tofu", &["state", "pull"], dir).await?;
+                let state: serde_json::Value =
+                    serde_json::from_str(&output).map_err(|e| TameshiError::CollectorError {
                         layer: "tofu".to_string(),
                         message: format!("failed to parse state: {e}"),
                     })?;
@@ -515,9 +506,7 @@ impl<C: CommandRunner> LayerCollector for GenericFluxCDCollector<C> {
                 .await
             {
                 Ok(output) => {
-                    if let Ok(mut resources) =
-                        serde_json::from_str::<serde_json::Value>(&output)
-                    {
+                    if let Ok(mut resources) = serde_json::from_str::<serde_json::Value>(&output) {
                         super::fluxcd::strip_fluxcd_volatile_fields(&mut resources);
                         let canonical = serde_json::to_vec(&resources)?;
                         inputs.push(InputHash {
@@ -581,10 +570,7 @@ impl<C: CommandRunner> GenericArgoCDCollector<C> {
 
 impl<C: CommandRunner> LayerCollector for GenericArgoCDCollector<C> {
     async fn collect(&self) -> Result<LayerSignature> {
-        let resource_types = [
-            "applications.argoproj.io",
-            "applicationsets.argoproj.io",
-        ];
+        let resource_types = ["applications.argoproj.io", "applicationsets.argoproj.io"];
 
         let mut inputs = Vec::new();
 
@@ -598,9 +584,7 @@ impl<C: CommandRunner> LayerCollector for GenericArgoCDCollector<C> {
                 .await
             {
                 Ok(output) => {
-                    if let Ok(mut resources) =
-                        serde_json::from_str::<serde_json::Value>(&output)
-                    {
+                    if let Ok(mut resources) = serde_json::from_str::<serde_json::Value>(&output) {
                         super::argocd::strip_argocd_volatile_fields(&mut resources);
                         let canonical = serde_json::to_vec(&resources)?;
                         inputs.push(InputHash {
@@ -744,7 +728,11 @@ impl<C: CommandRunner, F: FileSystem> GenericKindlingCollector<C, F> {
             }
         }
 
-        debug!(path = path, inputs = inputs.len(), "Hashed Kindling identity (generic)");
+        debug!(
+            path = path,
+            inputs = inputs.len(),
+            "Hashed Kindling identity (generic)"
+        );
 
         Ok(LayerSignature::new(LayerType::Kindling, hash, path, inputs))
     }
@@ -779,11 +767,7 @@ impl<C: CommandRunner, F: FileSystem> GenericKindlingCollector<C, F> {
     }
 
     /// Hash identity from a Kubernetes secret via the injected command runner.
-    async fn hash_k8s_secret(
-        &self,
-        namespace: &str,
-        secret_name: &str,
-    ) -> Result<LayerSignature> {
+    async fn hash_k8s_secret(&self, namespace: &str, secret_name: &str) -> Result<LayerSignature> {
         let output = self
             .cmd
             .run(
@@ -801,9 +785,7 @@ impl<C: CommandRunner, F: FileSystem> GenericKindlingCollector<C, F> {
             .await
             .map_err(|e| TameshiError::CollectorError {
                 layer: "kindling".to_string(),
-                message: format!(
-                    "failed to get secret {namespace}/{secret_name}: {e}"
-                ),
+                message: format!("failed to get secret {namespace}/{secret_name}: {e}"),
             })?;
 
         let hash = Blake3Hash::digest(output.as_bytes());
@@ -892,10 +874,7 @@ mod tests {
             b"nar-content-2".to_vec(),
         );
 
-        let collector = GenericNixCollector::new(
-            Some("/nix/store/abc-myapp".to_string()),
-            runner,
-        );
+        let collector = GenericNixCollector::new(Some("/nix/store/abc-myapp".to_string()), runner);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Nix);
         assert_eq!(sig.inputs.len(), 2);
@@ -912,10 +891,7 @@ mod tests {
         );
         // Don't register a --dump response, so it will fail and fall back
 
-        let collector = GenericNixCollector::new(
-            Some("/nix/store/xyz".to_string()),
-            runner,
-        );
+        let collector = GenericNixCollector::new(Some("/nix/store/xyz".to_string()), runner);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.inputs.len(), 1);
         // Should hash the path string as fallback
@@ -1004,8 +980,7 @@ mod tests {
         });
         client.add_json_response("https://tatara.local/api/v1/state", &state);
 
-        let collector =
-            GenericTataraApiCollector::new("https://tatara.local", client);
+        let collector = GenericTataraApiCollector::new("https://tatara.local", client);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Tatara);
         assert_eq!(sig.inputs.len(), 1);
@@ -1027,8 +1002,7 @@ mod tests {
             &serde_json::to_string(&plan_json).unwrap(),
         );
 
-        let collector =
-            GenericTofuCollector::from_plan("/path/to/plan.tfplan", runner);
+        let collector = GenericTofuCollector::from_plan("/path/to/plan.tfplan", runner);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Tofu);
         assert_eq!(sig.inputs.len(), 1);
@@ -1048,8 +1022,7 @@ mod tests {
             &serde_json::to_string(&state_json).unwrap(),
         );
 
-        let collector =
-            GenericTofuCollector::from_remote("/infra/project", runner);
+        let collector = GenericTofuCollector::from_remote("/infra/project", runner);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Tofu);
     }
@@ -1119,7 +1092,14 @@ mod tests {
         });
         runner.add_response(
             "kubectl",
-            &["get", "kustomizations.kustomize.toolkit.fluxcd.io", "-n", "flux-system", "-o", "json"],
+            &[
+                "get",
+                "kustomizations.kustomize.toolkit.fluxcd.io",
+                "-n",
+                "flux-system",
+                "-o",
+                "json",
+            ],
             &serde_json::to_string(&kustomizations).unwrap(),
         );
 
@@ -1155,7 +1135,14 @@ mod tests {
         });
         runner.add_response(
             "kubectl",
-            &["get", "kustomizations.kustomize.toolkit.fluxcd.io", "-n", "test-ns", "-o", "json"],
+            &[
+                "get",
+                "kustomizations.kustomize.toolkit.fluxcd.io",
+                "-n",
+                "test-ns",
+                "-o",
+                "json",
+            ],
             &serde_json::to_string(&resources).unwrap(),
         );
 
@@ -1181,7 +1168,14 @@ mod tests {
         });
         collector2_runner.add_response(
             "kubectl",
-            &["get", "kustomizations.kustomize.toolkit.fluxcd.io", "-n", "test-ns", "-o", "json"],
+            &[
+                "get",
+                "kustomizations.kustomize.toolkit.fluxcd.io",
+                "-n",
+                "test-ns",
+                "-o",
+                "json",
+            ],
             &serde_json::to_string(&resources2).unwrap(),
         );
 
@@ -1234,7 +1228,14 @@ mod tests {
         });
         runner.add_response(
             "kubectl",
-            &["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"],
+            &[
+                "get",
+                "applications.argoproj.io",
+                "-n",
+                "argocd",
+                "-o",
+                "json",
+            ],
             &serde_json::to_string(&applications).unwrap(),
         );
 
@@ -1268,7 +1269,14 @@ mod tests {
         });
         runner.add_response(
             "kubectl",
-            &["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"],
+            &[
+                "get",
+                "applications.argoproj.io",
+                "-n",
+                "argocd",
+                "-o",
+                "json",
+            ],
             &serde_json::to_string(&resources).unwrap(),
         );
 
@@ -1297,7 +1305,14 @@ mod tests {
         });
         runner2.add_response(
             "kubectl",
-            &["get", "applications.argoproj.io", "-n", "argocd", "-o", "json"],
+            &[
+                "get",
+                "applications.argoproj.io",
+                "-n",
+                "argocd",
+                "-o",
+                "json",
+            ],
             &serde_json::to_string(&resources2).unwrap(),
         );
 
@@ -1336,10 +1351,7 @@ mod tests {
                 &["--dump", "/nix/store/b"],
                 b"content-b".to_vec(),
             );
-            let collector = GenericNixCollector::new(
-                Some("/nix/store/test".to_string()),
-                runner,
-            );
+            let collector = GenericNixCollector::new(Some("/nix/store/test".to_string()), runner);
             collector.collect().await.unwrap()
         }
 
@@ -1383,11 +1395,8 @@ mod tests {
             serde_json::to_vec(&identity).unwrap(),
         );
 
-        let collector = GenericKindlingCollector::from_identity(
-            "/etc/kindling/identity.json",
-            runner,
-            fs,
-        );
+        let collector =
+            GenericKindlingCollector::from_identity("/etc/kindling/identity.json", runner, fs);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Kindling);
         // identity-document + 2 certificates = 3 inputs
@@ -1410,11 +1419,8 @@ mod tests {
             serde_json::to_vec(&identity).unwrap(),
         );
 
-        let collector = GenericKindlingCollector::from_identity(
-            "/etc/kindling/identity.json",
-            runner,
-            fs,
-        );
+        let collector =
+            GenericKindlingCollector::from_identity("/etc/kindling/identity.json", runner, fs);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Kindling);
         assert_eq!(sig.inputs.len(), 1);
@@ -1438,11 +1444,8 @@ mod tests {
             serde_json::to_vec(&report).unwrap(),
         );
 
-        let collector = GenericKindlingCollector::from_report(
-            "/var/kindling/report.json",
-            runner,
-            fs,
-        );
+        let collector =
+            GenericKindlingCollector::from_report("/var/kindling/report.json", runner, fs);
         let sig = collector.collect().await.unwrap();
         assert_eq!(sig.layer, LayerType::Kindling);
         assert_eq!(sig.inputs.len(), 1);
@@ -1457,9 +1460,13 @@ mod tests {
         runner.add_response(
             "kubectl",
             &[
-                "get", "secret", "kindling-identity",
-                "-n", "kindling-system",
-                "-o", "jsonpath={.data}",
+                "get",
+                "secret",
+                "kindling-identity",
+                "-n",
+                "kindling-system",
+                "-o",
+                "jsonpath={.data}",
             ],
             r#"{"identity.json":"base64encodeddata"}"#,
         );
@@ -1502,11 +1509,8 @@ mod tests {
         let fs = MockFileSystem::new();
         // No file registered -> read fails
 
-        let collector = GenericKindlingCollector::from_identity(
-            "/nonexistent/identity.json",
-            runner,
-            fs,
-        );
+        let collector =
+            GenericKindlingCollector::from_identity("/nonexistent/identity.json", runner, fs);
         let result = collector.collect().await;
         assert!(result.is_err());
     }
@@ -1517,15 +1521,8 @@ mod tests {
             let runner = MockCommandRunner::new();
             let fs = MockFileSystem::new();
             let identity = serde_json::json!({"cluster_id": "stable"});
-            fs.add_file(
-                "/identity.json",
-                serde_json::to_vec(&identity).unwrap(),
-            );
-            let collector = GenericKindlingCollector::from_identity(
-                "/identity.json",
-                runner,
-                fs,
-            );
+            fs.add_file("/identity.json", serde_json::to_vec(&identity).unwrap());
+            let collector = GenericKindlingCollector::from_identity("/identity.json", runner, fs);
             collector.collect().await.unwrap()
         }
 
@@ -1539,11 +1536,7 @@ mod tests {
     async fn generic_kindling_layer_type() {
         let runner = MockCommandRunner::new();
         let fs = MockFileSystem::new();
-        let collector = GenericKindlingCollector::from_identity(
-            "/identity.json",
-            runner,
-            fs,
-        );
+        let collector = GenericKindlingCollector::from_identity("/identity.json", runner, fs);
         assert_eq!(collector.layer_type(), LayerType::Kindling);
     }
 }

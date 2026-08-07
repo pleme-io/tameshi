@@ -152,10 +152,7 @@ pub fn attest_binary(
 }
 
 /// Revoke a binary's attestation (e.g., on PoMS expiry or vulnerability).
-pub fn revoke_binary(
-    maps: &dyn BpfMapOps,
-    binary_hash: &Blake3Hash,
-) -> Result<(), String> {
+pub fn revoke_binary(maps: &dyn BpfMapOps, binary_hash: &Blake3Hash) -> Result<(), String> {
     maps.revoke_poms(&binary_hash.0)
 }
 
@@ -254,7 +251,10 @@ mod tests {
     #[test]
     fn mock_config() {
         let maps = MockBpfMaps::new();
-        let cfg = KanshiConfig { enforce: 1, log_allowed: 1 };
+        let cfg = KanshiConfig {
+            enforce: 1,
+            log_allowed: 1,
+        };
         maps.set_config(cfg).unwrap();
     }
 

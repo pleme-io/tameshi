@@ -177,7 +177,9 @@ mod tests {
         let s1 = c1.collect().await.unwrap();
 
         let mut config2 = make_config();
-        config2.certificates.push(make_cert("new-cert", CertificateUsage::ClientMtls));
+        config2
+            .certificates
+            .push(make_cert("new-cert", CertificateUsage::ClientMtls));
         let c2 = AgentCertificatesCollector::new(config2);
         let s2 = c2.collect().await.unwrap();
 

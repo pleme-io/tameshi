@@ -203,10 +203,8 @@ mod tests {
 
         let atts = sample_target_attestations();
         let client = MockAkeylessClient::new().with_target_attestations(atts);
-        let collector = LiveAkeylessTargetCollector::new(
-            client,
-            vec!["/targets/prod/database".to_string()],
-        );
+        let collector =
+            LiveAkeylessTargetCollector::new(client, vec!["/targets/prod/database".to_string()]);
         let sig = collector.collect().await.unwrap();
 
         assert_eq!(sig.layer, LayerType::AkeylessTarget);
@@ -218,10 +216,8 @@ mod tests {
         use crate::akeyless_client::MockAkeylessClient;
 
         let client = MockAkeylessClient::new();
-        let collector = LiveAkeylessTargetCollector::new(
-            client,
-            vec!["/targets/prod/database".to_string()],
-        );
+        let collector =
+            LiveAkeylessTargetCollector::new(client, vec!["/targets/prod/database".to_string()]);
         assert_eq!(collector.layer_type(), LayerType::AkeylessTarget);
     }
 }

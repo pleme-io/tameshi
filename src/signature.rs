@@ -12,7 +12,9 @@ use std::str::FromStr;
 use crate::hash::Blake3Hash;
 
 /// Infrastructure layer types that produce signatures.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum LayerType {
     /// Nix store closure
@@ -218,12 +220,7 @@ pub struct LayerSignature {
 impl LayerSignature {
     /// Create a new layer signature.
     #[must_use]
-    pub fn new(
-        layer: LayerType,
-        hash: Blake3Hash,
-        source: &str,
-        inputs: Vec<InputHash>,
-    ) -> Self {
+    pub fn new(layer: LayerType, hash: Blake3Hash, source: &str, inputs: Vec<InputHash>) -> Self {
         Self {
             layer,
             hash,
@@ -435,7 +432,8 @@ mod tests {
             LayerType::AgentRuntime,
             LayerType::AgentMcpServers,
             LayerType::AgentDependencies,
-            LayerType::AgentCertificates, LayerType::Kasou,
+            LayerType::AgentCertificates,
+            LayerType::Kasou,
         ];
         for lt in types {
             let s = lt.to_string();
@@ -472,8 +470,7 @@ mod tests {
 
     #[test]
     fn layer_signature_with_environment() {
-        let sig = make_layer(LayerType::Nix, b"nix")
-            .with_environment("production");
+        let sig = make_layer(LayerType::Nix, b"nix").with_environment("production");
         assert_eq!(sig.metadata.environment, Some("production".to_string()));
     }
 
@@ -575,17 +572,31 @@ mod tests {
     fn layer_type_ordering_is_total() {
         // Verify all layer types have a total order
         let types = vec![
-            LayerType::Nix, LayerType::Oci, LayerType::Helm,
-            LayerType::Tofu, LayerType::Kubernetes, LayerType::Kindling,
-            LayerType::Tatara, LayerType::FluxCD, LayerType::ArgoCD,
-            LayerType::Akeyless, LayerType::AkeylessTarget,
-            LayerType::PangeaSynthesis, LayerType::RSpecResult,
-            LayerType::InSpecResult, LayerType::FerritePoms,
-            LayerType::AgentBinary, LayerType::AgentSkills,
-            LayerType::AgentConfig, LayerType::AgentGuardrails,
-            LayerType::AgentModels, LayerType::AgentRuntime,
-            LayerType::AgentMcpServers, LayerType::AgentDependencies,
-            LayerType::AgentCertificates, LayerType::Kasou,
+            LayerType::Nix,
+            LayerType::Oci,
+            LayerType::Helm,
+            LayerType::Tofu,
+            LayerType::Kubernetes,
+            LayerType::Kindling,
+            LayerType::Tatara,
+            LayerType::FluxCD,
+            LayerType::ArgoCD,
+            LayerType::Akeyless,
+            LayerType::AkeylessTarget,
+            LayerType::PangeaSynthesis,
+            LayerType::RSpecResult,
+            LayerType::InSpecResult,
+            LayerType::FerritePoms,
+            LayerType::AgentBinary,
+            LayerType::AgentSkills,
+            LayerType::AgentConfig,
+            LayerType::AgentGuardrails,
+            LayerType::AgentModels,
+            LayerType::AgentRuntime,
+            LayerType::AgentMcpServers,
+            LayerType::AgentDependencies,
+            LayerType::AgentCertificates,
+            LayerType::Kasou,
         ];
         for i in 0..types.len() {
             for j in 0..types.len() {
@@ -600,8 +611,8 @@ mod tests {
         let layers = vec![make_layer(LayerType::Nix, b"nix")];
         let root = crate::merkle::compute_merkle_root(&layers);
         let compliance = Blake3Hash::digest(b"compliance");
-        let master = MasterSignature::new(root.clone(), layers, "test")
-            .with_compliance(compliance.clone());
+        let master =
+            MasterSignature::new(root.clone(), layers, "test").with_compliance(compliance.clone());
         let secure = Blake3Hash::combine(&root, &compliance);
         assert_eq!(*master.gating_signature(), secure);
     }
@@ -624,6 +635,9 @@ mod tests {
         // Use a wrong composite hash
         let wrong_hash = Blake3Hash::digest(b"wrong");
         let sig = LayerSignature::new(LayerType::Nix, wrong_hash, "test", inputs);
-        assert!(!sig.verify_inputs(), "Mismatched inputs should fail verification");
+        assert!(
+            !sig.verify_inputs(),
+            "Mismatched inputs should fail verification"
+        );
     }
 }

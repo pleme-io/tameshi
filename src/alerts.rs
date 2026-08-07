@@ -127,7 +127,13 @@ pub struct Alert {
 impl Alert {
     /// Create a new alert.
     #[must_use]
-    pub fn new(severity: AlertSeverity, event: AlertEvent, summary: &str, environment: &str, source: &str) -> Self {
+    pub fn new(
+        severity: AlertSeverity,
+        event: AlertEvent,
+        summary: &str,
+        environment: &str,
+        source: &str,
+    ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
@@ -267,10 +273,7 @@ pub enum NotificationChannel {
 /// dispatchers (e.g., in-memory for testing, custom webhook logic).
 pub trait AlertSender: Send + Sync {
     /// Dispatch an alert. Implementations should handle channel routing.
-    fn dispatch(
-        &self,
-        alert: &Alert,
-    ) -> impl std::future::Future<Output = ()> + Send;
+    fn dispatch(&self, alert: &Alert) -> impl std::future::Future<Output = ()> + Send;
 }
 
 /// Alert dispatcher — sends alerts to configured channels.
@@ -322,7 +325,11 @@ impl AlertDispatcher {
         alert: &Alert,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match channel {
-            NotificationChannel::Webhook { url, secret, headers } => {
+            NotificationChannel::Webhook {
+                url,
+                secret,
+                headers,
+            } => {
                 let mut req = self.client.post(url).json(alert);
                 if let Some(secret) = secret {
                     // HMAC-SHA256 signature of the body
@@ -338,12 +345,15 @@ impl AlertDispatcher {
                 req.send().await?;
                 info!(url = %url, alert_id = %alert.id, "Alert dispatched via webhook");
             }
-            NotificationChannel::Discord { webhook_url, username } => {
+            NotificationChannel::Discord {
+                webhook_url,
+                username,
+            } => {
                 let color = match alert.severity {
                     AlertSeverity::Emergency => 0xFF0000, // red
-                    AlertSeverity::Critical => 0xFF4500,   // orange-red
-                    AlertSeverity::Warning => 0xFFAA00,    // amber
-                    AlertSeverity::Info => 0x00AA00,       // green
+                    AlertSeverity::Critical => 0xFF4500,  // orange-red
+                    AlertSeverity::Warning => 0xFFAA00,   // amber
+                    AlertSeverity::Info => 0x00AA00,      // green
                 };
                 let payload = serde_json::json!({
                     "username": username.as_deref().unwrap_or("Tameshi"),
@@ -361,7 +371,10 @@ impl AlertDispatcher {
                 self.client.post(webhook_url).json(&payload).send().await?;
                 info!(alert_id = %alert.id, "Alert dispatched via Discord");
             }
-            NotificationChannel::Slack { webhook_url, channel } => {
+            NotificationChannel::Slack {
+                webhook_url,
+                channel,
+            } => {
                 let emoji = match alert.severity {
                     AlertSeverity::Emergency => ":rotating_light:",
                     AlertSeverity::Critical => ":x:",
@@ -393,38 +406,36 @@ impl AlertDispatcher {
                 // This channel is a marker — actual emission happens in sekiban
                 warn!(alert_id = %alert.id, "K8s event emission delegated to controller");
             }
-            NotificationChannel::Log => {
-                match alert.severity {
-                    AlertSeverity::Emergency | AlertSeverity::Critical => {
-                        error!(
-                            alert_id = %alert.id,
-                            severity = %alert.severity,
-                            environment = %alert.environment,
-                            source = %alert.source,
-                            "{}",
-                            alert.summary
-                        );
-                    }
-                    AlertSeverity::Warning => {
-                        warn!(
-                            alert_id = %alert.id,
-                            severity = %alert.severity,
-                            environment = %alert.environment,
-                            "{}",
-                            alert.summary
-                        );
-                    }
-                    AlertSeverity::Info => {
-                        info!(
-                            alert_id = %alert.id,
-                            severity = %alert.severity,
-                            environment = %alert.environment,
-                            "{}",
-                            alert.summary
-                        );
-                    }
+            NotificationChannel::Log => match alert.severity {
+                AlertSeverity::Emergency | AlertSeverity::Critical => {
+                    error!(
+                        alert_id = %alert.id,
+                        severity = %alert.severity,
+                        environment = %alert.environment,
+                        source = %alert.source,
+                        "{}",
+                        alert.summary
+                    );
                 }
-            }
+                AlertSeverity::Warning => {
+                    warn!(
+                        alert_id = %alert.id,
+                        severity = %alert.severity,
+                        environment = %alert.environment,
+                        "{}",
+                        alert.summary
+                    );
+                }
+                AlertSeverity::Info => {
+                    info!(
+                        alert_id = %alert.id,
+                        severity = %alert.severity,
+                        environment = %alert.environment,
+                        "{}",
+                        alert.summary
+                    );
+                }
+            },
         }
         Ok(())
     }
@@ -473,8 +484,8 @@ impl AlertSender for MockAlertSender {
 
 /// Compute HMAC-SHA256 signature for webhook payloads.
 fn compute_webhook_signature(secret: &str, body: &[u8]) -> String {
-    use sha2::Sha256;
     use sha2::Digest;
+    use sha2::Sha256;
     let mut hasher = Sha256::new();
     hasher.update(secret.as_bytes());
     hasher.update(body);
@@ -545,7 +556,12 @@ mod tests {
 
     #[test]
     fn alert_severity_serde_roundtrip() {
-        for severity in &[AlertSeverity::Info, AlertSeverity::Warning, AlertSeverity::Critical, AlertSeverity::Emergency] {
+        for severity in &[
+            AlertSeverity::Info,
+            AlertSeverity::Warning,
+            AlertSeverity::Critical,
+            AlertSeverity::Emergency,
+        ] {
             let json = serde_json::to_string(severity).unwrap();
             let deserialized: AlertSeverity = serde_json::from_str(&json).unwrap();
             assert_eq!(*severity, deserialized);
@@ -555,9 +571,13 @@ mod tests {
     #[test]
     fn alert_serde_roundtrip() {
         let alert = Alert::gate_denied(
-            "Deployment", "app", "default",
-            &Blake3Hash::digest(b"expected"), None,
-            "missing sig", "prod",
+            "Deployment",
+            "app",
+            "default",
+            &Blake3Hash::digest(b"expected"),
+            None,
+            "missing sig",
+            "prod",
         );
         let json = serde_json::to_string(&alert).unwrap();
         let deserialized: Alert = serde_json::from_str(&json).unwrap();
@@ -613,9 +633,13 @@ mod tests {
     async fn mock_alert_sender_records_alerts() {
         let sender = MockAlertSender::new();
         let alert = Alert::gate_denied(
-            "Pod", "nginx", "default",
-            &Blake3Hash::digest(b"sig"), None,
-            "denied", "test",
+            "Pod",
+            "nginx",
+            "default",
+            &Blake3Hash::digest(b"sig"),
+            None,
+            "denied",
+            "test",
         );
         sender.dispatch(&alert).await;
         let alerts = sender.alerts();

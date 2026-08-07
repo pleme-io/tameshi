@@ -111,7 +111,10 @@ impl LedgerIndex {
     /// Query entries deployed in a given namespace.
     #[must_use]
     pub fn query_by_namespace(&self, namespace: &str) -> Vec<LedgerEntryRef> {
-        self.by_namespace.get(namespace).cloned().unwrap_or_default()
+        self.by_namespace
+            .get(namespace)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Query entries within a time range (inclusive).
@@ -142,7 +145,12 @@ mod tests {
     use crate::hash::Blake3Hash;
     use crate::signing::{SignedRoot, SigningAlgorithm};
 
-    fn sample_entry(seq: u64, node: &str, namespace: &str, binary_paths: Vec<&str>) -> MerkleLedgerEntry {
+    fn sample_entry(
+        seq: u64,
+        node: &str,
+        namespace: &str,
+        binary_paths: Vec<&str>,
+    ) -> MerkleLedgerEntry {
         let artifact = compose_certification_artifact(
             binary_paths.first().unwrap_or(&"/usr/bin/app"),
             Blake3Hash::digest(format!("nix-{seq}").as_bytes()),
@@ -276,7 +284,12 @@ mod tests {
     #[test]
     fn test_insert_indexes_binary_paths() {
         let mut idx = LedgerIndex::new();
-        let entry = sample_entry(0, "node-1", "default", vec!["/usr/bin/app", "/usr/bin/worker"]);
+        let entry = sample_entry(
+            0,
+            "node-1",
+            "default",
+            vec!["/usr/bin/app", "/usr/bin/worker"],
+        );
         idx.insert(&entry);
 
         let r1 = idx.query_by_binary("/usr/bin/app");
@@ -399,7 +412,12 @@ mod tests {
     #[test]
     fn test_multiple_binaries_per_entry() {
         let mut idx = LedgerIndex::new();
-        idx.insert(&sample_entry(0, "node-1", "default", vec!["/bin/a", "/bin/b", "/bin/c"]));
+        idx.insert(&sample_entry(
+            0,
+            "node-1",
+            "default",
+            vec!["/bin/a", "/bin/b", "/bin/c"],
+        ));
 
         assert_eq!(idx.query_by_binary("/bin/a").len(), 1);
         assert_eq!(idx.query_by_binary("/bin/b").len(), 1);
@@ -421,7 +439,12 @@ mod tests {
     fn test_index_after_many_inserts() {
         let mut idx = LedgerIndex::new();
         for i in 0..50 {
-            idx.insert(&sample_entry(i, &format!("node-{}", i % 5), "default", vec!["/bin/app"]));
+            idx.insert(&sample_entry(
+                i,
+                &format!("node-{}", i % 5),
+                "default",
+                vec!["/bin/app"],
+            ));
         }
 
         assert_eq!(idx.query_by_node("node-0").len(), 10);

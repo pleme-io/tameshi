@@ -87,12 +87,12 @@ pub async fn hash_synthesis_json(json_bytes: &[u8], source: &str) -> Result<Laye
 
 /// Hash Pangea synthesis JSON from a file path.
 pub async fn hash_synthesis_file(path: &str) -> Result<LayerSignature> {
-    let bytes = tokio::fs::read(path).await.map_err(|e| {
-        TameshiError::CollectorError {
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| TameshiError::CollectorError {
             layer: "pangea_synthesis".to_string(),
             message: format!("failed to read {path}: {e}"),
-        }
-    })?;
+        })?;
     hash_synthesis_json(&bytes, path).await
 }
 
@@ -353,8 +353,7 @@ mod tests {
     #[test]
     fn collector_layer_type() {
         let runner = MockCommandRunner::new();
-        let collector =
-            PangeaSynthesisCollector::new("/tmp/project", "/tmp/output.json", runner);
+        let collector = PangeaSynthesisCollector::new("/tmp/project", "/tmp/output.json", runner);
         assert_eq!(collector.layer_type(), LayerType::PangeaSynthesis);
     }
 

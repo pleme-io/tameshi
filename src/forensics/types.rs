@@ -398,18 +398,19 @@ mod tests {
         let report = BlastRadiusReport {
             query_hash: Blake3Hash::digest(b"query"),
             total_affected: 2,
-            time_range: TimeRange { first_seen: now, last_seen: now },
-            affected_nodes: vec![
-                AffectedNodeDetail {
-                    node: "n1".to_string(),
-                    cluster: "c1".to_string(),
-                    first_execution: now,
-                    last_execution: now,
-                    execution_count: 1,
-                    pods: vec!["p1".to_string()],
-                    namespaces: vec!["ns1".to_string()],
-                },
-            ],
+            time_range: TimeRange {
+                first_seen: now,
+                last_seen: now,
+            },
+            affected_nodes: vec![AffectedNodeDetail {
+                node: "n1".to_string(),
+                cluster: "c1".to_string(),
+                first_execution: now,
+                last_execution: now,
+                execution_count: 1,
+                pods: vec!["p1".to_string()],
+                namespaces: vec!["ns1".to_string()],
+            }],
             co_resident_artifacts: vec![],
             chain_integrity: true,
             evidence_hash: Blake3Hash::digest(b"evidence"),
@@ -426,7 +427,10 @@ mod tests {
         let report = BlastRadiusReport {
             query_hash: Blake3Hash::digest(b"q"),
             total_affected: 3,
-            time_range: TimeRange { first_seen: now, last_seen: now },
+            time_range: TimeRange {
+                first_seen: now,
+                last_seen: now,
+            },
             affected_nodes: vec![
                 AffectedNodeDetail {
                     node: "n1".to_string(),

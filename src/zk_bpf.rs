@@ -181,10 +181,7 @@ pub fn verify_committed_entry(entry: &CommittedPomsEntry) -> bool {
 }
 
 /// Verify that a CommittedPomsEntry's commitment matches an opening.
-pub fn verify_committed_entry_opening(
-    entry: &CommittedPomsEntry,
-    opening: &Opening,
-) -> bool {
+pub fn verify_committed_entry_opening(entry: &CommittedPomsEntry, opening: &Opening) -> bool {
     let commitment = Commitment {
         hash: Blake3Hash(entry.commitment),
     };

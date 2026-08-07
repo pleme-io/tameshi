@@ -83,12 +83,12 @@ impl FrameworkAttestation {
 
 /// Hash a binary file for framework self-attestation.
 pub async fn hash_binary(path: &str) -> Result<Blake3Hash> {
-    let data = tokio::fs::read(path).await.map_err(|e| {
-        TameshiError::CollectorError {
+    let data = tokio::fs::read(path)
+        .await
+        .map_err(|e| TameshiError::CollectorError {
             layer: "self-attestation".to_string(),
             message: format!("failed to read binary {}: {}", path, e),
-        }
-    })?;
+        })?;
     Ok(Blake3Hash::digest(&data))
 }
 
@@ -145,9 +145,7 @@ pub fn compute_framework_hash(components: &[FrameworkComponent]) -> Blake3Hash {
 /// # Errors
 ///
 /// Returns an error if any framework binary cannot be read.
-pub async fn framework_attestation_hash(
-    binary_paths: &[(&str, &str)],
-) -> Result<Blake3Hash> {
+pub async fn framework_attestation_hash(binary_paths: &[(&str, &str)]) -> Result<Blake3Hash> {
     let attestation = attest_framework(binary_paths).await?;
     Ok(attestation.framework_hash)
 }
@@ -176,9 +174,9 @@ fn controls_for_component(name: &str) -> Vec<String> {
             "RA-5".to_string(), // Vulnerability Monitoring (security scans)
         ],
         "inshou" => vec![
-            "CM-2".to_string(), // Baseline Configuration (Nix profile hashing)
-            "CM-3".to_string(), // Configuration Change Control (rebuild gate)
-            "SI-7".to_string(), // Software Integrity (closure hashing)
+            "CM-2".to_string(),  // Baseline Configuration (Nix profile hashing)
+            "CM-3".to_string(),  // Configuration Change Control (rebuild gate)
+            "SI-7".to_string(),  // Software Integrity (closure hashing)
             "SR-11".to_string(), // Component Authenticity (Nix store attestation)
         ],
         _ => vec![],
@@ -321,21 +319,23 @@ mod tests {
         let mappings = framework_nist_controls();
         assert!(!mappings.is_empty());
         for mapping in &mappings {
-            assert!(!mapping.tested_by.is_empty(), "Control {} needs tests", mapping.control_id);
+            assert!(
+                !mapping.tested_by.is_empty(),
+                "Control {} needs tests",
+                mapping.control_id
+            );
         }
     }
 
     #[test]
     fn attestation_verify() {
-        let components = vec![
-            FrameworkComponent {
-                name: "tameshi".to_string(),
-                version: "0.1.0".to_string(),
-                binary_hash: Blake3Hash::digest(b"tameshi-binary"),
-                binary_path: "/nix/store/xxx-tameshi".to_string(),
-                satisfies_controls: controls_for_component("tameshi"),
-            },
-        ];
+        let components = vec![FrameworkComponent {
+            name: "tameshi".to_string(),
+            version: "0.1.0".to_string(),
+            binary_hash: Blake3Hash::digest(b"tameshi-binary"),
+            binary_path: "/nix/store/xxx-tameshi".to_string(),
+            satisfies_controls: controls_for_component("tameshi"),
+        }];
         let framework_hash = compute_framework_hash(&components);
         let attestation = FrameworkAttestation {
             components,
@@ -442,10 +442,7 @@ mod tests {
         };
         let controls = attestation.satisfied_controls();
         // CM-2 appears in both components but should be deduped
-        assert_eq!(
-            controls.iter().filter(|c| c.as_str() == "CM-2").count(),
-            1
-        );
+        assert_eq!(controls.iter().filter(|c| c.as_str() == "CM-2").count(), 1);
         // All unique controls should be present
         assert!(controls.contains(&"SI-7".to_string()));
         assert!(controls.contains(&"CM-2".to_string()));
@@ -459,11 +456,7 @@ mod tests {
             version: "0.1.0".to_string(),
             binary_hash: Blake3Hash::digest(b"tameshi"),
             binary_path: "/bin/tameshi".to_string(),
-            satisfies_controls: vec![
-                "SI-7".to_string(),
-                "CM-2".to_string(),
-                "AU-2".to_string(),
-            ],
+            satisfies_controls: vec!["SI-7".to_string(), "CM-2".to_string(), "AU-2".to_string()],
         }];
         let framework_hash = compute_framework_hash(&components);
         let attestation = FrameworkAttestation {
@@ -546,22 +539,20 @@ mod tests {
         // Create a temp binary file to hash
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("tameshi-bin");
-        tokio::fs::write(&bin_path, b"test binary content").await.unwrap();
+        tokio::fs::write(&bin_path, b"test binary content")
+            .await
+            .unwrap();
 
-        let hash = framework_attestation_hash(&[
-            ("tameshi", bin_path.to_str().unwrap()),
-        ])
-        .await
-        .unwrap();
+        let hash = framework_attestation_hash(&[("tameshi", bin_path.to_str().unwrap())])
+            .await
+            .unwrap();
 
         // Hash should be non-zero and deterministic
         assert_ne!(hash, Blake3Hash::digest(b""));
 
-        let hash2 = framework_attestation_hash(&[
-            ("tameshi", bin_path.to_str().unwrap()),
-        ])
-        .await
-        .unwrap();
+        let hash2 = framework_attestation_hash(&[("tameshi", bin_path.to_str().unwrap())])
+            .await
+            .unwrap();
         assert_eq!(hash, hash2);
     }
 
@@ -604,7 +595,9 @@ mod tests {
         let att = attest_framework(&[
             ("z-component", p_z.to_str().unwrap()),
             ("a-component", p_a.to_str().unwrap()),
-        ]).await.unwrap();
+        ])
+        .await
+        .unwrap();
 
         assert_eq!(att.components[0].name, "a-component");
         assert_eq!(att.components[1].name, "z-component");
@@ -612,9 +605,7 @@ mod tests {
 
     #[tokio::test]
     async fn attest_framework_propagates_error() {
-        let result = attest_framework(&[
-            ("tameshi", "/nonexistent/tameshi-binary"),
-        ]).await;
+        let result = attest_framework(&[("tameshi", "/nonexistent/tameshi-binary")]).await;
         assert!(result.is_err());
     }
 
@@ -624,14 +615,18 @@ mod tests {
         let p = dir.path().join("tameshi");
         tokio::fs::write(&p, b"tameshi-binary-data").await.unwrap();
 
-        let att = attest_framework(&[
-            ("tameshi", p.to_str().unwrap()),
-        ]).await.unwrap();
+        let att = attest_framework(&[("tameshi", p.to_str().unwrap())])
+            .await
+            .unwrap();
 
         assert!(att.verify());
         assert_eq!(att.schema_version, "1.0.0");
         assert!(!att.components.is_empty());
-        assert!(att.components[0].satisfies_controls.contains(&"SC-13".to_string()));
+        assert!(
+            att.components[0]
+                .satisfies_controls
+                .contains(&"SC-13".to_string())
+        );
     }
 
     #[test]
@@ -641,10 +636,18 @@ mod tests {
             let controls = controls_for_component(name);
             assert!(!controls.is_empty(), "{} should have controls", name);
             for ctrl in &controls {
-                assert!(ctrl.starts_with("SI-") || ctrl.starts_with("CM-") || ctrl.starts_with("AU-") ||
-                        ctrl.starts_with("SC-") || ctrl.starts_with("SR-") || ctrl.starts_with("CA-") ||
-                        ctrl.starts_with("AC-") || ctrl.starts_with("RA-"),
-                        "unexpected control format: {}", ctrl);
+                assert!(
+                    ctrl.starts_with("SI-")
+                        || ctrl.starts_with("CM-")
+                        || ctrl.starts_with("AU-")
+                        || ctrl.starts_with("SC-")
+                        || ctrl.starts_with("SR-")
+                        || ctrl.starts_with("CA-")
+                        || ctrl.starts_with("AC-")
+                        || ctrl.starts_with("RA-"),
+                    "unexpected control format: {}",
+                    ctrl
+                );
             }
         }
     }

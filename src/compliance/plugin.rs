@@ -331,9 +331,7 @@ impl CompliancePlugin for MockPlugin {
                 .collect();
             let domain_hash = DomainEvaluation::compute_domain_hash(&domain, &evaluations);
             let total_duration_ms = evaluations.iter().map(|e| e.duration_ms).sum();
-            let all_required_passed = evaluations
-                .iter()
-                .all(|e| !e.control.required || e.passed);
+            let all_required_passed = evaluations.iter().all(|e| !e.control.required || e.passed);
             Ok(DomainEvaluation {
                 domain,
                 evaluations,
@@ -533,8 +531,8 @@ mod tests {
 
     #[test]
     fn mock_plugin_nist_families() {
-        let p = MockPlugin::new("test")
-            .with_nist_families(vec!["SC".to_string(), "SI".to_string()]);
+        let p =
+            MockPlugin::new("test").with_nist_families(vec!["SC".to_string(), "SI".to_string()]);
         assert_eq!(p.nist_families(), vec!["SC", "SI"]);
     }
 
@@ -562,7 +560,10 @@ mod tests {
     async fn mock_plugin_evaluate_pass() {
         let p = MockPlugin::new("test").with_pass_all(true);
         let controls = p.generate_controls(&PluginConfig::default());
-        let result = p.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = p
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
         assert!(result.all_required_passed);
         assert_eq!(result.domain, "test");
         assert!(result.evaluations.iter().all(|e| e.passed));
@@ -572,7 +573,10 @@ mod tests {
     async fn mock_plugin_evaluate_fail() {
         let p = MockPlugin::new("test").with_pass_all(false);
         let controls = p.generate_controls(&PluginConfig::default());
-        let result = p.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = p
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
         assert!(!result.all_required_passed);
         assert!(result.evaluations.iter().all(|e| !e.passed));
     }
@@ -589,7 +593,10 @@ mod tests {
     async fn mock_plugin_domain_hash_is_set() {
         let p = MockPlugin::new("test");
         let controls = p.generate_controls(&PluginConfig::default());
-        let result = p.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = p
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
         // Hash should not be zero
         assert_ne!(result.domain_hash, Blake3Hash::digest(b""));
     }
@@ -598,7 +605,10 @@ mod tests {
     async fn mock_plugin_evidence_hashes_present() {
         let p = MockPlugin::new("test");
         let controls = p.generate_controls(&PluginConfig::default());
-        let result = p.evaluate(&controls, &PluginConfig::default()).await.unwrap();
+        let result = p
+            .evaluate(&controls, &PluginConfig::default())
+            .await
+            .unwrap();
         for eval in &result.evaluations {
             assert!(eval.evidence_hash.is_some());
         }

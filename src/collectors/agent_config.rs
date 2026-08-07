@@ -74,10 +74,9 @@ impl<F: FileSystem + Send + Sync> LayerCollector for AgentConfigCollector<F> {
         })?;
 
         // Parse as JSON, strip secrets, re-serialize canonically
-        let mut json_value: serde_json::Value =
-            serde_json::from_slice(&content).map_err(|e| {
-                crate::error::TameshiError::InvalidInput(format!("invalid agent config JSON: {e}"))
-            })?;
+        let mut json_value: serde_json::Value = serde_json::from_slice(&content).map_err(|e| {
+            crate::error::TameshiError::InvalidInput(format!("invalid agent config JSON: {e}"))
+        })?;
 
         strip_secrets(&mut json_value, &self.config.secret_keys);
 

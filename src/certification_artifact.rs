@@ -419,7 +419,8 @@ mod tests {
     #[test]
     fn compose_determinism_same_inputs_same_root() {
         let (a, c, i) = sample_hashes();
-        let art1 = compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
+        let art1 =
+            compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
         let art2 = compose_certification_artifact("/bin/app", a, c, i, "prod");
         assert_eq!(art1.composed_root, art2.composed_root);
     }
@@ -630,8 +631,8 @@ mod tests {
         let (a, c, i) = sample_hashes();
         let cert = compose_certification_artifact("/bin/app", a, c, i, "prod");
 
-        let master = compose_merkle(&layers, "production")
-            .with_certification_artifacts(vec![cert.clone()]);
+        let master =
+            compose_merkle(&layers, "production").with_certification_artifacts(vec![cert.clone()]);
 
         assert_eq!(master.certification_artifacts.len(), 1);
         assert_eq!(master.certification_artifacts[0], cert);
@@ -642,18 +643,23 @@ mod tests {
         use crate::merkle::compose_merkle;
         use crate::signature::{LayerSignature, LayerType, MasterSignature};
 
-        let layers = vec![
-            LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix"), "test", vec![]),
-        ];
+        let layers = vec![LayerSignature::new(
+            LayerType::Nix,
+            Blake3Hash::digest(b"nix"),
+            "test",
+            vec![],
+        )];
         let (a, c, i) = sample_hashes();
         let cert = compose_certification_artifact("/bin/app", a, c, i, "prod");
 
-        let master = compose_merkle(&layers, "production")
-            .with_certification_artifacts(vec![cert]);
+        let master = compose_merkle(&layers, "production").with_certification_artifacts(vec![cert]);
 
         let json = serde_json::to_string(&master).unwrap();
         let deserialized: MasterSignature = serde_json::from_str(&json).unwrap();
-        assert_eq!(master.certification_artifacts.len(), deserialized.certification_artifacts.len());
+        assert_eq!(
+            master.certification_artifacts.len(),
+            deserialized.certification_artifacts.len()
+        );
         assert_eq!(
             master.certification_artifacts[0].composed_root,
             deserialized.certification_artifacts[0].composed_root
@@ -785,13 +791,7 @@ mod tests {
                 let a = Blake3Hash::digest(format!("artifact-{idx}").as_bytes());
                 let c = Blake3Hash::digest(format!("control-{idx}").as_bytes());
                 let i = Blake3Hash::digest(format!("intent-{idx}").as_bytes());
-                compose_certification_artifact(
-                    &format!("/bin/app-{idx}"),
-                    a,
-                    c,
-                    i,
-                    "prod",
-                )
+                compose_certification_artifact(&format!("/bin/app-{idx}"), a, c, i, "prod")
             })
             .collect();
         assert_eq!(arts.len(), 10);
@@ -1053,13 +1053,7 @@ mod tests {
     #[test]
     fn changing_artifact_leaf_preserves_other_leaf_proofs_structure() {
         let (a, c, i) = sample_hashes();
-        let art1 = compose_certification_artifact(
-            "/bin/app",
-            a,
-            c.clone(),
-            i.clone(),
-            "prod",
-        );
+        let art1 = compose_certification_artifact("/bin/app", a, c.clone(), i.clone(), "prod");
         let art2 = compose_certification_artifact(
             "/bin/app",
             Blake3Hash::digest(b"different-artifact"),
@@ -1077,7 +1071,8 @@ mod tests {
     #[test]
     fn proof_from_one_artifact_does_not_verify_against_another_root() {
         let (a, c, i) = sample_hashes();
-        let art1 = compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
+        let art1 =
+            compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
         let art2 = compose_certification_artifact(
             "/bin/app",
             Blake3Hash::digest(b"different"),
@@ -1107,13 +1102,8 @@ mod tests {
                     let a = Blake3Hash::digest(format!("a-{t}").as_bytes());
                     let c = Blake3Hash::digest(format!("c-{t}").as_bytes());
                     let i = Blake3Hash::digest(format!("i-{t}").as_bytes());
-                    let art = compose_certification_artifact(
-                        &format!("/bin/svc-{t}"),
-                        a,
-                        c,
-                        i,
-                        "prod",
-                    );
+                    let art =
+                        compose_certification_artifact(&format!("/bin/svc-{t}"), a, c, i, "prod");
                     assert!(verify_certification_artifact(&art));
                     art.composed_root
                 })
@@ -1144,7 +1134,8 @@ mod tests {
         for art in &arts {
             assert!(verify_certification_artifact(art));
         }
-        let roots: std::collections::HashSet<_> = arts.iter().map(|a| a.composed_root.to_hex()).collect();
+        let roots: std::collections::HashSet<_> =
+            arts.iter().map(|a| a.composed_root.to_hex()).collect();
         assert_eq!(roots.len(), 100, "All 100 roots should be unique");
     }
 
@@ -1239,7 +1230,8 @@ mod tests {
     #[test]
     fn environment_does_not_affect_composed_root() {
         let (a, c, i) = sample_hashes();
-        let art1 = compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
+        let art1 =
+            compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
         let art2 = compose_certification_artifact("/bin/app", a, c, i, "staging");
         // Root depends only on the three hashes, not the environment
         assert_eq!(art1.composed_root, art2.composed_root);
@@ -1250,7 +1242,8 @@ mod tests {
     #[test]
     fn binary_path_does_not_affect_composed_root() {
         let (a, c, i) = sample_hashes();
-        let art1 = compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
+        let art1 =
+            compose_certification_artifact("/bin/app", a.clone(), c.clone(), i.clone(), "prod");
         let art2 = compose_certification_artifact("/usr/sbin/other", a, c, i, "prod");
         assert_eq!(art1.composed_root, art2.composed_root);
     }
@@ -1307,10 +1300,22 @@ mod tests {
         // For a 3-leaf tree, rs_merkle pads to 4 leaves (duplicating leaf 2).
         // Leaves 0 and 1 get depth-2 proofs; leaf 2 (index 2) may get a
         // shorter proof because its sibling is the duplicate padding leaf.
-        assert_eq!(art.proof_paths.artifact_proof.len(), 2, "artifact proof should have 2 nodes");
-        assert_eq!(art.proof_paths.control_proof.len(), 2, "control proof should have 2 nodes");
+        assert_eq!(
+            art.proof_paths.artifact_proof.len(),
+            2,
+            "artifact proof should have 2 nodes"
+        );
+        assert_eq!(
+            art.proof_paths.control_proof.len(),
+            2,
+            "control proof should have 2 nodes"
+        );
         // Intent (leaf 2) gets 1 proof node: its sibling is the padding
         // duplicate, so rs_merkle only emits the left subtree root.
-        assert_eq!(art.proof_paths.intent_proof.len(), 1, "intent proof should have 1 node (padding sibling omitted)");
+        assert_eq!(
+            art.proof_paths.intent_proof.len(),
+            1,
+            "intent proof should have 1 node (padding sibling omitted)"
+        );
     }
 }

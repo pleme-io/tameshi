@@ -34,9 +34,22 @@ pub trait ExtendedSigner: Send + Sync {
     /// Reconstruct a signing key from fragments plus a Merkle root.
     fn reconstruct_key(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash) -> [u8; 32];
     /// Sign data using extended key reconstruction.
-    fn sign(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash) -> Vec<u8>;
+    fn sign(
+        &self,
+        frag_a: &[u8; 32],
+        frag_b: &[u8; 32],
+        root: &Blake3Hash,
+        data: &Blake3Hash,
+    ) -> Vec<u8>;
     /// Verify a signature using extended key reconstruction.
-    fn verify(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash, signature: &[u8]) -> bool;
+    fn verify(
+        &self,
+        frag_a: &[u8; 32],
+        frag_b: &[u8; 32],
+        root: &Blake3Hash,
+        data: &Blake3Hash,
+        signature: &[u8],
+    ) -> bool;
 }
 
 /// BLAKE3-based extended signer (default).
@@ -48,11 +61,24 @@ impl ExtendedSigner for Blake3ExtendedSigner {
         reconstruct_key_extended(frag_a, frag_b, root)
     }
 
-    fn sign(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash) -> Vec<u8> {
+    fn sign(
+        &self,
+        frag_a: &[u8; 32],
+        frag_b: &[u8; 32],
+        root: &Blake3Hash,
+        data: &Blake3Hash,
+    ) -> Vec<u8> {
         sign_extended(frag_a, frag_b, root, data)
     }
 
-    fn verify(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash, signature: &[u8]) -> bool {
+    fn verify(
+        &self,
+        frag_a: &[u8; 32],
+        frag_b: &[u8; 32],
+        root: &Blake3Hash,
+        data: &Blake3Hash,
+        signature: &[u8],
+    ) -> bool {
         verify_extended(frag_a, frag_b, root, data, signature)
     }
 }
@@ -68,11 +94,24 @@ impl ExtendedSigner for MockExtendedSigner {
         reconstruct_key_extended(frag_a, frag_b, root)
     }
 
-    fn sign(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash) -> Vec<u8> {
+    fn sign(
+        &self,
+        frag_a: &[u8; 32],
+        frag_b: &[u8; 32],
+        root: &Blake3Hash,
+        data: &Blake3Hash,
+    ) -> Vec<u8> {
         sign_extended(frag_a, frag_b, root, data)
     }
 
-    fn verify(&self, frag_a: &[u8; 32], frag_b: &[u8; 32], root: &Blake3Hash, data: &Blake3Hash, signature: &[u8]) -> bool {
+    fn verify(
+        &self,
+        frag_a: &[u8; 32],
+        frag_b: &[u8; 32],
+        root: &Blake3Hash,
+        data: &Blake3Hash,
+        signature: &[u8],
+    ) -> bool {
         verify_extended(frag_a, frag_b, root, data, signature)
     }
 }
@@ -169,7 +208,9 @@ pub fn verify_extended(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::certification_artifact::{compose_certification_artifact, verify_certification_artifact};
+    use crate::certification_artifact::{
+        compose_certification_artifact, verify_certification_artifact,
+    };
 
     /// Helper: generate distinct 32-byte fragments from a seed.
     fn make_fragment(seed: u8) -> [u8; 32] {
@@ -310,7 +351,10 @@ mod tests {
         let sig1 = sign_extended(&frag_a, &frag_b, &root, &data);
         let sig2 = sign_extended(&frag_a, &frag_b, &root, &data);
 
-        assert_eq!(sig1, sig2, "identical inputs must produce identical signatures");
+        assert_eq!(
+            sig1, sig2,
+            "identical inputs must produce identical signatures"
+        );
     }
 
     #[test]

@@ -424,8 +424,9 @@ fn default_allow_response() -> AnalyzeProvenanceResponse {
         },
         reason: None,
         evidence: AnalysisEvidence {
-            analysis_hash: "blake3:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-                .to_string(),
+            analysis_hash:
+                "blake3:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+                    .to_string(),
             model_version: "tameshi-ai-v0.1.0".to_string(),
             analyzed_at: "2026-03-22T14:00:00Z".to_string(),
             inference_time_ms: 7,
@@ -747,9 +748,9 @@ impl AiThreatClient for FailableAiThreatClient {
             Some(AiFailMode::Unavailable) => {
                 Err(AiThreatError::Unavailable("service down".to_string()))
             }
-            Some(AiFailMode::Corrupted) => {
-                Err(AiThreatError::Unprocessable("corrupted response".to_string()))
-            }
+            Some(AiFailMode::Corrupted) => Err(AiThreatError::Unprocessable(
+                "corrupted response".to_string(),
+            )),
             Some(AiFailMode::AuthFailure) => Err(AiThreatError::ServiceError(
                 "authentication failed".to_string(),
             )),
@@ -766,9 +767,9 @@ impl AiThreatClient for FailableAiThreatClient {
             Some(AiFailMode::Unavailable) => {
                 Err(AiThreatError::Unavailable("service down".to_string()))
             }
-            Some(AiFailMode::Corrupted) => {
-                Err(AiThreatError::Unprocessable("corrupted response".to_string()))
-            }
+            Some(AiFailMode::Corrupted) => Err(AiThreatError::Unprocessable(
+                "corrupted response".to_string(),
+            )),
             Some(AiFailMode::AuthFailure) => Err(AiThreatError::ServiceError(
                 "authentication failed".to_string(),
             )),
@@ -788,9 +789,9 @@ impl AiThreatClient for FailableAiThreatClient {
             Some(AiFailMode::Unavailable) => {
                 Err(AiThreatError::Unavailable("service down".to_string()))
             }
-            Some(AiFailMode::Corrupted) => {
-                Err(AiThreatError::Unprocessable("corrupted response".to_string()))
-            }
+            Some(AiFailMode::Corrupted) => Err(AiThreatError::Unprocessable(
+                "corrupted response".to_string(),
+            )),
             Some(AiFailMode::AuthFailure) => Err(AiThreatError::ServiceError(
                 "authentication failed".to_string(),
             )),
@@ -1027,10 +1028,16 @@ pub mod test_helpers {
     #[must_use]
     pub fn sample_request() -> AnalyzeProvenanceRequest {
         AnalyzeProvenanceRequest {
-            artifact_hash: "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262".to_string(),
-            control_hash: "blake3:8c4f7e2d1a3b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d".to_string(),
-            intent_hash: "blake3:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b".to_string(),
-            composed_root: "blake3:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_string(),
+            artifact_hash:
+                "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+                    .to_string(),
+            control_hash: "blake3:8c4f7e2d1a3b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+                .to_string(),
+            intent_hash: "blake3:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+                .to_string(),
+            composed_root:
+                "blake3:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    .to_string(),
             nix_derivation_graph: NixDerivationGraph {
                 store_path: "/nix/store/abc123-myapp-1.0.0".to_string(),
                 direct_dependencies: vec![
@@ -1039,8 +1046,12 @@ pub mod test_helpers {
                     "/nix/store/jkl012-libcurl-8.7.1".to_string(),
                 ],
                 transitive_dependency_count: 147,
-                closure_hash: "blake3:7f2e1d4c5b6a8907f2e1d4c5b6a89070a1b2c3d4e5f60708a1b2c3d4e5f60708".to_string(),
-                build_inputs_hash: "blake3:0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20".to_string(),
+                closure_hash:
+                    "blake3:7f2e1d4c5b6a8907f2e1d4c5b6a89070a1b2c3d4e5f60708a1b2c3d4e5f60708"
+                        .to_string(),
+                build_inputs_hash:
+                    "blake3:0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+                        .to_string(),
             },
             deployment_context: AiDeploymentContext {
                 cluster: "plo-us-east".to_string(),
@@ -1092,9 +1103,18 @@ mod tests {
             assert_eq!(decision, deser);
         }
         // Verify SCREAMING_SNAKE_CASE format.
-        assert_eq!(serde_json::to_string(&AiDecision::Allow).unwrap(), "\"ALLOW\"");
-        assert_eq!(serde_json::to_string(&AiDecision::Deny).unwrap(), "\"DENY\"");
-        assert_eq!(serde_json::to_string(&AiDecision::Warn).unwrap(), "\"WARN\"");
+        assert_eq!(
+            serde_json::to_string(&AiDecision::Allow).unwrap(),
+            "\"ALLOW\""
+        );
+        assert_eq!(
+            serde_json::to_string(&AiDecision::Deny).unwrap(),
+            "\"DENY\""
+        );
+        assert_eq!(
+            serde_json::to_string(&AiDecision::Warn).unwrap(),
+            "\"WARN\""
+        );
     }
 
     #[test]
@@ -1122,8 +1142,14 @@ mod tests {
             let deser: Urgency = serde_json::from_str(&json).unwrap();
             assert_eq!(urgency, deser);
         }
-        assert_eq!(serde_json::to_string(&Urgency::Admission).unwrap(), "\"admission\"");
-        assert_eq!(serde_json::to_string(&Urgency::Background).unwrap(), "\"background\"");
+        assert_eq!(
+            serde_json::to_string(&Urgency::Admission).unwrap(),
+            "\"admission\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Urgency::Background).unwrap(),
+            "\"background\""
+        );
     }
 
     #[test]
@@ -1332,7 +1358,10 @@ mod tests {
         assert_eq!(resp.decision, AiDecision::Allow);
         assert!((resp.confidence - 0.98).abs() < f64::EPSILON);
         assert!(resp.threat_intelligence.matched_patterns.is_empty());
-        assert_eq!(resp.threat_intelligence.recommended_action, RecommendedAction::Proceed);
+        assert_eq!(
+            resp.threat_intelligence.recommended_action,
+            RecommendedAction::Proceed
+        );
     }
 
     #[test]
@@ -1381,7 +1410,10 @@ mod tests {
             resp.threat_intelligence.matched_patterns[0].pattern_id,
             "TAMESHI-BREACH-2025-ROS2-DDS"
         );
-        assert_eq!(resp.threat_intelligence.recommended_action, RecommendedAction::Block);
+        assert_eq!(
+            resp.threat_intelligence.recommended_action,
+            RecommendedAction::Block
+        );
         assert!(resp.reason.is_some());
     }
 
@@ -1418,7 +1450,10 @@ mod tests {
         assert_eq!(resp.decision, AiDecision::Warn);
         assert!((resp.confidence - 0.73).abs() < f64::EPSILON);
         assert_eq!(resp.analysis.novel_dependency_count, 8);
-        assert_eq!(resp.threat_intelligence.recommended_action, RecommendedAction::Investigate);
+        assert_eq!(
+            resp.threat_intelligence.recommended_action,
+            RecommendedAction::Investigate
+        );
     }
 
     // =====================================================================
@@ -1434,16 +1469,16 @@ mod tests {
     #[test]
     fn error_unavailable_display() {
         let err = AiThreatError::Unavailable("connection refused".to_string());
-        assert_eq!(err.to_string(), "AI service unavailable: connection refused");
+        assert_eq!(
+            err.to_string(),
+            "AI service unavailable: connection refused"
+        );
     }
 
     #[test]
     fn error_invalid_request_display() {
         let err = AiThreatError::InvalidRequest("missing artifact_hash".to_string());
-        assert_eq!(
-            err.to_string(),
-            "AI request invalid: missing artifact_hash"
-        );
+        assert_eq!(err.to_string(), "AI request invalid: missing artifact_hash");
     }
 
     #[test]
@@ -1679,7 +1714,9 @@ mod tests {
         let req = test_helpers::sample_request();
         let resp = client.analyze_provenance(&req).await.unwrap();
         assert_eq!(resp.decision, AiDecision::Deny);
-        assert!((resp.analysis.structural_similarity_to_known_breaches - 0.942).abs() < f64::EPSILON);
+        assert!(
+            (resp.analysis.structural_similarity_to_known_breaches - 0.942).abs() < f64::EPSILON
+        );
     }
 
     #[tokio::test]

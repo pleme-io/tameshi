@@ -33,8 +33,7 @@ use std::collections::BTreeMap;
 
 use crate::akeyless_client::{AkeylessClient, AkeylessConfig, HttpAkeylessClient, TlsConfig};
 use crate::certification::{
-    BuildAttestation, ChartAttestation, DependencyHash, ImageAttestation,
-    SourceAttestation,
+    BuildAttestation, ChartAttestation, DependencyHash, ImageAttestation, SourceAttestation,
 };
 use crate::compliance::akeyless::{AkeylessAuthMethod, AkeylessSecretAttestation};
 use crate::compliance::akeyless_target::AkeylessTargetAttestation;
@@ -179,21 +178,12 @@ pub fn sekiban_annotations(
     compliance_hash: Option<&Blake3Hash>,
 ) -> BTreeMap<String, String> {
     let mut annotations = BTreeMap::new();
-    annotations.insert(
-        ANNOTATION_SIGNATURE.to_string(),
-        signature.to_prefixed(),
-    );
+    annotations.insert(ANNOTATION_SIGNATURE.to_string(), signature.to_prefixed());
     if let Some(cert) = certification_hash {
-        annotations.insert(
-            ANNOTATION_CERTIFICATION.to_string(),
-            cert.to_prefixed(),
-        );
+        annotations.insert(ANNOTATION_CERTIFICATION.to_string(), cert.to_prefixed());
     }
     if let Some(compliance) = compliance_hash {
-        annotations.insert(
-            ANNOTATION_COMPLIANCE.to_string(),
-            compliance.to_prefixed(),
-        );
+        annotations.insert(ANNOTATION_COMPLIANCE.to_string(), compliance.to_prefixed());
     }
     annotations
 }
@@ -204,10 +194,7 @@ pub fn sekiban_annotations(
 /// to add the integrity annotations.
 #[must_use]
 pub fn render_annotation_patch(annotations: &BTreeMap<String, String>) -> String {
-    let mut lines = vec![
-        "metadata:".to_string(),
-        "  annotations:".to_string(),
-    ];
+    let mut lines = vec!["metadata:".to_string(), "  annotations:".to_string()];
     for (key, value) in annotations {
         lines.push(format!("    {}: \"{}\"", key, value));
     }
@@ -231,7 +218,12 @@ pub struct CiStageOutput {
 
 /// Serialize an attestation to a CI stage output.
 #[must_use]
-pub fn stage_output<T: Serialize>(stage: &str, hash: &Blake3Hash, passed: bool, attestation: &T) -> CiStageOutput {
+pub fn stage_output<T: Serialize>(
+    stage: &str,
+    hash: &Blake3Hash,
+    passed: bool,
+    attestation: &T,
+) -> CiStageOutput {
     CiStageOutput {
         stage: stage.to_string(),
         hash: hash.to_prefixed(),
@@ -460,8 +452,14 @@ mod tests {
     fn stage_output_serialization() {
         let hash = Blake3Hash::digest(b"test");
         let att = source_attestation(
-            "repo", "abc", "main", true,
-            hash.clone(), hash.clone(), 5, true,
+            "repo",
+            "abc",
+            "main",
+            true,
+            hash.clone(),
+            hash.clone(),
+            5,
+            true,
         );
         let output = stage_output("source", &hash, true, &att);
         assert_eq!(output.stage, "source");

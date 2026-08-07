@@ -15,10 +15,8 @@ use tokio::process::Command;
 use tracing::debug;
 
 /// ArgoCD CRD resource types to collect.
-const ARGOCD_RESOURCE_TYPES: [&str; 2] = [
-    "applications.argoproj.io",
-    "applicationsets.argoproj.io",
-];
+const ARGOCD_RESOURCE_TYPES: [&str; 2] =
+    ["applications.argoproj.io", "applicationsets.argoproj.io"];
 
 /// Collects ArgoCD application state as a layer signature.
 ///

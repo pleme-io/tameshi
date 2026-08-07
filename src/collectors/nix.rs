@@ -71,12 +71,16 @@ pub async fn hash_system_profile() -> Result<LayerSignature> {
     };
 
     // Resolve the symlink to get the actual store path
-    let resolved = tokio::fs::read_link(&profile_path).await.map_err(|e| {
-        TameshiError::CollectorError {
-            layer: "nix".to_string(),
-            message: format!("failed to resolve system profile at {}: {}", profile_path, e),
-        }
-    })?;
+    let resolved =
+        tokio::fs::read_link(&profile_path)
+            .await
+            .map_err(|e| TameshiError::CollectorError {
+                layer: "nix".to_string(),
+                message: format!(
+                    "failed to resolve system profile at {}: {}",
+                    profile_path, e
+                ),
+            })?;
 
     hash_closure(resolved.to_string_lossy().as_ref()).await
 }
@@ -206,7 +210,8 @@ mod tests {
         // hash_store_path calls nix-store --dump on a non-existent path.
         // With the path-based fallback removed, this MUST return an error,
         // not silently hash the path string.
-        let result = hash_store_path("/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-does-not-exist").await;
+        let result =
+            hash_store_path("/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-does-not-exist").await;
         assert!(
             result.is_err(),
             "hash_store_path must fail when nix-store --dump fails, not fall back to path hashing"

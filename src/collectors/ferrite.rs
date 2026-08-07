@@ -67,8 +67,9 @@ impl FerriteCollector {
 
     /// Create a collector from PoMS JSON bytes.
     pub fn from_json(json: &[u8]) -> Result<Self> {
-        let artifact: PomsArtifact = serde_json::from_slice(json)
-            .map_err(|e| crate::error::TameshiError::InvalidInput(format!("invalid PoMS JSON: {e}")))?;
+        let artifact: PomsArtifact = serde_json::from_slice(json).map_err(|e| {
+            crate::error::TameshiError::InvalidInput(format!("invalid PoMS JSON: {e}"))
+        })?;
 
         if artifact.analysis.violations_detected > 0 {
             return Err(crate::error::TameshiError::InvalidInput(format!(
@@ -153,7 +154,8 @@ mod tests {
                 "ast_hash": "def456",
                 "program_hash": "789ghi"
             }
-        })).unwrap()
+        }))
+        .unwrap()
     }
 
     #[test]
@@ -171,7 +173,8 @@ mod tests {
             "tool": "ferrite-check",
             "tool_version": "0.1.0",
             "analysis": { "violations_detected": 3 }
-        })).unwrap();
+        }))
+        .unwrap();
         assert!(FerriteCollector::from_json(&json).is_err());
     }
 
@@ -206,7 +209,8 @@ mod tests {
             "tool": "ferrite-check",
             "tool_version": "0.1.0",
             "analysis": { "violations_detected": 0 }
-        })).unwrap();
+        }))
+        .unwrap();
         let collector = FerriteCollector::from_json(&json).unwrap();
         let sig = collector.collect().await.unwrap();
         assert!(sig.inputs.is_empty());
@@ -222,7 +226,10 @@ mod tests {
 
     #[test]
     fn parse_aliases() {
-        assert_eq!("ferrite".parse::<LayerType>().unwrap(), LayerType::FerritePoms);
+        assert_eq!(
+            "ferrite".parse::<LayerType>().unwrap(),
+            LayerType::FerritePoms
+        );
         assert_eq!("poms".parse::<LayerType>().unwrap(), LayerType::FerritePoms);
     }
 

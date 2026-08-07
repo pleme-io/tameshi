@@ -125,10 +125,11 @@ mod tests {
 
         assert_eq!(sig.layer, LayerType::AgentModels);
         assert_eq!(sig.inputs.len(), 2);
-        assert!(sig
-            .inputs
-            .iter()
-            .any(|i| i.name == "model:anthropic:claude-opus-4-6"));
+        assert!(
+            sig.inputs
+                .iter()
+                .any(|i| i.name == "model:anthropic:claude-opus-4-6")
+        );
     }
 
     #[tokio::test]

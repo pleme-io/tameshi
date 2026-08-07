@@ -12,12 +12,11 @@ use crate::signature::{InputHash, LayerSignature, LayerType};
 /// Extracts per-control results as [`InputHash`] entries. Uses the control ID
 /// as the input name for traceability.
 pub async fn hash_inspec_output(json_bytes: &[u8], source: &str) -> Result<LayerSignature> {
-    let value: serde_json::Value = serde_json::from_slice(json_bytes).map_err(|e| {
-        TameshiError::CollectorError {
+    let value: serde_json::Value =
+        serde_json::from_slice(json_bytes).map_err(|e| TameshiError::CollectorError {
             layer: "inspec_result".to_string(),
             message: format!("invalid InSpec JSON: {e}"),
-        }
-    })?;
+        })?;
 
     let mut inputs = Vec::new();
 
@@ -60,12 +59,12 @@ pub async fn hash_inspec_output(json_bytes: &[u8], source: &str) -> Result<Layer
 
 /// Hash InSpec JSON output from a file.
 pub async fn hash_inspec_file(path: &str) -> Result<LayerSignature> {
-    let bytes = tokio::fs::read(path).await.map_err(|e| {
-        TameshiError::CollectorError {
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| TameshiError::CollectorError {
             layer: "inspec_result".to_string(),
             message: format!("failed to read {path}: {e}"),
-        }
-    })?;
+        })?;
     hash_inspec_output(&bytes, path).await
 }
 

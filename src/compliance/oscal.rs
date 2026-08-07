@@ -251,7 +251,10 @@ impl Catalog {
 
     /// Get total number of controls (including enhancements).
     pub fn control_count(&self) -> usize {
-        self.groups.iter().map(|g| count_controls(&g.controls)).sum()
+        self.groups
+            .iter()
+            .map(|g| count_controls(&g.controls))
+            .sum()
     }
 }
 
@@ -331,7 +334,11 @@ mod tests {
 
     #[test]
     fn control_status_serde_roundtrip() {
-        for status in &[ControlStatus::Satisfied, ControlStatus::NotSatisfied, ControlStatus::Other] {
+        for status in &[
+            ControlStatus::Satisfied,
+            ControlStatus::NotSatisfied,
+            ControlStatus::Other,
+        ] {
             let json = serde_json::to_string(status).unwrap();
             let deserialized: ControlStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(*status, deserialized);
@@ -406,14 +413,12 @@ mod tests {
                     id: "AC-2".to_string(),
                     title: "Account Management".to_string(),
                     description: "".to_string(),
-                    enhancements: vec![
-                        Control {
-                            id: "AC-2(1)".to_string(),
-                            title: "Automated System".to_string(),
-                            description: "".to_string(),
-                            enhancements: vec![],
-                        },
-                    ],
+                    enhancements: vec![Control {
+                        id: "AC-2(1)".to_string(),
+                        title: "Automated System".to_string(),
+                        description: "".to_string(),
+                        enhancements: vec![],
+                    }],
                 }],
             }],
         };

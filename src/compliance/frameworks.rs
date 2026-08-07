@@ -164,9 +164,20 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Chef InSpec".to_string(),
             nix_attr: "inspec".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::InfrastructureCompliance, ComplianceDomain::CisBenchmark],
-            nist_families: vec!["AC".into(), "AU".into(), "CM".into(), "IA".into(), "SC".into(), "SI".into()],
-            command_template: "inspec exec {profile} --reporter json --chef-license accept-silent".to_string(),
+            domains: vec![
+                ComplianceDomain::InfrastructureCompliance,
+                ComplianceDomain::CisBenchmark,
+            ],
+            nist_families: vec![
+                "AC".into(),
+                "AU".into(),
+                "CM".into(),
+                "IA".into(),
+                "SC".into(),
+                "SI".into(),
+            ],
+            command_template: "inspec exec {profile} --reporter json --chef-license accept-silent"
+                .to_string(),
             parser: OutputParser::Inspec,
         },
         TestFramework {
@@ -174,9 +185,14 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Open Policy Agent".to_string(),
             nix_attr: "open-policy-agent".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::KubernetesPolicy, ComplianceDomain::IacSecurity],
+            domains: vec![
+                ComplianceDomain::KubernetesPolicy,
+                ComplianceDomain::IacSecurity,
+            ],
             nist_families: vec!["AC".into(), "CM".into(), "SC".into(), "SI".into()],
-            command_template: "opa eval --data {policy_dir} --input {input} --format json 'data.main.deny'".to_string(),
+            command_template:
+                "opa eval --data {policy_dir} --input {input} --format json 'data.main.deny'"
+                    .to_string(),
             parser: OutputParser::Opa,
         },
         TestFramework {
@@ -184,9 +200,13 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Conftest".to_string(),
             nix_attr: "conftest".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::KubernetesPolicy, ComplianceDomain::IacSecurity],
+            domains: vec![
+                ComplianceDomain::KubernetesPolicy,
+                ComplianceDomain::IacSecurity,
+            ],
             nist_families: vec!["CM".into(), "SC".into()],
-            command_template: "conftest test {input} --policy {policy_dir} --output json".to_string(),
+            command_template: "conftest test {input} --policy {policy_dir} --output json"
+                .to_string(),
             parser: OutputParser::Opa,
         },
         TestFramework {
@@ -194,8 +214,17 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "kube-bench".to_string(),
             nix_attr: "kube-bench".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::CisBenchmark, ComplianceDomain::KubernetesPolicy],
-            nist_families: vec!["AC".into(), "AU".into(), "CM".into(), "IA".into(), "SC".into()],
+            domains: vec![
+                ComplianceDomain::CisBenchmark,
+                ComplianceDomain::KubernetesPolicy,
+            ],
+            nist_families: vec![
+                "AC".into(),
+                "AU".into(),
+                "CM".into(),
+                "IA".into(),
+                "SC".into(),
+            ],
             command_template: "kube-bench run --json".to_string(),
             parser: OutputParser::KubeBench,
         },
@@ -204,9 +233,14 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Trivy".to_string(),
             nix_attr: "trivy".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::VulnerabilityScanning, ComplianceDomain::ContainerSecurity, ComplianceDomain::IacSecurity],
+            domains: vec![
+                ComplianceDomain::VulnerabilityScanning,
+                ComplianceDomain::ContainerSecurity,
+                ComplianceDomain::IacSecurity,
+            ],
             nist_families: vec!["RA".into(), "SI".into(), "SR".into()],
-            command_template: "trivy {target_type} {target} --format json --severity HIGH,CRITICAL".to_string(),
+            command_template: "trivy {target_type} {target} --format json --severity HIGH,CRITICAL"
+                .to_string(),
             parser: OutputParser::Trivy,
         },
         TestFramework {
@@ -214,7 +248,10 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Checkov".to_string(),
             nix_attr: "checkov".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::IacSecurity, ComplianceDomain::KubernetesPolicy],
+            domains: vec![
+                ComplianceDomain::IacSecurity,
+                ComplianceDomain::KubernetesPolicy,
+            ],
             nist_families: vec!["CM".into(), "SC".into(), "SI".into()],
             command_template: "checkov -d {directory} --output json --compact".to_string(),
             parser: OutputParser::Checkov,
@@ -234,8 +271,18 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Lynis".to_string(),
             nix_attr: "lynis".to_string(),
             output_format: OutputFormat::Text,
-            domains: vec![ComplianceDomain::CisBenchmark, ComplianceDomain::InfrastructureCompliance],
-            nist_families: vec!["AC".into(), "AU".into(), "CM".into(), "IA".into(), "SC".into(), "SI".into()],
+            domains: vec![
+                ComplianceDomain::CisBenchmark,
+                ComplianceDomain::InfrastructureCompliance,
+            ],
+            nist_families: vec![
+                "AC".into(),
+                "AU".into(),
+                "CM".into(),
+                "IA".into(),
+                "SC".into(),
+                "SI".into(),
+            ],
             command_template: "lynis audit system --quick --no-colors".to_string(),
             parser: OutputParser::GenericJson,
         },
@@ -244,9 +291,22 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "OpenSCAP".to_string(),
             nix_attr: "openscap-utils".to_string(),
             output_format: OutputFormat::Xml,
-            domains: vec![ComplianceDomain::ScapCompliance, ComplianceDomain::CisBenchmark],
-            nist_families: vec!["AC".into(), "AU".into(), "CM".into(), "IA".into(), "SC".into(), "SI".into(), "SR".into()],
-            command_template: "oscap xccdf eval --profile {profile} --results-arf {output} {datastream}".to_string(),
+            domains: vec![
+                ComplianceDomain::ScapCompliance,
+                ComplianceDomain::CisBenchmark,
+            ],
+            nist_families: vec![
+                "AC".into(),
+                "AU".into(),
+                "CM".into(),
+                "IA".into(),
+                "SC".into(),
+                "SI".into(),
+                "SR".into(),
+            ],
+            command_template:
+                "oscap xccdf eval --profile {profile} --results-arf {output} {datastream}"
+                    .to_string(),
             parser: OutputParser::OpenscapArf,
         },
         TestFramework {
@@ -254,7 +314,10 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Grype".to_string(),
             nix_attr: "grype".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::VulnerabilityScanning, ComplianceDomain::ContainerSecurity],
+            domains: vec![
+                ComplianceDomain::VulnerabilityScanning,
+                ComplianceDomain::ContainerSecurity,
+            ],
             nist_families: vec!["RA".into(), "SI".into(), "SR".into()],
             command_template: "grype {target} -o json".to_string(),
             parser: OutputParser::GenericJson,
@@ -264,7 +327,10 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Syft".to_string(),
             nix_attr: "syft".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::SupplyChainSecurity, ComplianceDomain::ContainerSecurity],
+            domains: vec![
+                ComplianceDomain::SupplyChainSecurity,
+                ComplianceDomain::ContainerSecurity,
+            ],
             nist_families: vec!["CM".into(), "SR".into()],
             command_template: "syft {target} -o cyclonedx-json".to_string(),
             parser: OutputParser::GenericJson,
@@ -274,7 +340,10 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "OSV-Scanner".to_string(),
             nix_attr: "osv-scanner".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::VulnerabilityScanning, ComplianceDomain::SupplyChainSecurity],
+            domains: vec![
+                ComplianceDomain::VulnerabilityScanning,
+                ComplianceDomain::SupplyChainSecurity,
+            ],
             nist_families: vec!["RA".into(), "SI".into(), "SR".into()],
             command_template: "osv-scanner --format json {target}".to_string(),
             parser: OutputParser::GenericJson,
@@ -296,7 +365,9 @@ pub fn framework_registry() -> Vec<TestFramework> {
             output_format: OutputFormat::Json,
             domains: vec![ComplianceDomain::SupplyChainSecurity],
             nist_families: vec!["IA".into(), "SC".into()],
-            command_template: "gitleaks detect --report-format json --report-path {output} --source {target}".to_string(),
+            command_template:
+                "gitleaks detect --report-format json --report-path {output} --source {target}"
+                    .to_string(),
             parser: OutputParser::GenericJson,
         },
         TestFramework {
@@ -304,7 +375,10 @@ pub fn framework_registry() -> Vec<TestFramework> {
             name: "Cosign (Sigstore)".to_string(),
             nix_attr: "cosign".to_string(),
             output_format: OutputFormat::Json,
-            domains: vec![ComplianceDomain::SupplyChainSecurity, ComplianceDomain::ContainerSecurity],
+            domains: vec![
+                ComplianceDomain::SupplyChainSecurity,
+                ComplianceDomain::ContainerSecurity,
+            ],
             nist_families: vec!["SI".into(), "SC".into(), "SR".into()],
             command_template: "cosign verify --output json {image}".to_string(),
             parser: OutputParser::GenericJson,
@@ -342,14 +416,22 @@ pub async fn hash_framework_binary(nix_attr: &str) -> crate::error::Result<Blake
             });
         }
 
-        let store_path = String::from_utf8_lossy(&output2.stdout)
-            .trim()
-            .to_string();
-        return crate::hash::blake3_file_async(&std::path::PathBuf::from(&store_path).join("bin").join(nix_attr)).await;
+        let store_path = String::from_utf8_lossy(&output2.stdout).trim().to_string();
+        return crate::hash::blake3_file_async(
+            &std::path::PathBuf::from(&store_path)
+                .join("bin")
+                .join(nix_attr),
+        )
+        .await;
     }
 
     let store_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    crate::hash::blake3_file_async(&std::path::PathBuf::from(&store_path).join("bin").join(nix_attr)).await
+    crate::hash::blake3_file_async(
+        &std::path::PathBuf::from(&store_path)
+            .join("bin")
+            .join(nix_attr),
+    )
+    .await
 }
 
 /// Get frameworks relevant to a specific compliance domain.
@@ -358,7 +440,11 @@ pub fn frameworks_for_domain(domain: &ComplianceDomain) -> Vec<&'static TestFram
     let registry = Box::leak(Box::new(framework_registry()));
     registry
         .iter()
-        .filter(|f| f.domains.iter().any(|d| std::mem::discriminant(d) == std::mem::discriminant(domain)))
+        .filter(|f| {
+            f.domains
+                .iter()
+                .any(|d| std::mem::discriminant(d) == std::mem::discriminant(domain))
+        })
         .collect()
 }
 
@@ -375,7 +461,11 @@ mod tests {
     #[test]
     fn all_frameworks_have_nist_families() {
         for fw in framework_registry() {
-            assert!(!fw.nist_families.is_empty(), "{} needs NIST families", fw.id);
+            assert!(
+                !fw.nist_families.is_empty(),
+                "{} needs NIST families",
+                fw.id
+            );
         }
     }
 
@@ -389,14 +479,22 @@ mod tests {
     #[test]
     fn all_frameworks_have_domains() {
         for fw in framework_registry() {
-            assert!(!fw.domains.is_empty(), "{} needs at least one domain", fw.id);
+            assert!(
+                !fw.domains.is_empty(),
+                "{} needs at least one domain",
+                fw.id
+            );
         }
     }
 
     #[test]
     fn all_frameworks_have_command_template() {
         for fw in framework_registry() {
-            assert!(!fw.command_template.is_empty(), "{} needs a command template", fw.id);
+            assert!(
+                !fw.command_template.is_empty(),
+                "{} needs a command template",
+                fw.id
+            );
         }
     }
 

@@ -59,14 +59,7 @@ pub async fn hash_namespace_state(namespace: &str) -> Result<LayerSignature> {
 
     for resource_type in &resource_types {
         let output = Command::new("kubectl")
-            .args([
-                "get",
-                resource_type,
-                "-n",
-                namespace,
-                "-o",
-                "json",
-            ])
+            .args(["get", resource_type, "-n", namespace, "-o", "json"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -283,14 +276,35 @@ mod tests {
 
         let metadata = value.get("metadata").unwrap();
         assert!(metadata.get("name").is_some(), "name should be preserved");
-        assert!(metadata.get("namespace").is_some(), "namespace should be preserved");
-        assert!(metadata.get("labels").is_some(), "labels should be preserved");
-        assert!(metadata.get("resourceVersion").is_none(), "resourceVersion should be stripped");
+        assert!(
+            metadata.get("namespace").is_some(),
+            "namespace should be preserved"
+        );
+        assert!(
+            metadata.get("labels").is_some(),
+            "labels should be preserved"
+        );
+        assert!(
+            metadata.get("resourceVersion").is_none(),
+            "resourceVersion should be stripped"
+        );
         assert!(metadata.get("uid").is_none(), "uid should be stripped");
-        assert!(metadata.get("creationTimestamp").is_none(), "creationTimestamp should be stripped");
-        assert!(metadata.get("managedFields").is_none(), "managedFields should be stripped");
-        assert!(metadata.get("selfLink").is_none(), "selfLink should be stripped");
-        assert!(metadata.get("generation").is_none(), "generation should be stripped");
+        assert!(
+            metadata.get("creationTimestamp").is_none(),
+            "creationTimestamp should be stripped"
+        );
+        assert!(
+            metadata.get("managedFields").is_none(),
+            "managedFields should be stripped"
+        );
+        assert!(
+            metadata.get("selfLink").is_none(),
+            "selfLink should be stripped"
+        );
+        assert!(
+            metadata.get("generation").is_none(),
+            "generation should be stripped"
+        );
         assert!(value.get("status").is_none(), "status should be stripped");
     }
 
@@ -387,12 +401,28 @@ mod tests {
         let hash_a = Blake3Hash::digest(b"content-a");
         let hash_b = Blake3Hash::digest(b"content-b");
         let inputs_ab = vec![
-            InputHash { name: "a".to_string(), hash: hash_a.clone(), size_bytes: None },
-            InputHash { name: "b".to_string(), hash: hash_b.clone(), size_bytes: None },
+            InputHash {
+                name: "a".to_string(),
+                hash: hash_a.clone(),
+                size_bytes: None,
+            },
+            InputHash {
+                name: "b".to_string(),
+                hash: hash_b.clone(),
+                size_bytes: None,
+            },
         ];
         let inputs_ba = vec![
-            InputHash { name: "b".to_string(), hash: hash_b, size_bytes: None },
-            InputHash { name: "a".to_string(), hash: hash_a, size_bytes: None },
+            InputHash {
+                name: "b".to_string(),
+                hash: hash_b,
+                size_bytes: None,
+            },
+            InputHash {
+                name: "a".to_string(),
+                hash: hash_a,
+                size_bytes: None,
+            },
         ];
         assert_ne!(
             compute_composite(&inputs_ab),
@@ -404,19 +434,31 @@ mod tests {
     #[tokio::test]
     async fn hash_manifest_dir_with_files() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("deploy.yaml"), b"apiVersion: apps/v1\nkind: Deployment\n").unwrap();
+        std::fs::write(
+            dir.path().join("deploy.yaml"),
+            b"apiVersion: apps/v1\nkind: Deployment\n",
+        )
+        .unwrap();
         std::fs::write(dir.path().join("svc.json"), b"{\"kind\":\"Service\"}").unwrap();
         std::fs::write(dir.path().join("readme.txt"), b"not a manifest").unwrap();
 
-        let sig = hash_manifest_dir(dir.path().to_str().unwrap()).await.unwrap();
+        let sig = hash_manifest_dir(dir.path().to_str().unwrap())
+            .await
+            .unwrap();
         assert_eq!(sig.layer, LayerType::Kubernetes);
-        assert_eq!(sig.inputs.len(), 2, "only yaml and json files should be collected");
+        assert_eq!(
+            sig.inputs.len(),
+            2,
+            "only yaml and json files should be collected"
+        );
     }
 
     #[tokio::test]
     async fn hash_manifest_dir_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let sig = hash_manifest_dir(dir.path().to_str().unwrap()).await.unwrap();
+        let sig = hash_manifest_dir(dir.path().to_str().unwrap())
+            .await
+            .unwrap();
         assert_eq!(sig.layer, LayerType::Kubernetes);
         assert_eq!(sig.inputs.len(), 0);
         let expected_empty = Blake3Hash::digest(b"empty-kubernetes-manifests");
@@ -428,10 +470,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("subdir");
         std::fs::create_dir(&sub).unwrap();
-        std::fs::write(sub.join("nested.yaml"), b"apiVersion: v1\nkind: ConfigMap\n").unwrap();
+        std::fs::write(
+            sub.join("nested.yaml"),
+            b"apiVersion: v1\nkind: ConfigMap\n",
+        )
+        .unwrap();
 
-        let sig = hash_manifest_dir(dir.path().to_str().unwrap()).await.unwrap();
-        assert_eq!(sig.inputs.len(), 1, "nested manifests should be collected recursively");
+        let sig = hash_manifest_dir(dir.path().to_str().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            sig.inputs.len(),
+            1,
+            "nested manifests should be collected recursively"
+        );
     }
 
     #[tokio::test]
@@ -440,8 +492,12 @@ mod tests {
         std::fs::write(dir.path().join("a.yaml"), b"kind: A\n").unwrap();
         std::fs::write(dir.path().join("b.yaml"), b"kind: B\n").unwrap();
 
-        let sig1 = hash_manifest_dir(dir.path().to_str().unwrap()).await.unwrap();
-        let sig2 = hash_manifest_dir(dir.path().to_str().unwrap()).await.unwrap();
+        let sig1 = hash_manifest_dir(dir.path().to_str().unwrap())
+            .await
+            .unwrap();
+        let sig2 = hash_manifest_dir(dir.path().to_str().unwrap())
+            .await
+            .unwrap();
         assert_eq!(sig1.hash, sig2.hash);
     }
 

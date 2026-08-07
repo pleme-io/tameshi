@@ -29,9 +29,7 @@ use tameshi::traits::FixedClock;
 // Helpers
 // =============================================================================
 
-fn make_artifact(
-    label: &str,
-) -> tameshi::certification_artifact::CertificationArtifact {
+fn make_artifact(label: &str) -> tameshi::certification_artifact::CertificationArtifact {
     compose_certification_artifact(
         &format!("/usr/bin/{label}"),
         Blake3Hash::digest(format!("nix-{label}").as_bytes()),
@@ -65,12 +63,7 @@ fn make_context(node: &str, ns: &str, pod: &str, binaries: Vec<&str>) -> Deploym
     }
 }
 
-fn make_context_with_cluster(
-    node: &str,
-    cluster: &str,
-    ns: &str,
-    pod: &str,
-) -> DeploymentContext {
+fn make_context_with_cluster(node: &str, cluster: &str, ns: &str, pod: &str) -> DeploymentContext {
     DeploymentContext {
         cluster: cluster.to_string(),
         namespace: ns.to_string(),
@@ -294,12 +287,7 @@ fn e2e_provenance_at_specific_time() {
     );
 
     // 4. Query provenance at t_base + 150s (all three should be active)
-    let snap_all = provenance(
-        &ledger,
-        &index,
-        "node-A",
-        t_base + Duration::seconds(150),
-    );
+    let snap_all = provenance(&ledger, &index, "node-A", t_base + Duration::seconds(150));
     assert_eq!(
         snap_all.active_artifacts.len(),
         3,
@@ -355,7 +343,12 @@ fn e2e_merkle_ledger_integrity_after_blast_radius() {
     let e_extra = ledger.append_with_clock(
         art.clone(),
         make_signed_root(),
-        make_context("node-5", "default", "pod-5", vec!["/usr/bin/integrity-test"]),
+        make_context(
+            "node-5",
+            "default",
+            "pod-5",
+            vec!["/usr/bin/integrity-test"],
+        ),
         &clock_extra,
     );
     index.insert(&e_extra);
@@ -523,13 +516,7 @@ fn e2e_revoke_removes_from_blast_radius() {
     //    In a real system, revocation would be handled by the sekiban webhook updating
     //    BPF maps. Here we simulate by querying a time range that excludes the entry.
     let to_before_bad = t_base; // exactly at t_base, before clock_1
-    let report_after = blast_radius(
-        &ledger,
-        &index,
-        &art_bad.composed_root,
-        from,
-        to_before_bad,
-    );
+    let report_after = blast_radius(&ledger, &index, &art_bad.composed_root, from, to_before_bad);
 
     // 4. Future blast radius queries reflect the revocation time window
     assert_eq!(
@@ -728,8 +715,7 @@ fn e2e_provenance_empty_for_unknown_node() {
 #[tokio::test]
 async fn chaos_dfc_timeout_during_attestation() {
     // 1. Create FailableDfcSigner with timeout
-    let signer =
-        FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+    let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
 
     let art = make_artifact("timeout-victim");
 
@@ -737,10 +723,7 @@ async fn chaos_dfc_timeout_during_attestation() {
     let result = signer.sign(&art.composed_root).await;
 
     // 3. Verify error is propagated
-    assert!(
-        result.is_err(),
-        "timeout should propagate as error"
-    );
+    assert!(result.is_err(), "timeout should propagate as error");
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("timed out"),
@@ -749,8 +732,14 @@ async fn chaos_dfc_timeout_during_attestation() {
 
     // 4. Ledger should be unaffected (entry never created because sign failed)
     let ledger = MerkleLedger::new();
-    assert!(ledger.is_empty(), "no entry should be in ledger after failed sign");
-    assert!(ledger.verify_integrity(), "empty ledger integrity is trivially true");
+    assert!(
+        ledger.is_empty(),
+        "no entry should be in ledger after failed sign"
+    );
+    assert!(
+        ledger.verify_integrity(),
+        "empty ledger integrity is trivially true"
+    );
 }
 
 // =============================================================================
@@ -785,7 +774,12 @@ async fn chaos_corrupted_signature_detected() {
     let entry = ledger.append_with_clock(
         art.clone(),
         signed.clone(),
-        make_context("node-corrupt", "default", "pod-c", vec!["/usr/bin/corrupt-victim"]),
+        make_context(
+            "node-corrupt",
+            "default",
+            "pod-c",
+            vec!["/usr/bin/corrupt-victim"],
+        ),
         &clock,
     );
     index.insert(&entry);
@@ -1040,25 +1034,12 @@ fn e2e_empty_ledger_queries() {
     let to = now + Duration::seconds(10);
 
     // Blast radius on empty ledger
-    let report = blast_radius(
-        &ledger,
-        &index,
-        &Blake3Hash::digest(b"any"),
-        from,
-        to,
-    );
+    let report = blast_radius(&ledger, &index, &Blake3Hash::digest(b"any"), from, to);
     assert_eq!(report.total_affected, 0);
     assert!(report.chain_integrity);
 
     // Timeline on empty ledger
-    let events = timeline(
-        &ledger,
-        &index,
-        &Blake3Hash::digest(b"any"),
-        from,
-        to,
-        None,
-    );
+    let events = timeline(&ledger, &index, &Blake3Hash::digest(b"any"), from, to, None);
     assert!(events.is_empty());
 
     // Provenance on empty ledger

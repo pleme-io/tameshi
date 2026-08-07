@@ -216,7 +216,12 @@ impl AttestationBuilder {
     }
 
     /// Add a vulnerability scan dimension.
-    pub fn with_vuln_scan(mut self, scan: &VulnerabilityScan, passed: bool, required: bool) -> Self {
+    pub fn with_vuln_scan(
+        mut self,
+        scan: &VulnerabilityScan,
+        passed: bool,
+        required: bool,
+    ) -> Self {
         self.dimensions.push(ComplianceDimension {
             dimension_type: DimensionType::VulnerabilityScan,
             hash: super::cve::compute_vuln_hash(scan),
@@ -241,7 +246,11 @@ impl AttestationBuilder {
                 "{} components, {} deps, NTIA: {}",
                 sbom.component_count,
                 sbom.dependency_count,
-                if sbom.ntia_compliant { "compliant" } else { "non-compliant" }
+                if sbom.ntia_compliant {
+                    "compliant"
+                } else {
+                    "non-compliant"
+                }
             ),
             assessed_at: sbom.generated_at,
             required,
@@ -250,7 +259,12 @@ impl AttestationBuilder {
     }
 
     /// Add a SLSA provenance dimension.
-    pub fn with_slsa(mut self, provenance: &SlsaProvenance, min_level: &super::slsa::SlsaLevel, required: bool) -> Self {
+    pub fn with_slsa(
+        mut self,
+        provenance: &SlsaProvenance,
+        min_level: &super::slsa::SlsaLevel,
+        required: bool,
+    ) -> Self {
         let passed = provenance.level >= *min_level;
         self.dimensions.push(ComplianceDimension {
             dimension_type: DimensionType::SlsaProvenance,
@@ -290,7 +304,8 @@ impl AttestationBuilder {
             passed: true, // in-toto presence is the check
             summary: format!(
                 "in-toto by {}, {} subjects",
-                attestation.signer, attestation.subjects.len()
+                attestation.signer,
+                attestation.subjects.len()
             ),
             assessed_at: attestation.signed_at,
             required,
@@ -299,7 +314,12 @@ impl AttestationBuilder {
     }
 
     /// Add a CIS benchmark dimension.
-    pub fn with_cis(mut self, result: &CisBenchmarkResult, min_pass_rate: f64, required: bool) -> Self {
+    pub fn with_cis(
+        mut self,
+        result: &CisBenchmarkResult,
+        min_pass_rate: f64,
+        required: bool,
+    ) -> Self {
         let passed = result.summary.scored_pass_rate >= min_pass_rate;
         self.dimensions.push(ComplianceDimension {
             dimension_type: DimensionType::CisBenchmark,
@@ -392,9 +412,8 @@ impl AttestationBuilder {
 
         // Sort dimension hashes deterministically by type name
         let mut sorted_dims = self.dimensions.clone();
-        sorted_dims.sort_by(|a, b| {
-            format!("{}", a.dimension_type).cmp(&format!("{}", b.dimension_type))
-        });
+        sorted_dims
+            .sort_by(|a, b| format!("{}", a.dimension_type).cmp(&format!("{}", b.dimension_type)));
 
         // Compose all dimension hashes
         let mut data = Vec::new();
@@ -513,8 +532,8 @@ mod tests {
         let scan = make_vuln_scan();
 
         let attestation = AttestationBuilder::new("production", "test", "default")
-            .with_vuln_scan(&scan, true, true)   // passed, required
-            .with_vuln_scan(&scan, false, false)  // failed, optional
+            .with_vuln_scan(&scan, true, true) // passed, required
+            .with_vuln_scan(&scan, false, false) // failed, optional
             .build();
 
         assert!(attestation.all_passed);
@@ -558,7 +577,10 @@ mod tests {
 
     #[test]
     fn dimension_type_display() {
-        assert_eq!(DimensionType::VulnerabilityScan.to_string(), "CVE/Vulnerability Scan");
+        assert_eq!(
+            DimensionType::VulnerabilityScan.to_string(),
+            "CVE/Vulnerability Scan"
+        );
         assert_eq!(DimensionType::Sbom.to_string(), "SBOM");
         assert_eq!(DimensionType::SlsaProvenance.to_string(), "SLSA Provenance");
         assert_eq!(
@@ -567,9 +589,11 @@ mod tests {
         );
     }
 
-    fn make_target_attestation(name: &str) -> super::super::akeyless_target::AkeylessTargetAttestation {
-        use super::super::akeyless_target::*;
+    fn make_target_attestation(
+        name: &str,
+    ) -> super::super::akeyless_target::AkeylessTargetAttestation {
         use super::super::akeyless::AkeylessSecretType;
+        use super::super::akeyless_target::*;
         AkeylessTargetAttestation {
             target_name: name.to_string(),
             target_type: AkeylessTargetType::Database,
@@ -601,7 +625,10 @@ mod tests {
 
         assert_eq!(attestation.dimensions.len(), 1);
         let dim = &attestation.dimensions[0];
-        assert_eq!(dim.dimension_type, DimensionType::AkeylessTargetVerification);
+        assert_eq!(
+            dim.dimension_type,
+            DimensionType::AkeylessTargetVerification
+        );
         assert!(dim.passed);
         assert!(dim.required);
         assert_eq!(dim.summary, "2 target(s) attested");
@@ -620,7 +647,10 @@ mod tests {
 
         assert_eq!(attestation.dimensions.len(), 1);
         let dim = &attestation.dimensions[0];
-        assert_eq!(dim.dimension_type, DimensionType::AkeylessTargetVerification);
+        assert_eq!(
+            dim.dimension_type,
+            DimensionType::AkeylessTargetVerification
+        );
         assert!(!dim.passed);
         assert!(dim.required);
         // Required dimension failed => all_passed should be false

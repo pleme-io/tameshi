@@ -42,10 +42,7 @@ pub async fn hash_cluster_state(state_path: &str) -> Result<LayerSignature> {
     // Extract individual node states
     if let Some(nodes) = state.get("nodes").and_then(|n| n.as_array()) {
         for node in nodes {
-            let node_id = node
-                .get("id")
-                .and_then(|i| i.as_str())
-                .unwrap_or("unknown");
+            let node_id = node.get("id").and_then(|i| i.as_str()).unwrap_or("unknown");
             let node_json = serde_json::to_vec(node)?;
             inputs.push(InputHash {
                 name: format!("node-{}", node_id),
@@ -97,10 +94,13 @@ pub async fn hash_cluster_from_api(api_url: &str) -> Result<LayerSignature> {
             message: format!("failed to fetch cluster state from {}: {}", api_url, e),
         })?;
 
-    let state: serde_json::Value = resp.json().await.map_err(|e| TameshiError::CollectorError {
-        layer: "tatara".to_string(),
-        message: format!("failed to parse cluster state response: {}", e),
-    })?;
+    let state: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| TameshiError::CollectorError {
+            layer: "tatara".to_string(),
+            message: format!("failed to parse cluster state response: {}", e),
+        })?;
 
     let canonical = serde_json::to_vec(&state)?;
     let hash = Blake3Hash::digest(&canonical);
@@ -221,7 +221,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         let state = serde_json::json!({"cluster": "prod", "version": 3});
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.layer, LayerType::Tatara);
@@ -240,7 +242,9 @@ mod tests {
                 {"id": "node-2", "role": "control-plane"}
             ]
         });
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.inputs.len(), 3, "1 cluster-state + 2 nodes");
@@ -258,7 +262,9 @@ mod tests {
                 {"id": "alloc-b", "cpu": 8}
             ]
         });
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.inputs.len(), 3, "1 cluster-state + 2 allocations");
@@ -273,7 +279,9 @@ mod tests {
         let state = serde_json::json!({
             "nodes": [{"role": "worker"}]
         });
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.inputs[1].name, "node-unknown");
@@ -284,7 +292,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         let state = serde_json::json!({"cluster": "deterministic-test"});
-        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&state).unwrap())
+            .await
+            .unwrap();
 
         let sig1 = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
         let sig2 = hash_cluster_state(path.to_str().unwrap()).await.unwrap();
@@ -316,7 +326,9 @@ mod tests {
             "container": "worker:v1",
             "cpu": 2
         });
-        tokio::fs::write(&path, serde_json::to_vec(&spec).unwrap()).await.unwrap();
+        tokio::fs::write(&path, serde_json::to_vec(&spec).unwrap())
+            .await
+            .unwrap();
 
         let sig = hash_job_spec(path.to_str().unwrap()).await.unwrap();
         assert_eq!(sig.layer, LayerType::Tatara);

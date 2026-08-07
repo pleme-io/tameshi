@@ -38,9 +38,9 @@
 pub mod ai_threat;
 pub mod akeyless_client;
 pub mod alerts;
+pub mod api_types;
 pub mod audit;
 pub mod bpf_loader;
-pub mod api_types;
 pub mod cache;
 pub mod canonicalize;
 pub mod certification;
@@ -78,8 +78,8 @@ pub mod smt_certification;
 pub mod sparse_merkle;
 pub mod testing;
 pub mod traits;
-pub mod zk_bpf;
 pub mod verify;
+pub mod zk_bpf;
 
 /// Prelude module for convenient wildcard imports.
 ///
@@ -87,6 +87,25 @@ pub mod verify;
 /// use tameshi::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::ai_threat::{
+        AiAnalysisSummary, AiDecision, AiDeploymentContext, AiFailMode, AiThreatClient,
+        AiThreatError, AnalysisFeedback, AnalyzeProvenanceRequest, AnalyzeProvenanceResponse,
+        DemoAiThreatClient, FailableAiThreatClient, FeedbackLabel, HttpAiThreatClient,
+        MockAiThreatClient, ModelHealthStatus, RecommendedAction, Urgency,
+    };
+    pub use crate::akeyless_client::{
+        AkeylessClient, AkeylessClientError, AkeylessConfig, DynamicSecretInfo, HttpAkeylessClient,
+        ItemAssociation, MockAkeylessClient, TargetInfo, TlsConfig, build_tls_client,
+    };
+    pub use crate::canonicalize::{
+        CanonicalMode, Canonicalizer, JsonCanonicalizer, RawCanonicalizer, YamlCanonicalizer,
+        canonical_hash, canonicalizer_for,
+    };
+    pub use crate::certification_artifact::{
+        ArtifactProofPaths, CertificationArtifact, CertificationArtifactBuilder,
+        compose_certification_artifact, verify_certification_artifact,
+    };
+    pub use crate::collectors::MockCollector;
     pub use crate::collectors::agent_binary::{AgentBinaryCollector, AgentBinaryConfig};
     pub use crate::collectors::agent_certificates::{
         AgentCertificatesCollector, AgentCertificatesConfig, CertificateEntry, CertificateUsage,
@@ -101,7 +120,9 @@ pub mod prelude {
     pub use crate::collectors::agent_mcp_servers::{
         AgentMcpServersCollector, AgentMcpServersConfig, McpServerAttestation, McpTransport,
     };
-    pub use crate::collectors::agent_models::{AgentModelsCollector, AgentModelsConfig, ModelProvider};
+    pub use crate::collectors::agent_models::{
+        AgentModelsCollector, AgentModelsConfig, ModelProvider,
+    };
     pub use crate::collectors::agent_runtime::{
         AgentRuntimeCollector, AgentRuntimeConfig, HumanOversight, RuntimePolicy, SandboxMode,
         TimeoutAction,
@@ -109,25 +130,6 @@ pub mod prelude {
     pub use crate::collectors::agent_skills::{
         AgentSkillsCollector, AgentSkillsConfig, SkillAttestation, SkillComplianceStatus,
         SkillDefinition, SkillSource, attest_skill,
-    };
-    pub use crate::ai_threat::{
-        AiAnalysisSummary, AiDecision, AiDeploymentContext, AiFailMode, AiThreatClient,
-        AiThreatError, AnalysisFeedback, AnalyzeProvenanceRequest, AnalyzeProvenanceResponse,
-        DemoAiThreatClient, FailableAiThreatClient, FeedbackLabel, HttpAiThreatClient,
-        MockAiThreatClient, ModelHealthStatus, RecommendedAction, Urgency,
-    };
-    pub use crate::certification_artifact::{
-        ArtifactProofPaths, CertificationArtifact, CertificationArtifactBuilder,
-        compose_certification_artifact, verify_certification_artifact,
-    };
-    pub use crate::canonicalize::{
-        CanonicalMode, Canonicalizer, JsonCanonicalizer, RawCanonicalizer, YamlCanonicalizer,
-        canonical_hash, canonicalizer_for,
-    };
-    pub use crate::akeyless_client::{
-        AkeylessClient, AkeylessClientError, AkeylessConfig, DynamicSecretInfo,
-        HttpAkeylessClient, ItemAssociation, MockAkeylessClient, TargetInfo, TlsConfig,
-        build_tls_client,
     };
     pub use crate::collectors::akeyless::LiveAkeylessCollector;
     pub use crate::collectors::akeyless_target::{
@@ -137,19 +139,46 @@ pub mod prelude {
         PangeaSynthesisCollector, hash_synthesis_file, hash_synthesis_json,
     };
     pub use crate::collectors::traits::LayerCollector;
-    pub use crate::collectors::MockCollector;
     pub use crate::compliance::akeyless_target::{
         AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation,
         compute_multi_target_hash, compute_target_attestation_hash,
     };
+    pub use crate::compliance::plugin::{
+        ComplianceControl, CompliancePlugin, ControlEvaluation, ControlSeverity, DomainEvaluation,
+        MockPlugin, PluginConfig,
+    };
+    pub use crate::compliance::plugin_orchestrator::{
+        ComplianceOrchestrator, FullComplianceReport,
+    };
+    pub use crate::compliance::registry::{PluginRegistry, PluginRegistryBuilder};
     pub use crate::compliance_api::{
         CertificationQueryStatus, CheckDefinition, ComplianceDistance, ComplianceQuery,
         ComplianceState, ComplianceStatus, DynamicComplianceCheck, FrameworkState,
     };
     pub use crate::config::ConfigLoader;
+    pub use crate::forensics::index::LedgerIndex;
+    pub use crate::forensics::ledger::{InMemoryLedgerStore, MerkleLedger, MerkleLedgerStore};
+    pub use crate::forensics::query::{blast_radius, compute_evidence_hash, provenance, timeline};
+    pub use crate::forensics::types::{
+        ActiveArtifact, AffectedNodeDetail, BlastRadiusReport, CoResidentArtifact,
+        DeploymentContext, LedgerEntryRef, MerkleLedgerEntry, ProvenanceSnapshot, RevokeRequest,
+        RevokeResult, TimeRange, TimelineEvent,
+    };
     pub use crate::fragment_extension::reconstruct_key_extended;
+    pub use crate::global::{
+        ArtifactDelta, ArtifactLocation, ClusterBlastRadius, ClusterRootEntry, ClusterRootReport,
+        ClusterStatus, GlobalBlastRadiusReport, GlobalStateClient, GlobalStateRoot,
+        MockGlobalStateClient, NodeBlastRadius, compute_cluster_root, compute_global_root,
+    };
     pub use crate::hash::{AttestationHasher, Blake3Hash, Blake3Hasher, Sha256Hash, Sha256Hasher};
+    pub use crate::iac_attestation::{
+        IacTestAttester, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport, MockIacTestAttester,
+    };
     pub use crate::merkle::{compose_merkle, compute_merkle_root, domain_separated_leaf};
+    pub use crate::sdlc::{SdlcChain, SdlcCheckpoint, SdlcPhase};
+    pub use crate::selftest::{
+        attest_framework, compute_framework_hash, framework_attestation_hash,
+    };
     pub use crate::signature::{InputHash, LayerSignature, LayerType, MasterSignature};
     pub use crate::sparse_merkle::{SmtProof, SparseMerkleTree};
     pub use crate::traits::{
@@ -158,35 +187,5 @@ pub mod prelude {
         MockGatingEngine, MockHttpClient, MockVerifier, NoopMetrics, ReqwestHttpClient,
         SignatureVerifier, Store, SystemClock, SystemCommandRunner,
     };
-    pub use crate::selftest::{
-        attest_framework, compute_framework_hash, framework_attestation_hash,
-    };
-    pub use crate::verify::{verify_master, VerificationResult};
-    pub use crate::iac_attestation::{
-        IacTestAttester, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport,
-        MockIacTestAttester,
-    };
-    pub use crate::compliance::plugin::{
-        ComplianceControl, CompliancePlugin, ControlEvaluation, ControlSeverity,
-        DomainEvaluation, MockPlugin, PluginConfig,
-    };
-    pub use crate::compliance::registry::{PluginRegistry, PluginRegistryBuilder};
-    pub use crate::compliance::plugin_orchestrator::{ComplianceOrchestrator, FullComplianceReport};
-    pub use crate::sdlc::{SdlcPhase, SdlcCheckpoint, SdlcChain};
-    pub use crate::forensics::ledger::{
-        InMemoryLedgerStore, MerkleLedger, MerkleLedgerStore,
-    };
-    pub use crate::forensics::index::LedgerIndex;
-    pub use crate::forensics::query::{blast_radius, compute_evidence_hash, provenance, timeline};
-    pub use crate::forensics::types::{
-        ActiveArtifact, AffectedNodeDetail, BlastRadiusReport, CoResidentArtifact,
-        DeploymentContext, LedgerEntryRef, MerkleLedgerEntry, ProvenanceSnapshot, RevokeRequest,
-        RevokeResult, TimeRange, TimelineEvent,
-    };
-    pub use crate::global::{
-        ArtifactDelta, ArtifactLocation, ClusterBlastRadius, ClusterRootEntry,
-        ClusterRootReport, ClusterStatus, GlobalBlastRadiusReport, GlobalStateClient,
-        GlobalStateRoot, MockGlobalStateClient, NodeBlastRadius, compute_cluster_root,
-        compute_global_root,
-    };
+    pub use crate::verify::{VerificationResult, verify_master};
 }

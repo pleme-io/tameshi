@@ -28,7 +28,8 @@ pub trait EntryEncryption: Send + Sync {
     /// Encrypt a heartbeat entry.
     fn encrypt(&self, entry: &HeartbeatEntry, key: &[u8; 32]) -> EncryptedEntry;
     /// Decrypt an encrypted entry.
-    fn decrypt(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<HeartbeatEntry, String>;
+    fn decrypt(&self, encrypted: &EncryptedEntry, key: &[u8; 32])
+    -> Result<HeartbeatEntry, String>;
     /// Verify the MAC without decrypting.
     fn verify_mac(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> bool;
 }
@@ -42,7 +43,11 @@ impl EntryEncryption for Blake3CounterModeEncryption {
         encrypt_entry(entry, key)
     }
 
-    fn decrypt(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<HeartbeatEntry, String> {
+    fn decrypt(
+        &self,
+        encrypted: &EncryptedEntry,
+        key: &[u8; 32],
+    ) -> Result<HeartbeatEntry, String> {
         decrypt_entry(encrypted, key)
     }
 
@@ -67,13 +72,16 @@ impl EntryEncryption for MockEntryEncryption {
         }
     }
 
-    fn decrypt(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<HeartbeatEntry, String> {
+    fn decrypt(
+        &self,
+        encrypted: &EncryptedEntry,
+        key: &[u8; 32],
+    ) -> Result<HeartbeatEntry, String> {
         let expected_mac = Blake3Hash(blake3::keyed_hash(key, &encrypted.ciphertext).into());
         if encrypted.mac != expected_mac {
             return Err("MAC verification failed".to_string());
         }
-        serde_json::from_slice(&encrypted.ciphertext)
-            .map_err(|e| format!("invalid JSON: {e}"))
+        serde_json::from_slice(&encrypted.ciphertext).map_err(|e| format!("invalid JSON: {e}"))
     }
 
     fn verify_mac(&self, encrypted: &EncryptedEntry, key: &[u8; 32]) -> bool {
@@ -142,8 +150,7 @@ pub fn decrypt_entry(encrypted: &EncryptedEntry, key: &[u8; 32]) -> Result<Heart
         keystream_pos += 1;
     }
 
-    serde_json::from_slice(&plaintext)
-        .map_err(|e| format!("decryption produced invalid JSON: {e}"))
+    serde_json::from_slice(&plaintext).map_err(|e| format!("decryption produced invalid JSON: {e}"))
 }
 
 /// Verify a MAC without decrypting.
@@ -279,7 +286,10 @@ mod tests {
         let entry = test_entry(99);
         let key = [0x55u8; 32];
         let encrypted = encrypt_entry(&entry, &key);
-        assert!(encrypted.ciphertext.len() > 32, "payload should span multiple keystream blocks");
+        assert!(
+            encrypted.ciphertext.len() > 32,
+            "payload should span multiple keystream blocks"
+        );
         let decrypted = decrypt_entry(&encrypted, &key).unwrap();
         assert_eq!(entry, decrypted);
     }
@@ -290,7 +300,10 @@ mod tests {
         let key = [0xABu8; 32];
         let plaintext = serde_json::to_vec(&entry).unwrap();
         let encrypted = encrypt_entry(&entry, &key);
-        assert_ne!(encrypted.ciphertext, plaintext, "ciphertext must differ from plaintext");
+        assert_ne!(
+            encrypted.ciphertext, plaintext,
+            "ciphertext must differ from plaintext"
+        );
     }
 
     #[test]
@@ -298,7 +311,9 @@ mod tests {
         let key = [0xAAu8; 32];
         let entry1 = HeartbeatEntry {
             sequence: 1,
-            timestamp: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc),
+            timestamp: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
             verifier: VerifierIdentity::new("test", "node-1", "1.0"),
             event: HeartbeatEvent::GateCheck,
             result: VerificationOutcome::Allowed,
@@ -310,7 +325,10 @@ mod tests {
         let entry2 = entry1.clone();
         let enc1 = encrypt_entry(&entry1, &key);
         let enc2 = encrypt_entry(&entry2, &key);
-        assert_eq!(enc1.ciphertext, enc2.ciphertext, "identical entries with same key must produce identical ciphertext");
+        assert_eq!(
+            enc1.ciphertext, enc2.ciphertext,
+            "identical entries with same key must produce identical ciphertext"
+        );
     }
 
     #[test]
@@ -333,7 +351,10 @@ mod tests {
         let json = serde_json::to_string(&encrypted).unwrap();
         let deserialized: EncryptedEntry = serde_json::from_str(&json).unwrap();
         let decrypted = decrypt_entry(&deserialized, &key).unwrap();
-        assert_eq!(entry, decrypted, "full roundtrip: encrypt -> serialize -> deserialize -> decrypt");
+        assert_eq!(
+            entry, decrypted,
+            "full roundtrip: encrypt -> serialize -> deserialize -> decrypt"
+        );
     }
 
     #[test]

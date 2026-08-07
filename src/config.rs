@@ -40,8 +40,8 @@
 //! Nested structs use double underscores:
 //! - `tls.cert_path` → `MYAPP_TLS__CERT_PATH`
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 // Config loading delegates to shikumi's ProviderChain — the pleme-io
 // standard. shikumi wraps figment behind a fluent API; the public
@@ -117,9 +117,9 @@ where
     // Environment variables override everything.
     chain = chain.with_env(&format!("{}_", env_prefix));
 
-    chain.extract().map_err(|e| {
-        TameshiError::ConfigError(format!("failed to load config: {e}"))
-    })
+    chain
+        .extract()
+        .map_err(|e| TameshiError::ConfigError(format!("failed to load config: {e}")))
 }
 
 /// Load config with an explicit YAML path (no search).
@@ -171,11 +171,7 @@ mod tests {
     fn load_from_yaml_file() {
         let dir = tempfile::tempdir().unwrap();
         let yaml_path = dir.path().join("test-config.yaml");
-        std::fs::write(
-            &yaml_path,
-            "host: 0.0.0.0\nport: 9090\ndebug: true\n",
-        )
-        .unwrap();
+        std::fs::write(&yaml_path, "host: 0.0.0.0\nport: 9090\ndebug: true\n").unwrap();
 
         let config: TestConfig =
             load_config("TAMESHI_TEST_YAML", &[yaml_path.to_str().unwrap()]).unwrap();
@@ -188,11 +184,7 @@ mod tests {
     fn env_overrides_yaml() {
         let dir = tempfile::tempdir().unwrap();
         let yaml_path = dir.path().join("override-config.yaml");
-        std::fs::write(
-            &yaml_path,
-            "host: from-yaml\nport: 3000\ndebug: false\n",
-        )
-        .unwrap();
+        std::fs::write(&yaml_path, "host: from-yaml\nport: 3000\ndebug: false\n").unwrap();
 
         // Set env var to override host
         // SAFETY: test-only, single-threaded access to env vars
@@ -285,16 +277,9 @@ mod tests {
     fn figment_config_loader_loads_from_yaml() {
         let dir = tempfile::tempdir().unwrap();
         let yaml_path = dir.path().join("figment-test.yaml");
-        std::fs::write(
-            &yaml_path,
-            "host: figment-host\nport: 7777\ndebug: true\n",
-        )
-        .unwrap();
+        std::fs::write(&yaml_path, "host: figment-host\nport: 7777\ndebug: true\n").unwrap();
 
-        let loader = FigmentConfigLoader::new(
-            "TAMESHI_FIG_TEST",
-            &[yaml_path.to_str().unwrap()],
-        );
+        let loader = FigmentConfigLoader::new("TAMESHI_FIG_TEST", &[yaml_path.to_str().unwrap()]);
         let config: TestConfig = loader.load().unwrap();
         assert_eq!(config.host, "figment-host");
         assert_eq!(config.port, 7777);
@@ -303,11 +288,14 @@ mod tests {
 
     #[test]
     fn missing_config_file_returns_defaults() {
-        let config: TestConfig =
-            load_config("TAMESHI_MISSING_CFG", &[
+        let config: TestConfig = load_config(
+            "TAMESHI_MISSING_CFG",
+            &[
                 "/absolutely/nonexistent/path1.yaml",
                 "/absolutely/nonexistent/path2.yaml",
-            ]).unwrap();
+            ],
+        )
+        .unwrap();
         // Should get the Default values (all zero/empty for TestConfig)
         assert_eq!(config.host, "");
         assert_eq!(config.port, 0);

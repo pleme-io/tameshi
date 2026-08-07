@@ -253,13 +253,14 @@ pub fn compute_provenance_hash(provenance: &SlsaProvenance) -> Blake3Hash {
             + provenance.source_commit.len()
             + material_count * 32
             + 32
-            + 10
+            + 10,
     );
     data.extend_from_slice(provenance.builder_id.as_bytes());
     data.extend_from_slice(provenance.source_commit.as_bytes());
 
     // Include all material hashes in sorted order
-    let mut material_hashes: Vec<&Blake3Hash> = provenance.materials.iter().map(|m| &m.digest).collect();
+    let mut material_hashes: Vec<&Blake3Hash> =
+        provenance.materials.iter().map(|m| &m.digest).collect();
     material_hashes.sort_by(|a, b| a.to_hex().cmp(&b.to_hex()));
     for h in material_hashes {
         data.extend_from_slice(&h.0);
@@ -301,20 +302,20 @@ pub fn determine_slsa_level(
 #[must_use]
 pub fn slsa_nist_controls() -> Vec<&'static str> {
     vec![
-        "SA-10",  // Developer Configuration Management
-        "SA-11",  // Developer Testing and Evaluation
-        "SA-15",  // Development Process, Standards, and Tools
-        "SR-3",   // Supply Chain Controls and Processes
-        "SR-4",   // Provenance
-        "SR-4(1)",// Identity
-        "SR-4(2)",// Track and Trace
-        "SR-4(3)",// Validate as Genuine and Not Altered
-        "SR-4(4)",// Supply Chain Integrity — Pedigree
-        "SR-11",  // Component Authenticity
-        "SI-7",   // Software, Firmware, and Information Integrity
-        "SI-7(1)",// Integrity Checks
-        "SI-7(6)",// Cryptographic Protection
-        "CM-14",  // Signed Components
+        "SA-10",   // Developer Configuration Management
+        "SA-11",   // Developer Testing and Evaluation
+        "SA-15",   // Development Process, Standards, and Tools
+        "SR-3",    // Supply Chain Controls and Processes
+        "SR-4",    // Provenance
+        "SR-4(1)", // Identity
+        "SR-4(2)", // Track and Trace
+        "SR-4(3)", // Validate as Genuine and Not Altered
+        "SR-4(4)", // Supply Chain Integrity — Pedigree
+        "SR-11",   // Component Authenticity
+        "SI-7",    // Software, Firmware, and Information Integrity
+        "SI-7(1)", // Integrity Checks
+        "SI-7(6)", // Cryptographic Protection
+        "CM-14",   // Signed Components
     ]
 }
 
@@ -383,11 +384,26 @@ mod tests {
 
     #[test]
     fn slsa_level_determination() {
-        assert_eq!(determine_slsa_level(false, false, false, false, false), SlsaLevel::L0);
-        assert_eq!(determine_slsa_level(true, false, false, false, false), SlsaLevel::L1);
-        assert_eq!(determine_slsa_level(true, true, false, false, false), SlsaLevel::L2);
-        assert_eq!(determine_slsa_level(true, true, true, true, false), SlsaLevel::L3);
-        assert_eq!(determine_slsa_level(true, true, true, true, true), SlsaLevel::L4);
+        assert_eq!(
+            determine_slsa_level(false, false, false, false, false),
+            SlsaLevel::L0
+        );
+        assert_eq!(
+            determine_slsa_level(true, false, false, false, false),
+            SlsaLevel::L1
+        );
+        assert_eq!(
+            determine_slsa_level(true, true, false, false, false),
+            SlsaLevel::L2
+        );
+        assert_eq!(
+            determine_slsa_level(true, true, true, true, false),
+            SlsaLevel::L3
+        );
+        assert_eq!(
+            determine_slsa_level(true, true, true, true, true),
+            SlsaLevel::L4
+        );
     }
 
     #[test]

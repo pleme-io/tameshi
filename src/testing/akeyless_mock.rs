@@ -160,14 +160,8 @@ impl MockAkeylessGatewayBuilder {
         let app = Router::new()
             .route("/auth", post(handle_auth))
             .route("/get-secret-value", post(handle_get_secret_value))
-            .route(
-                "/sign-data-with-classic-key",
-                post(handle_sign_data),
-            )
-            .route(
-                "/verify-data-with-classic-key",
-                post(handle_verify_data),
-            )
+            .route("/sign-data-with-classic-key", post(handle_sign_data))
+            .route("/verify-data-with-classic-key", post(handle_verify_data))
             .route("/list-items", post(handle_list_items))
             .route("/describe-item", post(handle_describe_item))
             .route("/get-target-details", post(handle_get_target_details))
@@ -298,10 +292,7 @@ async fn handle_get_secret_value(
 
     let st = state.lock().await;
     if let Some(value) = st.secrets.get(name) {
-        (
-            StatusCode::OK,
-            Json(json!({ name: value })),
-        )
+        (StatusCode::OK, Json(json!({ name: value })))
     } else {
         (
             StatusCode::NOT_FOUND,
@@ -352,10 +343,7 @@ async fn handle_verify_data(
         .and_then(Value::as_str)
         .unwrap_or("unknown");
     let data_hex = body.get("data").and_then(Value::as_str).unwrap_or("");
-    let sig_hex = body
-        .get("signature")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let sig_hex = body.get("signature").and_then(Value::as_str).unwrap_or("");
 
     let st = state.lock().await;
     if !st.signing_keys.contains(&key_name.to_string()) && !st.signing_keys.is_empty() {
@@ -472,10 +460,7 @@ async fn handle_get_target_details(
 }
 
 /// `POST /hmac` -- returns a deterministic HMAC of the provided data.
-async fn handle_hmac(
-    State(state): State<AppState>,
-    Json(body): Json<Value>,
-) -> impl IntoResponse {
+async fn handle_hmac(State(state): State<AppState>, Json(body): Json<Value>) -> impl IntoResponse {
     let key_name = body
         .get("key-name")
         .and_then(Value::as_str)
