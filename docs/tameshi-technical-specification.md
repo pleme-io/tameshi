@@ -151,7 +151,7 @@ The Ferrite compiler (`ferrite-check`) analyzes Go source code and emits a
   "version": "1.0.0",
   "tool": "ferrite-check",
   "tool_version": "0.1.0",
-  "target": { "module": "github.com/akeylesslabs/akeyless-gateway" },
+  "target": { "module": "github.com/example-org/example-gateway" },
   "analysis": {
     "allocations_tracked": 47,
     "violations_detected": 0,
