@@ -242,7 +242,7 @@ pub fn stage_output<T: Serialize>(
 /// # Example
 /// ```ignore
 /// let attestation = akeyless_attestation(
-///     "https://gw.akeyless.io",
+///     "https://gw.akeyless.example.com",
 ///     AkeylessAuthMethod::ApiKey,
 ///     Some("p-abc123"),
 ///     Some("my-secret-key"),

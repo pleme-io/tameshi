@@ -154,7 +154,7 @@ fn make_compliance() -> ComplianceAttestation {
 
 fn sample_akeyless_attestation() -> AkeylessSecretAttestation {
     AkeylessSecretAttestation {
-        gateway_url: "https://gw.akeyless.io".to_string(),
+        gateway_url: "https://gw.akeyless.example.com".to_string(),
         auth_method: AkeylessAuthMethod::K8s,
         secrets_accessed: vec![
             AkeylessSecretAccess {
@@ -404,7 +404,7 @@ async fn akeyless_secrets_in_attestation_chain() {
 
     // Build a second attestation with different secrets
     let attestation2 = AkeylessSecretAttestation {
-        gateway_url: "https://gw.akeyless.io".to_string(),
+        gateway_url: "https://gw.akeyless.example.com".to_string(),
         auth_method: AkeylessAuthMethod::K8s,
         secrets_accessed: vec![AkeylessSecretAccess {
             path: "/staging/different-secret".to_string(),
@@ -676,7 +676,7 @@ fn akeyless_hash_determinism_and_sensitivity() {
 
     // Sensitive to gateway URL change
     let mut modified = attestation.clone();
-    modified.gateway_url = "https://different-gw.akeyless.io".to_string();
+    modified.gateway_url = "https://other-gw.akeyless.example.com".to_string();
     assert_ne!(
         compute_akeyless_hash(&attestation),
         compute_akeyless_hash(&modified),
@@ -884,7 +884,7 @@ async fn hackathon_demo_full_pipeline() {
 
     // === Step 6: Akeyless Secret Attestation ===
     let akeyless_attestation = AkeylessSecretAttestation {
-        gateway_url: "https://gw.akeyless.io".to_string(),
+        gateway_url: "https://gw.akeyless.example.com".to_string(),
         auth_method: AkeylessAuthMethod::K8s,
         secrets_accessed: vec![
             AkeylessSecretAccess {

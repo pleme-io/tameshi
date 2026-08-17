@@ -22,7 +22,7 @@ spec:
             - containerPort: 8080
           env:
             - name: AKEYLESS_GATEWAY_URL
-              value: "https://gw.akeyless.io"
+              value: "https://gw.akeyless.example.com"
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:

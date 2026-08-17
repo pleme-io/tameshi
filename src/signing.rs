@@ -981,7 +981,7 @@ mod tests {
         let signer = AkeylessDfcSigner::with_credentials(
             "prod-dfc-key",
             "ci-pipeline",
-            "https://gw.akeyless.io",
+            "https://gw.akeyless.example.com",
             "p-abc123",
             "my-secret-key",
         );
@@ -989,7 +989,7 @@ mod tests {
         assert_eq!(signer.access_key, "my-secret-key");
         assert_eq!(signer.key_name, "prod-dfc-key");
         assert_eq!(signer.signer_id, "ci-pipeline");
-        assert_eq!(signer.endpoint, "https://gw.akeyless.io");
+        assert_eq!(signer.endpoint, "https://gw.akeyless.example.com");
     }
 
     #[test]
@@ -1175,7 +1175,7 @@ mod tests {
         let signer = AkeylessDfcSigner::with_tls(
             "prod-dfc-key",
             "ci-pipeline",
-            "https://gw.akeyless.io",
+            "https://gw.akeyless.example.com",
             "p-abc123",
             "my-secret-key",
             &tls,
@@ -1187,7 +1187,7 @@ mod tests {
         let signer = signer.unwrap();
         assert_eq!(signer.key_name, "prod-dfc-key");
         assert_eq!(signer.signer_id, "ci-pipeline");
-        assert_eq!(signer.endpoint, "https://gw.akeyless.io");
+        assert_eq!(signer.endpoint, "https://gw.akeyless.example.com");
         assert_eq!(signer.access_id, "p-abc123");
         assert_eq!(signer.access_key, "my-secret-key");
     }
