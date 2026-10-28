@@ -104,7 +104,7 @@ impl Canonicalizer for YamlCanonicalizer {
                 let Ok(content_str) = std::str::from_utf8(content) else {
                     return Cow::Borrowed(content);
                 };
-                let Ok(value) = serde_yaml_ng::from_str::<serde_json::Value>(content_str) else {
+                let Ok(value) = serde_norway::from_str::<serde_json::Value>(content_str) else {
                     return Cow::Borrowed(content);
                 };
                 let normalized = normalize_json_value(&value);

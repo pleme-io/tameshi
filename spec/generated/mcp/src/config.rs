@@ -43,7 +43,7 @@ impl TameshiMcpConfig {
         for candidate in &candidates {
             if candidate.exists() {
                 if let Ok(content) = std::fs::read_to_string(candidate) {
-                    match serde_yaml_ng::from_str::<Self>(&content) {
+                    match serde_norway::from_str::<Self>(&content) {
                         Ok(config) => return config,
                         Err(e) => {
                             tracing::warn!("failed to parse {}: {e}", candidate.display());

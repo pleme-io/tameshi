@@ -7,18 +7,18 @@
 use schemars::schema_for;
 
 /// Load the OpenAPI spec and return the components/schemas mapping.
-fn load_spec_schemas() -> serde_yaml_ng::Value {
+fn load_spec_schemas() -> serde_norway::Value {
     let spec_yaml =
         std::fs::read_to_string("spec/openapi.yaml").expect("failed to read spec/openapi.yaml");
-    let spec: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&spec_yaml).expect("failed to parse spec YAML");
+    let spec: serde_norway::Value =
+        serde_norway::from_str(&spec_yaml).expect("failed to parse spec YAML");
     spec["components"]["schemas"].clone()
 }
 
 /// Validate that required fields declared in the OpenAPI spec exist in the Rust type's
 /// generated JSON Schema, and vice versa. Accounts for snake_case (Rust) vs camelCase (spec).
 fn validate_type_fields<T: schemars::JsonSchema>(
-    spec_schemas: &serde_yaml_ng::Value,
+    spec_schemas: &serde_norway::Value,
     spec_name: &str,
 ) {
     let rust_schema = schema_for!(T);
@@ -84,7 +84,7 @@ fn collect_rust_properties(schema: &serde_json::Value) -> Vec<String> {
 }
 
 /// Collect property names from an OpenAPI spec schema's properties mapping.
-fn collect_spec_properties(props: &serde_yaml_ng::Value) -> Vec<String> {
+fn collect_spec_properties(props: &serde_norway::Value) -> Vec<String> {
     let mut result = Vec::new();
     if let Some(map) = props.as_mapping() {
         for key in map.keys() {

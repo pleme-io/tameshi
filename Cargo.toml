@@ -31,7 +31,7 @@ ed25519-dalek = "2"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml_ng = "0.10"
+serde_norway = "0.9"
 schemars = { version = "0.8", features = ["chrono"] }
 
 # Time and identifiers
