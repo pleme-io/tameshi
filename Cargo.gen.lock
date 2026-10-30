@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "74cf526ca4c2c858a72ee29c7640c7918f1aa69da528c02987eb52d40103cf7d",
+  "cargo_lock_sha256": "e052523b3eb0e9273f57332a929cb24a0b08e8080c02e7b4ee94aa3c318b6977",
   "manifest_sha256": {
-    "Cargo.toml": "aafcbb26bc73abc1f1a36632c4f71ce60301a5989ddfe540d0587eba413f6173"
+    "Cargo.toml": "5810ad3b159f800446acf3cd975936a05b20c33a58b130ff1b0102f281f96ce4"
   },
   "target_resolves": {
     "base": {
@@ -2107,7 +2107,7 @@
           "std"
         ]
       },
-      "gen-macros-0.1.54": {
+      "gen-macros-0.1.55": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -2146,11 +2146,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.54": {
+      "gen-platform-0.1.55": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.54",
+            "package_key": "gen-macros-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2160,7 +2160,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.54",
+            "package_key": "gen-types-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2214,7 +2214,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.54": {
+      "gen-types-0.1.55": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -3232,7 +3232,7 @@
           },
           {
             "name": "utf8_iter",
-            "package_key": "utf8_iter-1.0.4",
+            "package_key": "utf8_iter-1.1.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -3603,7 +3603,7 @@
           },
           {
             "name": "utf8_iter",
-            "package_key": "utf8_iter-1.0.4",
+            "package_key": "utf8_iter-1.1.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -6717,7 +6717,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.54",
+            "package_key": "gen-platform-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -6727,7 +6727,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.54",
+            "package_key": "gen-types-0.1.55",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7096,7 +7096,7 @@
           "proc-macro"
         ]
       },
-      "tameshi-0.1.6": {
+      "tameshi-0.1.7": {
         "runtime_dependencies": [
           {
             "name": "axum",
@@ -8536,8 +8536,19 @@
           "std"
         ]
       },
-      "utf8_iter-1.0.4": {
-        "runtime_dependencies": [],
+      "utf8_iter-1.1.0": {
+        "runtime_dependencies": [
+          {
+            "name": "utf_types",
+            "package_key": "utf_types-1.0.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
         "build_dependencies": [],
         "features": []
       },
@@ -8547,6 +8558,11 @@
         "features": [
           "default"
         ]
+      },
+      "utf_types-1.0.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "uuid-1.29.0": {
         "runtime_dependencies": [
@@ -13049,14 +13065,14 @@
     "futures-util-0.3.34": {
       "edition": "2018"
     },
-    "gen-macros-0.1.54": {
+    "gen-macros-0.1.55": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.54": {
+    "gen-platform-0.1.55": {
       "edition": "2024"
     },
-    "gen-types-0.1.54": {
+    "gen-types-0.1.55": {
       "edition": "2024"
     },
     "generic-array-0.14.7": {
@@ -13521,7 +13537,7 @@
     "synstructure-0.14.0": {
       "edition": "2018"
     },
-    "tameshi-0.1.6": {
+    "tameshi-0.1.7": {
       "edition": "2024",
       "lib_target": {
         "name": "tameshi",
@@ -13651,11 +13667,14 @@
     "url-2.5.8": {
       "edition": "2018"
     },
-    "utf8_iter-1.0.4": {
+    "utf8_iter-1.1.0": {
       "edition": "2021"
     },
     "utf8parse-0.2.2": {
       "edition": "2018"
+    },
+    "utf_types-1.0.0": {
+      "edition": "2021"
     },
     "uuid-1.29.0": {
       "edition": "2021"
