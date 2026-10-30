@@ -1,0 +1,1 @@
+{"actors":["supervisor",{"pid":41,"name":"worker"}],"def_hash":"b3:5b2ef3a0e1c0d29a6b6dc4e5d6c3a3f4e9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4","exit":{"kind":"raise","code":70,"message":"no repo"},"frame":{"granted":["filesystem","clock"],"withheld":["network","process"],"host_io":3},"journal":[{"seq":1,"op":"read_file"},{"seq":2,"op":"raise"}]}

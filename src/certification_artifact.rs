@@ -285,10 +285,7 @@ fn verify_single_proof(
     index: usize,
     total: usize,
 ) -> bool {
-    let raw_hashes: Vec<[u8; 32]> = proof_hashes.iter().map(|h| h.0).collect();
-    let proof = rs_merkle::MerkleProof::<Blake3Algorithm>::new(raw_hashes);
-    let ds_leaf = domain_separated_leaf(&leaf_hash.0);
-    proof.verify(root.0, &[index], &[ds_leaf], total)
+    crate::merkle::verify_leaf_inclusion(proof_hashes, root, leaf_hash, index, total)
 }
 
 /// Compose a full attestation chain: layers -> master -> artifacts -> signed.

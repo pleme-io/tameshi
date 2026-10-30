@@ -66,6 +66,7 @@ pub mod iac_attestation;
 pub mod merkle;
 pub mod node_salt;
 pub mod pedersen;
+pub mod receipt;
 pub mod reporting;
 pub mod salted_attestation;
 pub mod sdlc;
@@ -156,6 +157,10 @@ pub mod prelude {
         ComplianceState, ComplianceStatus, DynamicComplianceCheck, FrameworkState,
     };
     pub use crate::config::ConfigLoader;
+    pub use crate::forensics::bluecrash::{BlueCrash, IR_CONTROLS, IncidentBlastRadius};
+    pub use crate::forensics::evidence::{
+        Evidence, EvidenceLedger, InclusionProof, LeafKind, LeafStatus, LedgerLeaf,
+    };
     pub use crate::forensics::index::LedgerIndex;
     pub use crate::forensics::ledger::{InMemoryLedgerStore, MerkleLedger, MerkleLedgerStore};
     pub use crate::forensics::query::{blast_radius, compute_evidence_hash, provenance, timeline};
@@ -174,7 +179,14 @@ pub mod prelude {
     pub use crate::iac_attestation::{
         IacTestAttester, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport, MockIacTestAttester,
     };
-    pub use crate::merkle::{compose_merkle, compute_merkle_root, domain_separated_leaf};
+    pub use crate::merkle::{
+        compose_merkle, compute_leaf_root, compute_merkle_root, domain_separated_leaf,
+        leaf_inclusion_proof, verify_leaf_inclusion,
+    };
+    pub use crate::receipt::fragment::{
+        AttestationFragment, KeyMode, sign_fragment, verify_fragment,
+    };
+    pub use crate::receipt::{ControlId, ControlLeaf, Receipt, ReceiptParts, tuple_leaf};
     pub use crate::sdlc::{SdlcChain, SdlcCheckpoint, SdlcPhase};
     pub use crate::selftest::{
         attest_framework, compute_framework_hash, framework_attestation_hash,

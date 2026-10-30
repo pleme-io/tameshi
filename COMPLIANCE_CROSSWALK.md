@@ -57,6 +57,18 @@
 | **CA-2** | Security Assessments | kensa (compliance TTL) | Mandatory re-verification every 30 days against current baseline |
 | **CA-7** | Continuous Monitoring | kanshi + heartbeat | Continuous runtime integrity verification via eBPF |
 
+### Attested Verification Tuples (test and incident evidence)
+
+Any control a test evidences gets one ledger leaf per receipt. The receipt
+names the control, the target, the test, the verdict and the derivation that
+ran it. The ledger stores the evidence, so a reader recomputes each leaf and
+its PASS/FAIL status and proves inclusion against the root.
+
+| Control | Evidence | Where |
+|---------|----------|-------|
+| any listed in a receipt (e.g. **SA-11**, **SI-7**) | `tameshi-receipt.v1`, one leaf per control, inclusion proof against the ledger root | `src/receipt/`, `src/forensics/evidence.rs`, `nix/receipt.nix` (`lib.wrapTest`) |
+| **IR-4**, **IR-5**, **IR-6** | a blue `.bluecrash` artifact folded as incident leaves, with a blast radius (granted capabilities, linked actors) | `src/forensics/bluecrash.rs`, `tameshi incident ingest` |
+
 ---
 
 ## 2. CWE (Common Weakness Enumeration) Coverage

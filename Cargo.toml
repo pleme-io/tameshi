@@ -16,6 +16,10 @@ categories = ["cryptography", "development-tools"]
 name = "tameshi"
 path = "src/lib.rs"
 
+[[bin]]
+name = "tameshi"
+path = "src/main.rs"
+
 [dependencies]
 # Cryptographic hashing
 blake3 = "1.8"
@@ -66,6 +70,8 @@ futures = "0.3"
 
 # HTTP server (mock Akeyless gateway for testing)
 axum = "0.8"
+
+clap = { version = "4.5", features = ["derive"] }
 
 [lints.clippy]
 pedantic = "warn"

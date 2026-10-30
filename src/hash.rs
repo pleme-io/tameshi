@@ -95,6 +95,123 @@ impl Blake3Hash {
         let hex_str = s.strip_prefix("blake3:").unwrap_or(s);
         Self::from_hex(hex_str)
     }
+
+    /// The `b3:<lowercase hex>` form blue and the receipt contract write.
+    #[inline]
+    #[must_use]
+    pub fn to_b3(&self) -> String {
+        format!("b3:{}", self.to_hex())
+    }
+
+    /// Parse the strict `b3:<64 lowercase hex>` form; anything else is refused.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::TameshiError::InvalidInput`] naming the input
+    /// when the prefix, the length or a digit is wrong.
+    pub fn from_b3(s: &str) -> crate::error::Result<Self> {
+        let refuse = || {
+            crate::error::TameshiError::InvalidInput(format!(
+                "not a b3 hash (want b3:<64 lowercase hex>): {s:?}"
+            ))
+        };
+        let hex = s.strip_prefix("b3:").ok_or_else(refuse)?;
+        if hex.len() != 64 || !hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            return Err(refuse());
+        }
+        Self::from_hex(hex).map_err(|_| refuse())
+    }
+
+    /// BLAKE3 over [`length_prefixed`] fields: no two field tuples share an encoding.
+    #[must_use]
+    pub fn digest_fields(fields: &[&[u8]]) -> Self {
+        Self::digest(&length_prefixed(fields))
+    }
+}
+
+/// Encode each field as a u32 big-endian byte length followed by its bytes.
+///
+/// The encoding is injective over field tuples, so `("AB","C")` and
+/// `("A","BC")` never encode alike.
+///
+/// # Panics
+///
+/// Panics when a field is longer than `u32::MAX` bytes.
+#[must_use]
+pub fn length_prefixed(fields: &[&[u8]]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(fields.iter().map(|f| 4 + f.len()).sum());
+    for field in fields {
+        let len = u32::try_from(field.len()).expect("field longer than u32::MAX bytes");
+        out.extend_from_slice(&len.to_be_bytes());
+        out.extend_from_slice(field);
+    }
+    out
+}
+
+const TREE_DOMAIN: &str = "tameshi tree v1";
+
+/// Hash a file or a directory tree.
+///
+/// A regular file hashes to the plain BLAKE3 of its bytes, as `b3sum` prints
+/// it. A directory hashes under the `tameshi tree v1` derive-key domain over
+/// its entries sorted by name, each entry length-prefixed as name, kind
+/// (`f` file, `x` executable file, `l` symlink, `d` directory) and the child's
+/// hash (a symlink's child is its target text), so no file and no directory
+/// share a hash.
+///
+/// # Errors
+///
+/// Returns an I/O error when a path cannot be read, or
+/// [`crate::error::TameshiError::InvalidInput`] for a special file.
+pub fn blake3_tree(path: &std::path::Path) -> crate::error::Result<Blake3Hash> {
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.is_file() {
+        return blake3_file(path);
+    }
+    if !meta.is_dir() {
+        return Err(crate::error::TameshiError::InvalidInput(format!(
+            "not a file or directory: {}",
+            path.display()
+        )));
+    }
+    let mut names: Vec<std::ffi::OsString> = std::fs::read_dir(path)?
+        .map(|entry| entry.map(|e| e.file_name()))
+        .collect::<std::io::Result<_>>()?;
+    names.sort_by(|a, b| a.as_encoded_bytes().cmp(b.as_encoded_bytes()));
+    let mut hasher = blake3::Hasher::new_derive_key(TREE_DOMAIN);
+    for name in names {
+        let child = path.join(&name);
+        let meta = std::fs::symlink_metadata(&child)?;
+        let (kind, content): (&[u8], Vec<u8>) = if meta.file_type().is_symlink() {
+            let target = std::fs::read_link(&child)?;
+            (b"l", target.as_os_str().as_encoded_bytes().to_vec())
+        } else if meta.is_dir() {
+            (b"d", blake3_tree(&child)?.0.to_vec())
+        } else if meta.is_file() {
+            (
+                if is_executable(&meta) { b"x" } else { b"f" },
+                blake3_file(&child)?.0.to_vec(),
+            )
+        } else {
+            return Err(crate::error::TameshiError::InvalidInput(format!(
+                "not a file or directory: {}",
+                child.display()
+            )));
+        };
+        hasher.update(&length_prefixed(&[name.as_encoded_bytes(), kind, &content]));
+    }
+    Ok(Blake3Hash(hasher.finalize().into()))
+}
+
+#[cfg(unix)]
+fn is_executable(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_meta: &std::fs::Metadata) -> bool {
+    false
 }
 
 impl fmt::Debug for Blake3Hash {
@@ -892,5 +1009,87 @@ mod tests {
     fn sha256_hasher_from_hex_invalid() {
         let result = Sha256Hasher::from_hex("zzz-invalid");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn b3_form_round_trips() {
+        let h = Blake3Hash::digest(b"b3 form");
+        let text = h.to_b3();
+        assert!(text.starts_with("b3:"));
+        assert_eq!(Blake3Hash::from_b3(&text).unwrap(), h);
+    }
+
+    #[test]
+    fn b3_form_refuses_every_other_spelling() {
+        let hex = Blake3Hash::digest(b"x").to_hex();
+        for bad in [
+            hex.clone(),
+            format!("blake3:{hex}"),
+            format!("b3:{}", hex.to_uppercase()),
+            format!("b3:{}", &hex[..63]),
+            format!("b3:{hex}0"),
+            "b3:".to_string(),
+            String::new(),
+        ] {
+            assert!(Blake3Hash::from_b3(&bad).is_err(), "accepted {bad:?}");
+        }
+    }
+
+    #[test]
+    fn length_prefix_separates_field_boundaries() {
+        assert_ne!(
+            length_prefixed(&[b"AB", b"C"]),
+            length_prefixed(&[b"A", b"BC"])
+        );
+        assert_ne!(
+            Blake3Hash::digest_fields(&[b"AB", b"C"]),
+            Blake3Hash::digest_fields(&[b"A", b"BC"])
+        );
+        assert_eq!(
+            length_prefixed(&[b"", b"A"]),
+            [0, 0, 0, 0, 0, 0, 0, 1, b'A']
+        );
+        assert_eq!(length_prefixed(&[]), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn tree_hash_of_a_file_is_its_plain_blake3() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f");
+        std::fs::write(&file, b"content").unwrap();
+        assert_eq!(blake3_tree(&file).unwrap(), Blake3Hash::digest(b"content"));
+    }
+
+    #[test]
+    fn tree_hash_tracks_names_contents_and_kinds() {
+        let make = |name: &str, body: &[u8]| {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir(dir.path().join("sub")).unwrap();
+            std::fs::write(dir.path().join("sub").join(name), body).unwrap();
+            std::fs::write(dir.path().join("a"), b"a").unwrap();
+            let h = blake3_tree(dir.path()).unwrap();
+            (dir, h)
+        };
+        let (_d1, base) = make("x", b"1");
+        let (_d2, same) = make("x", b"1");
+        let (_d3, renamed) = make("y", b"1");
+        let (_d4, edited) = make("x", b"2");
+        assert_eq!(base, same);
+        assert_ne!(base, renamed);
+        assert_ne!(base, edited);
+        let empty = tempfile::tempdir().unwrap();
+        assert_ne!(blake3_tree(empty.path()).unwrap(), Blake3Hash::digest(b""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tree_hash_tracks_the_executable_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("run");
+        std::fs::write(&file, b"#!").unwrap();
+        let plain = blake3_tree(dir.path()).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_ne!(plain, blake3_tree(dir.path()).unwrap());
     }
 }

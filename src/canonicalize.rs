@@ -225,6 +225,17 @@ fn normalize_json_value(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+/// Canonical JSON bytes of any serializable value: keys sorted at every
+/// depth, no insignificant whitespace, UTF-8.
+///
+/// # Errors
+///
+/// Returns a serialization error when the value cannot become JSON.
+pub fn canonical_json_bytes<T: Serialize>(value: &T) -> crate::error::Result<Vec<u8>> {
+    let value = serde_json::to_value(value)?;
+    Ok(serde_json::to_vec(&normalize_json_value(&value))?)
+}
+
 /// Select the appropriate canonicalizer for a given content type.
 ///
 /// Returns a boxed canonicalizer based on the content type hint.

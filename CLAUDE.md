@@ -56,9 +56,14 @@ See `docs/openapi-development-flow.md` for the full workflow.
 ```
 src/
   lib.rs                        -- 23 module declarations + prelude (75+ re-exports)
-  hash.rs                       -- Blake3Hash, Sha256Hash, AttestationHasher trait, blake3_file, blake3_file_async
+  main.rs                       -- the `tameshi` CLI: receipt {run,write,verify,leaves,sign}, ledger {fold,prove,verify}, incident ingest
+  hash.rs                       -- Blake3Hash (to_b3/from_b3, digest_fields), Sha256Hash, AttestationHasher trait, length_prefixed, blake3_tree, blake3_file, blake3_file_async
   signature.rs                  -- LayerType (14 variants), LayerSignature, MasterSignature, InputHash
-  merkle.rs                     -- Blake3Algorithm (RFC 9162 domain separation), compose_merkle, compute_merkle_root, domain_separated_leaf
+  merkle.rs                     -- Blake3Algorithm (RFC 9162 domain separation), compute_leaf_root / leaf_inclusion_proof / verify_leaf_inclusion (the one tree every root uses), compose_merkle, compute_merkle_root, domain_separated_leaf
+  receipt/
+    mod.rs                      -- tameshi-receipt.v1: Receipt (strict parse, canonical bytes, digest, leaves), ReceiptParts, ControlId, B3, tuple_leaf (length-prefixed 5-field leaf)
+    fragment.rs                 -- AttestationFragment: Ed25519 SignedRoot over a receipt's leaf root; KeyMode test | seed-file
+    runner.rs                   -- run_command (any argv, red recorded never raised, TAMESHI_FACTS), count_assertions (cargo/pytest/go/blue), receipt_from_run
   verify.rs                     -- verify_master, verify_untested, verify_secure, VerificationResult
   gating.rs                     -- GatingPolicy, evaluate_gate, evaluate_gate_with_clock
   changeset.rs                  -- CertifiedChangeset, hash_changeset
@@ -85,6 +90,8 @@ src/
     ledger.rs                   -- MerkleLedger (RwLock thread-safe append-only chain), MerkleLedgerStore trait, InMemoryLedgerStore, compute_ledger_entry_hash, verify_integrity, consistency_proof
     index.rs                    -- LedgerIndex (5 BTreeMap indexes: by_hash, by_node, by_namespace, by_time, by_binary)
     query.rs                    -- blast_radius, timeline, provenance, compute_evidence_hash
+    evidence.rs                 -- EvidenceLedger (Attested Verification Tuple leaves, evidence held and recomputed on read), InclusionProof (tameshi-inclusion.v1)
+    bluecrash.rs                -- BlueCrash (.bluecrash as IR-4/5/6 incident evidence), IncidentBlastRadius
   global.rs                     -- GlobalStateRoot, ClusterRootEntry, ClusterStatus, ClusterRootReport, ArtifactDelta, ArtifactLocation, GlobalBlastRadiusReport, ClusterBlastRadius, NodeBlastRadius, compute_cluster_root, compute_global_root, GlobalStateClient trait, MockGlobalStateClient
   collectors/
     traits.rs                   -- LayerCollector trait (async fn collect -> LayerSignature)
@@ -153,6 +160,30 @@ spec/
 | `MerkleLedgerStore` | `forensics/ledger.rs` | `append()`, `entries()`, `verify_integrity()` | Persistent forensic ledger |
 | `GlobalStateClient` | `global.rs` | `report_root()`, `get_global_state()`, `get_blast_radius()` | Master server communication |
 | `ForensicsWriter` | `forensics/ledger.rs` | `write_entry()`, `flush()` | Forensic ledger write abstraction |
+
+## Attested Verification Tuples (receipts)
+
+A receipt (`tameshi-receipt.v1`, canonical JSON) records one test run in one
+sandbox. `ReceiptDigest = BLAKE3(canonical bytes)`. Each control gets one leaf:
+`BLAKE3(lp(ControlID) ‖ lp(TargetHash) ‖ lp(TestHash) ‖ lp(ReceiptDigest) ‖ lp(NixDerivationHash))`,
+where `lp` is a u32 big-endian length and the UTF-8 bytes. The hashes are the
+`b3:<hex>` strings, and `NixDerivationHash` is `sandbox.derivation` verbatim.
+Leaves fold into `EvidenceLedger`. Its root and proofs are `merkle::compute_leaf_root`
+and `leaf_inclusion_proof`, the same domain-separated `rs_merkle` tree as
+`CertificationArtifact`.
+
+The forensic `MerkleLedger` is a hash chain of deployment entries. It has no
+per-leaf inclusion proofs, so receipts do not fold into it.
+
+Nix: `tameshi.lib.wrapTest { name, command, controls, target, test, src ? null, nativeBuildInputs ? [], env ? {}, system ? currentSystem }`
+(also `pkgs.tameshi.wrapTest` through `overlays.default`). It runs the command
+in one derivation (`<name>-run`). A red test never fails the build. Then
+`tameshi receipt write` writes `$out/tameshi-receipt.v1.json` and
+`$out/tameshi-fragment.v1.json`, signed with the public test key: no secret
+enters a sandbox. A real key signs later with `tameshi receipt sign --seed-file`,
+which refuses a seed under `/nix/store`. `sandbox.network` is measured with a
+UDP route probe that sends no packet. On a darwin host with `sandbox = false`,
+it reads `true`. Checks: `receipt-{pass,fail}`, `receipt-{pass,fail,incident}-proof`.
 
 ## Key Types
 

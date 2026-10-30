@@ -139,11 +139,81 @@ fn sorted_layers(layers: &[LayerSignature]) -> Vec<&LayerSignature> {
 /// Applies the `0x00` leaf prefix per CT/RFC 9162 before the hash enters
 /// the Merkle tree. This ensures leaf hashes and internal node hashes
 /// occupy distinct domains, preventing second-preimage attacks.
+#[cfg(test)]
 fn layer_leaves(sorted: &[&LayerSignature]) -> Vec<[u8; 32]> {
     sorted
         .iter()
         .map(|sig| domain_separated_leaf(&sig.hash.0))
         .collect()
+}
+
+/// The leaf hashes of sorted layer signatures, in tree order.
+fn layer_hashes(layers: &[LayerSignature]) -> Vec<Blake3Hash> {
+    sorted_layers(layers)
+        .into_iter()
+        .map(|sig| sig.hash.clone())
+        .collect()
+}
+
+/// Build the domain-separated `rs_merkle` tree over leaves in the given order.
+fn leaf_tree(leaves: &[Blake3Hash]) -> MerkleTree<Blake3Algorithm> {
+    let separated: Vec<[u8; 32]> = leaves
+        .iter()
+        .map(|leaf| domain_separated_leaf(&leaf.0))
+        .collect();
+    MerkleTree::<Blake3Algorithm>::from_leaves(&separated)
+}
+
+/// The Merkle root over leaves in the order given (no sorting).
+///
+/// The one tree every tameshi root uses: each leaf is domain-separated
+/// (`0x00`), internal nodes are `BLAKE3(0x01 || left || right)`. An empty
+/// list has the `empty-tree` sentinel root.
+#[must_use]
+pub fn compute_leaf_root(leaves: &[Blake3Hash]) -> Blake3Hash {
+    if leaves.is_empty() {
+        return Blake3Hash::digest(b"empty-tree");
+    }
+    Blake3Hash(leaf_tree(leaves).root().unwrap_or([0u8; 32]))
+}
+
+/// The sibling path proving the leaf at `index` is in [`compute_leaf_root`].
+///
+/// Returns `None` when `index` is out of bounds.
+#[must_use]
+pub fn leaf_inclusion_proof(leaves: &[Blake3Hash], index: usize) -> Option<Vec<Blake3Hash>> {
+    if index >= leaves.len() {
+        return None;
+    }
+    Some(
+        leaf_tree(leaves)
+            .proof(&[index])
+            .proof_hashes()
+            .iter()
+            .map(|h| Blake3Hash(*h))
+            .collect(),
+    )
+}
+
+/// Verify a sibling path for `leaf` at `index` of `total` against `root`.
+///
+/// Returns `false`, never panics, for an index outside `total`, an empty
+/// tree or a path longer than any tree of `total` leaves has.
+#[must_use]
+pub fn verify_leaf_inclusion(
+    proof_hashes: &[Blake3Hash],
+    root: &Blake3Hash,
+    leaf: &Blake3Hash,
+    index: usize,
+    total: usize,
+) -> bool {
+    if total == 0 || index >= total || proof_hashes.len() > usize::BITS as usize {
+        return false;
+    }
+    let raw: Vec<[u8; 32]> = proof_hashes.iter().map(|h| h.0).collect();
+    let proof = MerkleProof::<Blake3Algorithm>::new(raw);
+    let ds_leaf = domain_separated_leaf(&leaf.0);
+    proof.verify(root.0, &[index], &[ds_leaf], total)
 }
 
 /// Compute the Merkle root from a set of layer signatures.
@@ -155,15 +225,7 @@ fn layer_leaves(sorted: &[&LayerSignature]) -> Vec<[u8; 32]> {
 #[inline]
 #[must_use]
 pub fn compute_merkle_root(layers: &[LayerSignature]) -> Blake3Hash {
-    if layers.is_empty() {
-        return Blake3Hash::digest(b"empty-tree");
-    }
-
-    let sorted = sorted_layers(layers);
-    let leaves = layer_leaves(&sorted);
-
-    let tree = MerkleTree::<Blake3Algorithm>::from_leaves(&leaves);
-    Blake3Hash(tree.root().unwrap_or([0u8; 32]))
+    compute_leaf_root(&layer_hashes(layers))
 }
 
 /// Build the full Merkle tree (for audit/inspection).
@@ -230,16 +292,8 @@ pub fn compose_merkle(layers: &[LayerSignature], environment: &str) -> MasterSig
 /// Returns `None` if the index is out of bounds or the tree is empty.
 #[must_use]
 pub fn merkle_proof(layers: &[LayerSignature], index: usize) -> Option<Vec<[u8; 32]>> {
-    if layers.is_empty() || index >= layers.len() {
-        return None;
-    }
-
-    let sorted = sorted_layers(layers);
-    let leaves = layer_leaves(&sorted);
-
-    let tree = MerkleTree::<Blake3Algorithm>::from_leaves(&leaves);
-    let proof = tree.proof(&[index]);
-    Some(proof.proof_hashes().to_vec())
+    leaf_inclusion_proof(&layer_hashes(layers), index)
+        .map(|path| path.into_iter().map(|h| h.0).collect())
 }
 
 /// Verify a Merkle inclusion proof for a leaf against a known root.
@@ -260,9 +314,8 @@ pub fn verify_proof(
     index: usize,
     total: usize,
 ) -> bool {
-    let proof = MerkleProof::<Blake3Algorithm>::new(proof_hashes.to_vec());
-    let ds_leaf = domain_separated_leaf(&leaf.hash.0);
-    proof.verify(root.0, &[index], &[ds_leaf], total)
+    let path: Vec<Blake3Hash> = proof_hashes.iter().map(|h| Blake3Hash(*h)).collect();
+    verify_leaf_inclusion(&path, root, &leaf.hash, index, total)
 }
 
 #[cfg(test)]
@@ -750,6 +803,48 @@ mod tests {
             root_a, root_b,
             "Different layer data must produce different roots"
         );
+    }
+
+    #[test]
+    fn leaf_root_is_the_layer_root_over_the_same_order() {
+        let layers = vec![
+            make_layer(LayerType::Nix, b"nix"),
+            make_layer(LayerType::Oci, b"oci"),
+            make_layer(LayerType::Helm, b"helm"),
+        ];
+        assert_eq!(
+            compute_leaf_root(&layer_hashes(&layers)),
+            compute_merkle_root(&layers)
+        );
+        assert_eq!(compute_leaf_root(&[]), Blake3Hash::digest(b"empty-tree"));
+    }
+
+    #[test]
+    fn leaf_inclusion_proofs_verify_at_every_index_of_every_size() {
+        for size in 1..=9usize {
+            let leaves: Vec<Blake3Hash> = (0..size)
+                .map(|i| Blake3Hash::digest(format!("leaf-{size}-{i}").as_bytes()))
+                .collect();
+            let root = compute_leaf_root(&leaves);
+            for (i, leaf) in leaves.iter().enumerate() {
+                let path = leaf_inclusion_proof(&leaves, i).unwrap();
+                assert!(verify_leaf_inclusion(&path, &root, leaf, i, size));
+                let other = Blake3Hash::digest(b"not a leaf");
+                assert!(!verify_leaf_inclusion(&path, &root, &other, i, size));
+            }
+            assert!(leaf_inclusion_proof(&leaves, size).is_none());
+        }
+    }
+
+    #[test]
+    fn leaf_inclusion_refuses_impossible_positions() {
+        let leaves = vec![Blake3Hash::digest(b"a"), Blake3Hash::digest(b"b")];
+        let root = compute_leaf_root(&leaves);
+        let path = leaf_inclusion_proof(&leaves, 0).unwrap();
+        assert!(!verify_leaf_inclusion(&path, &root, &leaves[0], 2, 2));
+        assert!(!verify_leaf_inclusion(&path, &root, &leaves[0], 0, 0));
+        let long = vec![Blake3Hash::digest(b"x"); usize::BITS as usize + 1];
+        assert!(!verify_leaf_inclusion(&long, &root, &leaves[0], 0, 2));
     }
 
     #[test]

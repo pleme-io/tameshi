@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "ce8053a164aaf314de8b8a35c50555c619a1a650a4727c1af0a74cc5964901f1",
+  "cargo_lock_sha256": "74cf526ca4c2c858a72ee29c7640c7918f1aa69da528c02987eb52d40103cf7d",
   "manifest_sha256": {
-    "Cargo.toml": "b1fae583a6fe51a451634885c6968f4d5390d7b0562db54ec55a6d8ea4532467"
+    "Cargo.toml": "aafcbb26bc73abc1f1a36632c4f71ce60301a5989ddfe540d0587eba413f6173"
   },
   "target_resolves": {
     "base": {
@@ -20,6 +20,76 @@
           "default"
         ]
       },
+      "anstream-1.0.0": {
+        "runtime_dependencies": [
+          {
+            "name": "anstyle",
+            "package_key": "anstyle-1.0.14",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "anstyle_parse",
+            "package_key": "anstyle-parse-1.0.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "anstyle_query",
+            "package_key": "anstyle-query-1.1.5",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "colorchoice",
+            "package_key": "colorchoice-1.0.5",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "is_terminal_polyfill",
+            "package_key": "is_terminal_polyfill-1.70.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "utf8parse",
+            "package_key": "utf8parse-0.2.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "auto",
+          "default",
+          "wincon"
+        ]
+      },
       "anstyle-1.0.14": {
         "runtime_dependencies": [],
         "build_dependencies": [],
@@ -27,6 +97,30 @@
           "default",
           "std"
         ]
+      },
+      "anstyle-parse-1.0.0": {
+        "runtime_dependencies": [
+          {
+            "name": "utf8parse",
+            "package_key": "utf8parse-0.2.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "default",
+          "utf8"
+        ]
+      },
+      "anstyle-query-1.1.5": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "arc-swap-1.9.3": {
         "runtime_dependencies": [
@@ -857,15 +951,42 @@
             "optional": false,
             "target": null,
             "tree": "target"
+          },
+          {
+            "name": "clap_derive",
+            "package_key": "clap_derive-4.6.7",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "host"
           }
         ],
         "build_dependencies": [],
         "features": [
-          "std"
+          "color",
+          "default",
+          "derive",
+          "error-context",
+          "help",
+          "std",
+          "suggestions",
+          "usage"
         ]
       },
       "clap_builder-4.6.7": {
         "runtime_dependencies": [
+          {
+            "name": "anstream",
+            "package_key": "anstream-1.0.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
           {
             "name": "anstyle",
             "package_key": "anstyle-1.0.14",
@@ -885,14 +1006,84 @@
             "optional": false,
             "target": null,
             "tree": "target"
+          },
+          {
+            "name": "strsim",
+            "package_key": "strsim-0.11.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
           }
         ],
         "build_dependencies": [],
         "features": [
-          "std"
+          "color",
+          "error-context",
+          "help",
+          "std",
+          "suggestions",
+          "usage"
+        ]
+      },
+      "clap_derive-4.6.7": {
+        "runtime_dependencies": [
+          {
+            "name": "heck",
+            "package_key": "heck-0.5.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-3.0.9",
+            "kind": "normal",
+            "features": [
+              "full"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "default"
         ]
       },
       "clap_lex-1.1.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "colorchoice-1.0.5": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -2434,6 +2625,11 @@
         "build_dependencies": [],
         "features": []
       },
+      "heck-0.5.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "http-1.5.0": {
         "runtime_dependencies": [
           {
@@ -3524,6 +3720,13 @@
         ],
         "build_dependencies": [],
         "features": []
+      },
+      "is_terminal_polyfill-1.70.2": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "default"
+        ]
       },
       "itertools-0.10.5": {
         "runtime_dependencies": [
@@ -6724,6 +6927,11 @@
         "build_dependencies": [],
         "features": []
       },
+      "strsim-0.11.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
       "subtle-2.6.1": {
         "runtime_dependencies": [],
         "build_dependencies": [],
@@ -6916,6 +7124,18 @@
             "kind": "normal",
             "features": [
               "serde"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "clap",
+            "package_key": "clap-4.6.7",
+            "kind": "normal",
+            "features": [
+              "derive"
             ],
             "uses_default_features": true,
             "optional": false,
@@ -8320,6 +8540,13 @@
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
+      },
+      "utf8parse-0.2.2": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "default"
+        ]
       },
       "uuid-1.29.0": {
         "runtime_dependencies": [
@@ -12568,7 +12795,16 @@
     "anes-0.1.6": {
       "edition": "2018"
     },
+    "anstream-1.0.0": {
+      "edition": "2021"
+    },
     "anstyle-1.0.14": {
+      "edition": "2021"
+    },
+    "anstyle-parse-1.0.0": {
+      "edition": "2021"
+    },
+    "anstyle-query-1.1.5": {
       "edition": "2021"
     },
     "arc-swap-1.9.3": {
@@ -12674,8 +12910,15 @@
     "clap_builder-4.6.7": {
       "edition": "2024"
     },
+    "clap_derive-4.6.7": {
+      "edition": "2024",
+      "proc_macro": true
+    },
     "clap_lex-1.1.1": {
       "edition": "2024"
+    },
+    "colorchoice-1.0.5": {
+      "edition": "2021"
     },
     "const-hex-1.19.3": {
       "edition": "2021"
@@ -12836,6 +13079,9 @@
     "hashbrown-0.17.1": {
       "edition": "2024"
     },
+    "heck-0.5.0": {
+      "edition": "2021"
+    },
     "http-1.5.0": {
       "edition": "2021"
     },
@@ -12917,6 +13163,9 @@
     },
     "is-terminal-0.4.17": {
       "edition": "2018"
+    },
+    "is_terminal_polyfill-1.70.2": {
+      "edition": "2021"
     },
     "itertools-0.10.5": {
       "edition": "2018"
@@ -13254,6 +13503,9 @@
     "stable_deref_trait-1.2.1": {
       "edition": "2015"
     },
+    "strsim-0.11.1": {
+      "edition": "2015"
+    },
     "subtle-2.6.1": {
       "edition": "2018"
     },
@@ -13274,7 +13526,13 @@
       "lib_target": {
         "name": "tameshi",
         "path": "src/lib.rs"
-      }
+      },
+      "binaries": [
+        {
+          "name": "tameshi",
+          "path": "src/main.rs"
+        }
+      ]
     },
     "tempfile-3.27.0": {
       "edition": "2021"
@@ -13395,6 +13653,9 @@
     },
     "utf8_iter-1.0.4": {
       "edition": "2021"
+    },
+    "utf8parse-0.2.2": {
+      "edition": "2018"
     },
     "uuid-1.29.0": {
       "edition": "2021"
