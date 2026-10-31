@@ -39,6 +39,25 @@ pub enum SigningAlgorithm {
     MockDfc,
     /// Emergency break-glass bypass.
     BreakGlass,
+    /// FROST(Ed25519, SHA-512) threshold signing (RFC 9591): `min_signers` of
+    /// `max_signers` participants signed with their key shares, and the
+    /// signature is ordinary Ed25519 under the group's verifying key. See
+    /// [`crate::threshold`].
+    FrostEd25519 {
+        /// `k`: how many participants had to sign.
+        min_signers: u16,
+        /// `n`: how many participants hold a share.
+        max_signers: u16,
+    },
+}
+
+impl SigningAlgorithm {
+    /// Whether the signature is RFC 8032 Ed25519, checked by
+    /// [`verify_signed_root`] against one 32-byte verifying key.
+    #[must_use]
+    pub fn is_ed25519(&self) -> bool {
+        matches!(self, Self::Ed25519Local | Self::FrostEd25519 { .. })
+    }
 }
 
 impl std::fmt::Display for SigningAlgorithm {
@@ -48,6 +67,10 @@ impl std::fmt::Display for SigningAlgorithm {
             Self::AkeylessDfc { key_name } => write!(f, "akeyless_dfc:{key_name}"),
             Self::MockDfc => write!(f, "mock_dfc"),
             Self::BreakGlass => write!(f, "break_glass"),
+            Self::FrostEd25519 {
+                min_signers,
+                max_signers,
+            } => write!(f, "frost_ed25519:{min_signers}-of-{max_signers}"),
         }
     }
 }
@@ -88,6 +111,14 @@ pub trait MerkleRootSigner: Send + Sync {
     ) -> impl std::future::Future<Output = crate::error::Result<bool>> + Send;
 }
 
+/// A signer whose every [`SignedRoot`] verifies under one 32-byte Ed25519
+/// verifying key with [`verify_signed_root`]: [`LocalSigner`] and
+/// [`ThresholdSigner`](crate::threshold::signing::ThresholdSigner).
+pub trait Ed25519Signer: MerkleRootSigner {
+    /// The 32-byte verifying key.
+    fn verifying_key(&self) -> [u8; 32];
+}
+
 /// Verify a [`SignedRoot`] against a 32-byte Ed25519 **verifying (public) key**,
 /// holding no secret.
 ///
@@ -99,7 +130,7 @@ pub trait MerkleRootSigner: Send + Sync {
 /// never an error.
 #[must_use]
 pub fn verify_signed_root(signed: &SignedRoot, verifying_key: &[u8; 32]) -> bool {
-    if !matches!(signed.algorithm, SigningAlgorithm::Ed25519Local) {
+    if !signed.algorithm.is_ed25519() {
         return false;
     }
     verify_ed25519(&signed.root.0, &signed.signature, verifying_key)
@@ -111,7 +142,7 @@ pub fn verify_signed_root(signed: &SignedRoot, verifying_key: &[u8; 32]) -> bool
 /// Uses `verify_strict`: it rejects small-order / torsion-component public keys
 /// and non-canonical signatures. In a swarm of mutually-untrusting peers that
 /// hardening (against signature malleability and key-substitution) is the point.
-fn verify_ed25519(data: &[u8], signature: &[u8], verifying_key: &[u8; 32]) -> bool {
+pub(crate) fn verify_ed25519(data: &[u8], signature: &[u8], verifying_key: &[u8; 32]) -> bool {
     use ed25519_dalek::{Signature, VerifyingKey};
     let Ok(sig_bytes) = <[u8; 64]>::try_from(signature) else {
         return false;
@@ -178,6 +209,12 @@ impl LocalSigner {
     /// Verify a signature against `data` using this signer's own public key.
     fn verify_bytes(&self, data: &[u8], signature: &[u8]) -> bool {
         verify_ed25519(data, signature, &self.verifying_key())
+    }
+}
+
+impl Ed25519Signer for LocalSigner {
+    fn verifying_key(&self) -> [u8; 32] {
+        LocalSigner::verifying_key(self)
     }
 }
 
@@ -1491,8 +1528,31 @@ mod tests {
             SigningAlgorithm::AkeylessDfc { .. } => "dfc",
             SigningAlgorithm::MockDfc => "mock_dfc",
             SigningAlgorithm::BreakGlass => "break_glass",
+            SigningAlgorithm::FrostEd25519 { .. } => "frost_ed25519",
         };
         assert_eq!(label, "mock_dfc");
+    }
+
+    #[test]
+    fn frost_ed25519_names_its_threshold_in_json_and_display() {
+        let algo = SigningAlgorithm::FrostEd25519 {
+            min_signers: 3,
+            max_signers: 5,
+        };
+        let json = serde_json::to_string(&algo).unwrap();
+        assert_eq!(
+            json,
+            r#"{"frost_ed25519":{"min_signers":3,"max_signers":5}}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<SigningAlgorithm>(&json).unwrap(),
+            algo
+        );
+        assert_eq!(algo.to_string(), "frost_ed25519:3-of-5");
+        assert!(algo.is_ed25519());
+        assert!(SigningAlgorithm::Ed25519Local.is_ed25519());
+        assert!(!SigningAlgorithm::MockDfc.is_ed25519());
+        assert!(!SigningAlgorithm::BreakGlass.is_ed25519());
     }
 
     #[tokio::test]

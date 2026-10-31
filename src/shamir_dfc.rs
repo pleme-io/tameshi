@@ -8,6 +8,14 @@
 //! to k-of-n threshold (ShamirDfcSigner). Combined with the fragment
 //! extension theorem, the Merkle root can be an additional share.
 //!
+//! # Reconstructs the key
+//!
+//! [`ShamirDfcSigner`] interpolates the whole signing key in memory on every
+//! sign and every verify. The shares are k-of-n at rest only. For a key that
+//! must never exist as one value in any memory, use
+//! [`ThresholdSigner`](crate::threshold::signing::ThresholdSigner): FROST
+//! signs with the shares and adds signature shares, never key shares.
+//!
 //! # GF(256) Arithmetic
 //!
 //! All operations use the Rijndael (AES) field: irreducible polynomial
@@ -264,6 +272,15 @@ pub fn reconstruct(shares: &[Share]) -> Vec<u8> {
 /// can reconstruct the key and produce a valid signature. k-1 shares
 /// reveal zero information about the key.
 ///
+/// # Reconstructs the key
+///
+/// `sign` and `verify` interpolate the whole 32-byte key from `k` shares in
+/// this process's memory, then MAC with BLAKE3 (tagged
+/// [`SigningAlgorithm::MockDfc`]). It is kept, and nothing selects it by
+/// default. [`ThresholdSigner`](crate::threshold::signing::ThresholdSigner)
+/// is the signer that never assembles the key, and the default for new
+/// fragments.
+///
 /// This implements the `MerkleRootSigner` trait so it can be used as a
 /// drop-in replacement for `MockDfcSigner` or `AkeylessDfcSigner`.
 pub struct ShamirDfcSigner {
@@ -316,7 +333,7 @@ impl ShamirDfcSigner {
         Self::from_key(&key, 2, 3, "shamir-test")
     }
 
-    /// Reconstruct the signing key from the available shares.
+    /// Reconstruct the whole signing key from the available shares, in memory.
     fn reconstruct_key(&self) -> [u8; 32] {
         let secret = reconstruct(&self.shares[..self.threshold as usize]);
         let mut key = [0u8; 32];

@@ -78,6 +78,7 @@ pub mod signing;
 pub mod smt_certification;
 pub mod sparse_merkle;
 pub mod testing;
+pub mod threshold;
 pub mod traits;
 pub mod verify;
 pub mod zk_bpf;
@@ -184,7 +185,8 @@ pub mod prelude {
         leaf_inclusion_proof, verify_leaf_inclusion,
     };
     pub use crate::receipt::fragment::{
-        AttestationFragment, KeyMode, sign_fragment, verify_fragment,
+        AttestationFragment, FragmentSettings, KeyMode, sign_fragment, sign_fragment_with,
+        sign_test_fragment, verify_fragment,
     };
     pub use crate::receipt::{ControlId, ControlLeaf, Receipt, ReceiptParts, tuple_leaf};
     pub use crate::sdlc::{SdlcChain, SdlcCheckpoint, SdlcPhase};
@@ -193,6 +195,10 @@ pub mod prelude {
     };
     pub use crate::signature::{InputHash, LayerSignature, LayerType, MasterSignature};
     pub use crate::sparse_merkle::{SmtProof, SparseMerkleTree};
+    pub use crate::threshold::signing::{LocalParty, SigningParty, ThresholdSigner};
+    pub use crate::threshold::{
+        GroupKey, KeyShare, ParticipantId, ThresholdError, ThresholdParams,
+    };
     pub use crate::traits::{
         Clock, CommandRunner, DefaultGatingEngine, DefaultVerifier, FileSystem, FixedClock,
         GatingEngine, HttpClient, MemStore, MetricsRecorder, MockCommandRunner, MockFileSystem,

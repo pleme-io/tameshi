@@ -32,6 +32,12 @@ rs_merkle = "1.4"
 # Default features keep `zeroize` (secret hygiene on SigningKey) + `fast` + `std`.
 ed25519-dalek = "2"
 
+# Threshold Ed25519: FROST(Ed25519, SHA-512), RFC 9591, Zcash Foundation.
+# Wrapped by src/threshold.rs; no other module names it.
+frost-ed25519 = "3"
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = "1"
+
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

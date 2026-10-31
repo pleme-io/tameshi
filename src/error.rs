@@ -40,6 +40,9 @@ pub enum TameshiError {
 
     #[error("configuration error: {0}")]
     ConfigError(String),
+
+    #[error("threshold signing refused: {0}")]
+    Threshold(#[from] crate::threshold::ThresholdError),
 }
 
 pub type Result<T> = std::result::Result<T, TameshiError>;

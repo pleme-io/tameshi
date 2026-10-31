@@ -22,6 +22,7 @@ let
     , src ? null
     , nativeBuildInputs ? [ ]
     , env ? { }
+    , threshold ? true
     }:
     let
       system = pkgs.stdenv.hostPlatform.system;
@@ -44,14 +45,15 @@ let
       {
         nativeBuildInputs = [ tameshi ];
         passthru = { inherit run; };
+        TAMESHI_FRAGMENT_THRESHOLD__ENABLED = lib.boolToString threshold;
       } ''
       tameshi receipt write ${lib.escapeShellArgs writeArgs} --out "$out"
       tameshi receipt verify "$out/${receiptFile}" --fragment "$out/${fragmentFile}"
     '';
 
   fixture = ../tests/fixtures/receipt-crate;
-  fixtureTest = name: extra: wrapTest {
-    inherit name;
+  fixtureTest = name: extra: threshold: wrapTest {
+    inherit name threshold;
     src = fixture;
     nativeBuildInputs = [ pkgs.cargo pkgs.rustc ];
     controls = [ "NIST_SP_800_53R5_SA_11" "NIST_SP_800_53R5_SI_7" ];
@@ -59,8 +61,9 @@ let
     test = { runner = "cargo"; path = fixture + "/tests"; };
     command = [ "cargo" "test" "--offline" ] ++ extra;
   };
-  pass = fixtureTest "receipt-fixture-pass" [ ];
-  fail = fixtureTest "receipt-fixture-fail" [ "--features" "fail" ];
+  pass = fixtureTest "receipt-fixture-pass" [ ] true;
+  fail = fixtureTest "receipt-fixture-fail" [ "--features" "fail" ] true;
+  singleKey = fixtureTest "receipt-fixture-single-key" [ ] false;
 
   proofCheck = { name, fold, evidence, control, status }:
     pkgs.runCommand name { nativeBuildInputs = [ tameshi ]; } ''
@@ -95,6 +98,7 @@ in
   checks = {
     receipt-pass = pass;
     receipt-fail = fail;
+    receipt-single-key = singleKey;
     receipt-pass-proof = passProof;
     receipt-fail-proof = failProof;
     receipt-incident-proof = incidentProof;

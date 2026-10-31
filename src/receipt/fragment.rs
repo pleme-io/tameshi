@@ -1,14 +1,22 @@
 //! The signed attestation fragment: a receipt's leaves, their Merkle root
 //! and an Ed25519 [`SignedRoot`] over that root.
+//!
+//! A new fragment with no seed file is signed by the public FROST 2-of-3 test
+//! group ([`ThresholdSigner::public_test`]) while
+//! [`FragmentSettings::threshold`] is enabled, its default, and by the single
+//! public test key when it is off. Either signature is ordinary Ed25519, so
+//! [`verify_fragment`] checks both the same way.
 
 use serde::{Deserialize, Serialize};
 
 use super::{B3, ControlLeaf, Receipt, schema_tag};
 use crate::canonicalize::canonical_json_bytes;
+use crate::config::load_config;
 use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
 use crate::merkle::compute_leaf_root;
-use crate::signing::{LocalSigner, MerkleRootSigner, SignedRoot, verify_signed_root};
+use crate::signing::{Ed25519Signer, LocalSigner, SignedRoot, verify_signed_root};
+use crate::threshold::signing::ThresholdSigner;
 
 schema_tag!(FragmentSchema, "tameshi-fragment.v1");
 
@@ -16,11 +24,66 @@ schema_tag!(FragmentSchema, "tameshi-fragment.v1");
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum KeyMode {
-    /// The public test key ([`LocalSigner::for_testing`]): integrity only, no
-    /// authenticity. The mode a sandboxed build uses, since no secret enters it.
+    /// Public test key material, integrity only and no authenticity: the
+    /// public threshold test group ([`ThresholdSigner::public_test`]) or the
+    /// single public test key ([`LocalSigner::for_testing`]). The mode a
+    /// sandboxed build uses, since no secret enters it.
     Test,
-    /// A seed read at run time from a file outside the nix store.
+    /// A seed read at run time from a file outside the nix store: one whole
+    /// Ed25519 key in one memory.
     SeedFile,
+    /// Key shares of a `k`-of-`n` threshold group, each held by its own
+    /// participant. The group key never existed as one scalar.
+    ThresholdShares,
+}
+
+/// How a new fragment is signed when no seed file is given.
+///
+/// Read by [`FragmentSettings::load`]: the defaults, then
+/// `~/.config/tameshi/fragment.yaml`, then `TAMESHI_FRAGMENT_<GROUP>__<KEY>`
+/// in the environment.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FragmentSettings {
+    /// Threshold signing.
+    pub threshold: ThresholdSetting,
+}
+
+/// Whether new fragments are signed by a threshold group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ThresholdSetting {
+    /// On, the default: the public FROST 2-of-3 test group signs. Off
+    /// (`TAMESHI_FRAGMENT_THRESHOLD__ENABLED=false`): the single public test
+    /// key signs.
+    pub enabled: bool,
+}
+
+impl Default for ThresholdSetting {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl FragmentSettings {
+    /// The settings in force.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a malformed file or variable, and an unknown key.
+    pub fn load() -> Result<Self> {
+        let file = std::env::var_os("HOME").map(|home| {
+            std::path::Path::new(&home)
+                .join(".config/tameshi/fragment.yaml")
+                .display()
+                .to_string()
+        });
+        Self::load_from("TAMESHI_FRAGMENT", file.as_deref())
+    }
+
+    fn load_from(env_prefix: &str, file: Option<&str>) -> Result<Self> {
+        load_config(env_prefix, file.as_slice())
+    }
 }
 
 /// A receipt's signed attestation fragment.
@@ -65,7 +128,7 @@ impl AttestationFragment {
     }
 }
 
-/// Sign a receipt's leaf root.
+/// Sign a receipt's leaf root with one local Ed25519 key.
 ///
 /// `signed_at` is `SOURCE_DATE_EPOCH` when that is set, so a sandboxed build
 /// writes the same fragment every time; the signature covers only the root.
@@ -79,14 +142,28 @@ pub fn sign_fragment(
     signer: &LocalSigner,
     key_mode: KeyMode,
 ) -> AttestationFragment {
+    sign_fragment_with(receipt, signer, key_mode).expect("local Ed25519 signing cannot fail")
+}
+
+/// Sign a receipt's leaf root with any Ed25519 signer: one local key or a
+/// threshold group.
+///
+/// # Errors
+///
+/// Refuses when the signer does, for example a threshold group with fewer
+/// than `k` parties answering.
+pub fn sign_fragment_with<S: Ed25519Signer>(
+    receipt: &Receipt,
+    signer: &S,
+    key_mode: KeyMode,
+) -> Result<AttestationFragment> {
     let leaves = receipt.leaves();
     let root = leaf_root(&leaves);
-    let mut signed_root =
-        futures::executor::block_on(signer.sign(&root)).expect("local Ed25519 signing cannot fail");
+    let mut signed_root = futures::executor::block_on(signer.sign(&root))?;
     if let Some(at) = source_date_epoch() {
         signed_root.signed_at = at;
     }
-    AttestationFragment {
+    Ok(AttestationFragment {
         schema: FragmentSchema,
         receipt_digest: B3(receipt.digest()),
         leaves,
@@ -94,6 +171,22 @@ pub fn sign_fragment(
         signed_root,
         verifying_key: const_hex::encode(signer.verifying_key()),
         key_mode,
+    })
+}
+
+/// Sign a receipt with public test key material, as [`FragmentSettings`]
+/// selects: the public threshold test group, or the single public test key.
+///
+/// # Panics
+///
+/// Never: both signers are local and their keys are fixed.
+#[must_use]
+pub fn sign_test_fragment(receipt: &Receipt, settings: &FragmentSettings) -> AttestationFragment {
+    if settings.threshold.enabled {
+        sign_fragment_with(receipt, &ThresholdSigner::public_test(), KeyMode::Test)
+            .expect("the public threshold test group signs locally")
+    } else {
+        sign_fragment(receipt, &LocalSigner::for_testing(), KeyMode::Test)
     }
 }
 
@@ -176,6 +269,7 @@ fn source_date_epoch() -> Option<chrono::DateTime<chrono::Utc>> {
 mod tests {
     use super::*;
     use crate::receipt::tests::{sample, sample_parts};
+    use crate::signing::Ed25519Signer;
 
     #[test]
     fn a_signed_fragment_verifies_against_its_receipt() {
@@ -212,6 +306,62 @@ mod tests {
         assert!(verdict.signature_valid);
         assert_eq!(verdict.key_trusted, Some(false));
         assert!(!verdict.ok());
+    }
+
+    #[test]
+    fn new_test_fragments_are_threshold_signed_unless_the_setting_is_off() {
+        let receipt = sample();
+        let on = sign_test_fragment(&receipt, &FragmentSettings::default());
+        assert_eq!(
+            on.signed_root.algorithm,
+            crate::signing::SigningAlgorithm::FrostEd25519 {
+                min_signers: 2,
+                max_signers: 3
+            }
+        );
+        assert_eq!(on.key_mode, KeyMode::Test);
+        let group_key = ThresholdSigner::public_test().verifying_key();
+        assert!(verify_fragment(&on, &receipt, Some(&group_key)).ok());
+
+        let off = FragmentSettings {
+            threshold: ThresholdSetting { enabled: false },
+        };
+        let single = sign_test_fragment(&receipt, &off);
+        assert_eq!(
+            single.signed_root.algorithm,
+            crate::signing::SigningAlgorithm::Ed25519Local
+        );
+        let test_key = LocalSigner::for_testing().verifying_key();
+        assert!(verify_fragment(&single, &receipt, Some(&test_key)).ok());
+        let before = sign_fragment(&receipt, &LocalSigner::for_testing(), KeyMode::Test);
+        assert_eq!(single.signed_root.signature, before.signed_root.signature);
+        assert_eq!(single.verifying_key, before.verifying_key);
+    }
+
+    #[test]
+    fn the_threshold_setting_is_on_by_default_and_a_file_turns_it_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let unset = "TAMESHI_FRAGMENT_TEST_NEVER_SET";
+        let missing = dir.path().join("absent.yaml").display().to_string();
+        assert!(
+            FragmentSettings::load_from(unset, Some(&missing))
+                .unwrap()
+                .threshold
+                .enabled
+        );
+        let off = dir.path().join("off.yaml");
+        std::fs::write(&off, "threshold:\n  enabled: false\n").unwrap();
+        let off = off.display().to_string();
+        assert!(
+            !FragmentSettings::load_from(unset, Some(&off))
+                .unwrap()
+                .threshold
+                .enabled
+        );
+        let typo = dir.path().join("typo.yaml");
+        std::fs::write(&typo, "threshold:\n  enable: false\n").unwrap();
+        let typo = typo.display().to_string();
+        assert!(FragmentSettings::load_from(unset, Some(&typo)).is_err());
     }
 
     #[test]

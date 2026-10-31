@@ -149,6 +149,94 @@ fn tameshi(args: &[&str]) -> (bool, serde_json::Value) {
     (out.status.success(), value)
 }
 
+fn write_fragment(dir: &Path, threshold: Option<&str>) -> (serde_json::Value, serde_json::Value) {
+    let work = dir.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(work.join("t.rs"), b"test source").unwrap();
+    let run = Command::new(env!("CARGO_BIN_EXE_tameshi"))
+        .current_dir(&work)
+        .args(["receipt", "run", "--out"])
+        .arg(dir.join("run"))
+        .args([
+            "--",
+            "/bin/sh",
+            "-c",
+            "echo 'test result: ok. 1 passed; 0 failed;'",
+        ])
+        .output()
+        .unwrap();
+    assert!(run.status.success());
+    let mut write = Command::new(env!("CARGO_BIN_EXE_tameshi"));
+    write
+        .env_remove("TAMESHI_FRAGMENT_THRESHOLD__ENABLED")
+        .env("HOME", dir)
+        .args(["receipt", "write", "--run"])
+        .arg(dir.join("run"))
+        .args([
+            "--derivation",
+            "/nix/store/0000000000000000000000000000000a-run.drv",
+            "--system",
+            "aarch64-darwin",
+            "--control",
+            "NIST_SP_800_53R5_SC_13",
+            "--target-kind",
+            "nix-output",
+            "--target-path",
+        ])
+        .arg(&work)
+        .args(["--runner", "cargo", "--test-path"])
+        .arg(work.join("t.rs"))
+        .arg("--out")
+        .arg(dir.join("out"));
+    if let Some(value) = threshold {
+        write.env("TAMESHI_FRAGMENT_THRESHOLD__ENABLED", value);
+    }
+    let out = write.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let written: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let (ok, verdict) = tameshi(&[
+        "receipt",
+        "verify",
+        &dir.join("out/tameshi-receipt.v1.json")
+            .display()
+            .to_string(),
+        "--fragment",
+        &dir.join("out/tameshi-fragment.v1.json")
+            .display()
+            .to_string(),
+    ]);
+    assert!(ok, "{verdict}");
+    (written, verdict)
+}
+
+#[test]
+fn the_cli_signs_new_fragments_with_the_threshold_group_unless_switched_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let (written, verdict) = write_fragment(dir.path(), None);
+    assert_eq!(written["algorithm"], "frost_ed25519:2-of-3");
+    assert_eq!(written["key_mode"], "test");
+    assert_eq!(verdict["fragment"]["signature_valid"], true);
+
+    let dir = tempfile::tempdir().unwrap();
+    let (written, verdict) = write_fragment(dir.path(), Some("false"));
+    assert_eq!(written["algorithm"], "ed25519_local");
+    assert_eq!(verdict["fragment"]["signature_valid"], true);
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".config/tameshi")).unwrap();
+    std::fs::write(
+        dir.path().join(".config/tameshi/fragment.yaml"),
+        "threshold:\n  enabled: false\n",
+    )
+    .unwrap();
+    let (written, _) = write_fragment(dir.path(), None);
+    assert_eq!(written["algorithm"], "ed25519_local");
+}
+
 #[test]
 fn the_cli_runs_writes_folds_proves_and_verifies() {
     let dir = tempfile::tempdir().unwrap();

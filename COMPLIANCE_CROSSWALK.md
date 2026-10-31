@@ -26,7 +26,7 @@
 | **CM-6** | Configuration Settings | tameshi (config integrity) | All ConfigMaps, env vars, security contexts hashed into Merkle tree |
 | **CM-7** | Least Functionality | tameshi (resource limits attestation) | Resource limits and security contexts are attested leaf nodes |
 | **CM-8** | System Component Inventory | kanshi (BPF allow map) | Real-time cryptographic inventory of every running binary — live runtime SBOM |
-| **CM-14** | Signed Components | tameshi (DFC signing) | Merkle roots signed via Akeyless DFC threshold cryptography |
+| **CM-14** | Signed Components | tameshi (DFC signing, FROST threshold signing) | Merkle roots signed via Akeyless DFC threshold cryptography, or by a k-of-n FROST(Ed25519) group (`ThresholdSigner`, RFC 9591) whose key never exists as one scalar; new attestation fragments are threshold-signed by default |
 | **AU-2** | Audit Events | tameshi (heartbeat chain) | Every verification event recorded in append-only BLAKE3-linked chain |
 | **AU-3** | Content of Audit Records | tameshi (HeartbeatEntry) | Each entry includes: verifier, event type, result, resource, signature, timestamp, chain hash |
 | **AU-4** | Audit Storage Capacity | tameshi (streaming emitters) | Real-time streaming to S3/Akeyless Log Vault — unlimited capacity |
@@ -40,7 +40,7 @@
 | **SC-5** | Denial of Service Protection | sekiban (Bloom filter) | Pre-verification rejects 99% of garbage requests in nanoseconds |
 | **SC-7** | Boundary Protection | kanshi (eBPF LSM) | Kernel-level boundary prevents unauthorized lateral movement |
 | **SC-8** | Transmission Confidentiality | tameshi (mTLS + cert pinning) | All Akeyless API calls use mutual TLS with pinned certificates |
-| **SC-13** | Cryptographic Protection | tameshi (BLAKE3 + Ed25519) | BLAKE3 for integrity, Ed25519/DFC for signing, constant-time comparison |
+| **SC-13** | Cryptographic Protection | tameshi (BLAKE3 + Ed25519 + FROST) | BLAKE3 for integrity; Ed25519, FROST(Ed25519, SHA-512) threshold or DFC for signing; constant-time comparison. Threshold signatures verify as ordinary Ed25519 (`verify_strict`) |
 | **SC-23** | Session Authenticity | tameshi (mTLS) | Bidirectional authentication: pod proves identity to Akeyless, Akeyless proves identity to pod |
 | **SC-34** | Non-Modifiable Execution Programs | sekiban (self-attestation) | sekiban verifies its own binary hash at startup before registering webhook |
 | **SC-39** | Process Isolation | kanshi (W^X + IPC isolation) | Write-XOR-Execute + cross-cgroup IPC blocking |
@@ -50,7 +50,7 @@
 | **SA-11** | Developer Security Testing | kensa (compliance engine) | Automated NIST/SOC2/PCI/FedRAMP/STIG assessments with hash attestation |
 | **IA-2** | Identification and Authentication | Akeyless K8s Auth | Pod identity bound to namespace + service account + binary hash |
 | **IA-5** | Authenticator Management | tameshi (cert pinning) | Akeyless CA fingerprint compiled into binary via Nix |
-| **IA-7** | Cryptographic Module Authentication | tameshi (DFC signing) | Threshold signing — key never exists in one piece |
+| **IA-7** | Cryptographic Module Authentication | tameshi (DFC signing, `ThresholdSigner`) | Threshold signing — key never exists in one piece: DKG generates the shares with no dealer, each signer signs with its share, and the coordinator adds signature shares. A source audit test refuses any frost call that reconstructs or splits a whole key. `ShamirDfcSigner` reconstructs the key in memory and is not used for this control |
 | **IR-4** | Incident Handling | sekiban (self-healing) | Auto-rollback on integrity violation with forensic context |
 | **IR-5** | Incident Monitoring | kanshi + tameshi (heartbeat) | Real-time verification stream to Grafana/Hubble dashboard |
 | **IR-6** | Incident Reporting | tameshi (CIRCIA evidence) | 72-hour reporting chain with cryptographic provenance |
@@ -223,7 +223,7 @@ elements sold in the EU. This is the nearest hard enforcement date with EUR 15M 
 - **SR-4:** Provenance ← **tameshi core capability**
 - **SR-5:** Acquisition strategies, tools, and methods
 - **SR-6:** Supplier assessments and reviews
-- **SR-11:** Component authenticity ← **tameshi DFC signing**
+- **SR-11:** Component authenticity ← **tameshi DFC signing and FROST threshold signing (`ThresholdSigner`)**
 
 **Tameshi Solution:** tameshi + Akeyless directly satisfies the new SR family,
 which is the hardest part of FedRAMP Rev 5 for most organizations to implement.

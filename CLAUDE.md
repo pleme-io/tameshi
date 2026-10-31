@@ -62,14 +62,20 @@ src/
   merkle.rs                     -- Blake3Algorithm (RFC 9162 domain separation), compute_leaf_root / leaf_inclusion_proof / verify_leaf_inclusion (the one tree every root uses), compose_merkle, compute_merkle_root, domain_separated_leaf
   receipt/
     mod.rs                      -- tameshi-receipt.v1: Receipt (strict parse, canonical bytes, digest, leaves), ReceiptParts, ControlId, B3, tuple_leaf (length-prefixed 5-field leaf)
-    fragment.rs                 -- AttestationFragment: Ed25519 SignedRoot over a receipt's leaf root; KeyMode test | seed-file
+    fragment.rs                 -- AttestationFragment: Ed25519 SignedRoot over a receipt's leaf root; KeyMode test | seed-file | threshold-shares; sign_fragment (one key), sign_fragment_with (any Ed25519Signer), sign_test_fragment + FragmentSettings (threshold.enabled, default on)
     runner.rs                   -- run_command (any argv, red recorded never raised, TAMESHI_FACTS), count_assertions (cargo/pytest/go/blue), receipt_from_run
   verify.rs                     -- verify_master, verify_untested, verify_secure, VerificationResult
   gating.rs                     -- GatingPolicy, evaluate_gate, evaluate_gate_with_clock
   changeset.rs                  -- CertifiedChangeset, hash_changeset
   certification.rs              -- ProductCertification builder (7-stage pipeline)
   certification_artifact.rs     -- CertificationArtifact (3-leaf Merkle: provenance + compliance + intent), ArtifactProofPaths, verify_certification_artifact, verify_proof_path
-  signing.rs                    -- MerkleRootSigner trait, LocalSigner (real public-key Ed25519 + verify_signed_root pubkey-only verify), AkeylessDfcSigner (DFC threshold), MockDfcSigner (split-knowledge XOR), BreakGlassToken, SignedRoot, SigningAlgorithm
+  signing.rs                    -- MerkleRootSigner + Ed25519Signer traits, LocalSigner (real public-key Ed25519 + verify_signed_root pubkey-only verify), AkeylessDfcSigner (DFC threshold), MockDfcSigner (split-knowledge XOR), BreakGlassToken, SignedRoot, SigningAlgorithm
+  threshold/
+    mod.rs                      -- FROST(Ed25519, SHA-512) k-of-n signing (RFC 9591, frost-ed25519): ThresholdParams, ParticipantId, KeyShare, GroupKey, ThresholdError; the group secret is never one scalar
+    keygen.rs                   -- dkg::{start, exchange, finish} (Pedersen DKG, no dealer), trusted_dealer (test path), the public 2-of-3 test group
+    signing.rs                  -- commit, sign, aggregate; Commitment, SigningRequest, SignatureShare (typed round messages, serde); SigningParty, LocalParty, ThresholdSigner (a MerkleRootSigner)
+    audit.rs                    -- source guard: frost is named only through per-file allowlists, none holding keys::reconstruct, keys::split or SigningKey
+  shamir_dfc.rs                 -- GF(256) Shamir split/reconstruct, ShamirDfcSigner (RECONSTRUCTS the key in memory on every sign and verify; kept, not a default)
   heartbeat.rs                  -- HeartbeatChain (RwLock thread-safe), HeartbeatEntry, HeartbeatEvent (14 variants), VerificationOutcome, VerifierIdentity, ConsistencyProof, S3Emitter, HeartbeatEmitter trait
   compliance_api.rs             -- ComplianceQuery trait, ComplianceState, ComplianceStatus, ComplianceDistance, FrameworkState, CertificationQueryStatus, DynamicComplianceCheck, CheckDefinition
   iac_attestation.rs            -- IacTestAttester trait, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport, MockIacTestAttester
@@ -175,15 +181,22 @@ and `leaf_inclusion_proof`, the same domain-separated `rs_merkle` tree as
 The forensic `MerkleLedger` is a hash chain of deployment entries. It has no
 per-leaf inclusion proofs, so receipts do not fold into it.
 
-Nix: `tameshi.lib.wrapTest { name, command, controls, target, test, src ? null, nativeBuildInputs ? [], env ? {}, system ? currentSystem }`
+Nix: `tameshi.lib.wrapTest { name, command, controls, target, test, src ? null, nativeBuildInputs ? [], env ? {}, threshold ? true, system ? currentSystem }`
 (also `pkgs.tameshi.wrapTest` through `overlays.default`). It runs the command
 in one derivation (`<name>-run`). A red test never fails the build. Then
 `tameshi receipt write` writes `$out/tameshi-receipt.v1.json` and
-`$out/tameshi-fragment.v1.json`, signed with the public test key: no secret
-enters a sandbox. A real key signs later with `tameshi receipt sign --seed-file`,
-which refuses a seed under `/nix/store`. `sandbox.network` is measured with a
-UDP route probe that sends no packet. On a darwin host with `sandbox = false`,
-it reads `true`. Checks: `receipt-{pass,fail}`, `receipt-{pass,fail,incident}-proof`.
+`$out/tameshi-fragment.v1.json`, signed with public test key material: no secret
+enters a sandbox. By default the public FROST 2-of-3 test group signs
+(`frost_ed25519:2-of-3`, nonces derived from the root so the fragment is
+reproducible). `threshold = false`, `TAMESHI_FRAGMENT_THRESHOLD__ENABLED=false`
+or `threshold: {enabled: false}` in `~/.config/tameshi/fragment.yaml` switches
+it to the single public test key (`ed25519_local`). Both have `key_mode: test`.
+A real single key signs later with `tameshi receipt sign --seed-file`, which
+refuses a seed under `/nix/store`; a real threshold group signs through the
+library (`sign_fragment_with(receipt, &ThresholdSigner, KeyMode::ThresholdShares)`).
+`sandbox.network` is measured with a UDP route probe that sends no packet. On a
+darwin host with `sandbox = false`, it reads `true`. Checks:
+`receipt-{pass,fail,single-key}`, `receipt-{pass,fail,incident}-proof`.
 
 ## Key Types
 
@@ -216,9 +229,11 @@ it reads `true`. Checks: `receipt-{pass,fail}`, `receipt-{pass,fail,incident}-pr
 ### Signing (Pillar 2)
 
 - **`SignedRoot`** -- root hash + signature bytes + algorithm + signer ID + timestamp.
-- **`SigningAlgorithm`** -- enum: `Ed25519Local`, `AkeylessDfc { key_name }`, `MockDfc`, `BreakGlass`.
+- **`SigningAlgorithm`** -- enum: `Ed25519Local`, `AkeylessDfc { key_name }`, `MockDfc`, `BreakGlass`, `FrostEd25519 { min_signers, max_signers }`. `is_ed25519()` is true for `Ed25519Local` and `FrostEd25519`: both are RFC 8032 signatures, and `verify_signed_root` accepts exactly those two.
 - **`LocalSigner`** -- real public-key **Ed25519** (ed25519-dalek), seed-derived + deterministic (RFC 8032). `verifying_key()` is the 32-byte public key; the free function `verify_signed_root(signed, &pubkey)` verifies with **no secret** (`verify_strict`) — the property that lets mutually-untrusting peers verify each other's attestations. (Was a symmetric BLAKE3 keyed MAC before 2026-06-11; the `Ed25519Local` name is now truthful.) Development/testing.
 - **`AkeylessDfcSigner`** -- Calls Akeyless gateway REST API for threshold signing. Key never exists in one piece. Supports mTLS via `TlsConfig`.
+- **`ThresholdSigner<P: SigningParty>`** -- `k`-of-`n` FROST(Ed25519, SHA-512) (RFC 9591, `frost-ed25519` 3.x, wrapped in `src/threshold/`). Keys come from `keygen::dkg` (no party or dealer ever holds the group secret) or `keygen::trusted_dealer` (test path). Signing is two rounds: each party `commit`s, the coordinator builds a `SigningRequest` from at least `k` commitments (fewer is `BelowThreshold`), each party `sign`s (consumes its nonces), `aggregate` adds the signature shares and refuses a forged one naming its participant (`InvalidShares`). The result is an ordinary Ed25519 signature under `GroupKey::verifying_key()`: ed25519-dalek, `verify_signed_root` and `verify_fragment` accept it. `LocalParty` keeps a share in this process; implement `SigningParty` over a transport to keep each share on its own machine. `ThresholdSigner::public_test()` is the public 2-of-3 test group. The `threshold::audit` tests read the module source and fail if it names `keys::reconstruct`, `keys::split` or `SigningKey`.
+- **`ShamirDfcSigner`** -- GF(256) Shamir `k`-of-`n` shares, but `sign` and `verify` **reconstruct the whole key in memory** and MAC with BLAKE3 (tagged `MockDfc`). Kept (behaviour is configured off, never deleted); no default selects it. Use `ThresholdSigner` where the key must never exist in one piece.
 - **`MockDfcSigner`** -- Split-knowledge simulation. Two 32-byte fragments (`fragment_a`, `fragment_b`). Key = `BLAKE3(fragment_a XOR fragment_b)`. Neither fragment alone reveals the key. Debug output redacts fragments.
 - **`BreakGlassToken`** -- Emergency bypass with cryptographic logging. Every break-glass event is signed and logged for the 72-hour CIRCIA report.
 
@@ -293,6 +308,7 @@ cargo test                           # all 1427 tests
 cargo test hash                      # hash module (42 tests)
 cargo test merkle                    # merkle tree
 cargo test signing                   # signing + MockDfcSigner + BreakGlassToken + FailableDfcSigner
+cargo test threshold                 # FROST DKG, two-round signing, k-1 refusal, forged shares, source audit
 cargo test certification_artifact    # 3-leaf Merkle artifact
 cargo test heartbeat                 # heartbeat chain + consistency proofs
 cargo test compliance_api            # compliance query types
@@ -314,6 +330,10 @@ Mock types: `MockCollector`, `MockCommandRunner`, `MockFileSystem`, `MockHttpCli
 | Crate | Purpose |
 |-------|---------|
 | blake3 | Primary hash (BLAKE3, 256-bit) |
+| ed25519-dalek | Ed25519 signing and strict verification |
+| frost-ed25519 | FROST(Ed25519, SHA-512) threshold signing, RFC 9591 (only `src/threshold/` names it) |
+| rand_core | Operating-system randomness (`OsRng`) for DKG and nonces |
+| zeroize | `Zeroizing` buffer for a serialized key share |
 | sha2 | SHA-256 for FIPS 140-3 compatibility |
 | rs_merkle | Merkle tree construction + inclusion proofs |
 | const-hex | Zero-allocation hex encode/decode |

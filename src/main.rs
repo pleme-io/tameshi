@@ -17,7 +17,8 @@ use tameshi::forensics::bluecrash::BlueCrash;
 use tameshi::forensics::evidence::{EvidenceLedger, FoldRefusal, InclusionProof, LeafStatus};
 use tameshi::hash::{Blake3Hash, blake3_tree};
 use tameshi::receipt::fragment::{
-    AttestationFragment, KeyMode, parse_key_hex, sign_fragment, verify_fragment,
+    AttestationFragment, FragmentSettings, KeyMode, parse_key_hex, sign_fragment,
+    sign_test_fragment, verify_fragment,
 };
 use tameshi::receipt::runner::{ReceiptRequest, receipt_from_run, run_command};
 use tameshi::receipt::{B3, ControlId, DrvPath, Receipt, Runner, Target, TargetKind, TestRef};
@@ -141,7 +142,9 @@ struct WriteArgs {
     /// The directory to write the receipt and fragment into.
     #[arg(long)]
     out: PathBuf,
-    /// Sign with this seed file instead of the public test key.
+    /// Sign with this seed file instead of public test key material (the
+    /// threshold test group, or the single test key when
+    /// `TAMESHI_FRAGMENT_THRESHOLD__ENABLED=false`).
     #[arg(long)]
     seed_file: Option<PathBuf>,
     /// The signer's name in the signed root.
@@ -312,14 +315,14 @@ fn write(args: WriteArgs) -> Result<bool> {
         system: args.system,
     };
     let receipt = receipt_from_run(&args.run, request)?;
-    let (signer, mode) = match &args.seed_file {
-        Some(path) => (
-            LocalSigner::from_seed(read_seed(path)?, &args.signer_id),
+    let fragment = match &args.seed_file {
+        Some(path) => sign_fragment(
+            &receipt,
+            &LocalSigner::from_seed(read_seed(path)?, &args.signer_id),
             KeyMode::SeedFile,
         ),
-        None => (LocalSigner::for_testing(), KeyMode::Test),
+        None => sign_test_fragment(&receipt, &FragmentSettings::load()?),
     };
-    let fragment = sign_fragment(&receipt, &signer, mode);
     std::fs::create_dir_all(&args.out)?;
     std::fs::write(args.out.join(RECEIPT_FILE), receipt.canonical_bytes())?;
     std::fs::write(args.out.join(FRAGMENT_FILE), fragment.canonical_bytes())?;
@@ -327,7 +330,8 @@ fn write(args: WriteArgs) -> Result<bool> {
         "digest": B3(receipt.digest()),
         "status": receipt.status(),
         "assertions": receipt.assertions(),
-        "key_mode": mode,
+        "key_mode": fragment.key_mode,
+        "algorithm": fragment.signed_root.algorithm.to_string(),
     }))?;
     Ok(true)
 }
