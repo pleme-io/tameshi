@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "dc7a5d0096ec6858147d5a4618aac53b714f25548263328d3e4b7f105d9d6201",
+  "cargo_lock_sha256": "6d0083b465a9d458ed612aea6f6ab1190c5464556854312734b4f27cedcd7e88",
   "manifest_sha256": {
-    "Cargo.toml": "fe52d47409f1edce1b3b33b35efcfd34e8d3b4d99fe69b457cb9e914e43eebf8"
+    "Cargo.toml": "74f035d6fe4b4a99a0377a61e18bf776f20b1d98cfe63fff1f7d01f8934b677c"
   },
   "target_resolves": {
     "base": {
@@ -4232,7 +4232,7 @@
           "default"
         ]
       },
-      "log-0.4.34": {
+      "log-0.4.35": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -4303,7 +4303,7 @@
           },
           {
             "name": "log",
-            "package_key": "log-0.4.34",
+            "package_key": "log-0.4.35",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -6034,7 +6034,7 @@
           },
           {
             "name": "log",
-            "package_key": "log-0.4.34",
+            "package_key": "log-0.4.35",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7598,7 +7598,7 @@
           "proc-macro"
         ]
       },
-      "tameshi-0.1.7": {
+      "tameshi-0.1.8": {
         "runtime_dependencies": [
           {
             "name": "axum",
@@ -8864,7 +8864,7 @@
         "runtime_dependencies": [
           {
             "name": "log",
-            "package_key": "log-0.4.34",
+            "package_key": "log-0.4.35",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -10031,7 +10031,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -10787,7 +10787,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -11424,7 +11424,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -12107,7 +12107,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -12931,7 +12931,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -13636,7 +13636,7 @@
               },
               {
                 "name": "log",
-                "package_key": "log-0.4.34",
+                "package_key": "log-0.4.35",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -14368,7 +14368,7 @@
     "lock_api-0.4.14": {
       "edition": "2021"
     },
-    "log-0.4.34": {
+    "log-0.4.35": {
       "edition": "2021"
     },
     "lru-slab-0.1.3": {
@@ -14709,7 +14709,7 @@
     "synstructure-0.14.0": {
       "edition": "2018"
     },
-    "tameshi-0.1.7": {
+    "tameshi-0.1.8": {
       "edition": "2024",
       "lib_target": {
         "name": "tameshi",
