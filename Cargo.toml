@@ -19,13 +19,38 @@ path = "src/lib.rs"
 [[bin]]
 name = "tameshi"
 path = "src/main.rs"
+required-features = ["full"]
+
+[features]
+default = ["full"]
+full = [
+    "os-rng",
+    "dep:sha2",
+    "dep:rs_merkle",
+    "dep:serde_json",
+    "dep:serde_norway",
+    "dep:schemars",
+    "dep:chrono",
+    "dep:uuid",
+    "dep:tokio",
+    "dep:reqwest",
+    "dep:object_store",
+    "dep:shikumi",
+    "dep:tracing",
+    "dep:tempfile",
+    "dep:futures",
+    "dep:axum",
+    "dep:clap",
+]
+os-rng = ["threshold", "rand_core/getrandom"]
+threshold = ["dep:frost-ed25519", "dep:rand_core"]
 
 [dependencies]
 # Cryptographic hashing
 blake3 = "1.8"
-sha2 = "0.10"
+sha2 = { version = "0.10", optional = true }
 const-hex = "1"
-rs_merkle = "1.4"
+rs_merkle = { version = "1.4", optional = true }
 
 # Asymmetric signing — real public-key Ed25519 for LocalSigner / SignedRoot.
 # Deterministic (RFC 8032), seed-derived keypair, public-key-only verification.
@@ -34,50 +59,50 @@ ed25519-dalek = "2"
 
 # Threshold Ed25519: FROST(Ed25519, SHA-512), RFC 9591, Zcash Foundation.
 # Wrapped by src/threshold.rs; no other module names it.
-frost-ed25519 = "3"
-rand_core = { version = "0.6", features = ["getrandom"] }
+frost-ed25519 = { version = "3", default-features = false, features = ["serialization"], optional = true }
+rand_core = { version = "0.6", default-features = false, optional = true }
 zeroize = "1"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_norway = "0.9"
-schemars = { version = "0.8", features = ["chrono"] }
+serde_json = { version = "1.0", optional = true }
+serde_norway = { version = "0.9", optional = true }
+schemars = { version = "0.8", features = ["chrono"], optional = true }
 
 # Time and identifiers
-chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.16", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"], optional = true }
+uuid = { version = "1.16", features = ["v4", "serde"], optional = true }
 
 # Async runtime
-tokio = { version = "1.50", features = ["full"] }
+tokio = { version = "1.50", features = ["full"], optional = true }
 
 # HTTP client (for OCI registry, remote endpoints)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 # Object storage abstraction (S3, GCS, Azure, local) for heartbeat log forwarding
-object_store = { version = "0.13", features = ["aws"] }
+object_store = { version = "0.13", features = ["aws"], optional = true }
 
 # Configuration (layered: defaults → YAML → envvars) via shikumi,
 # the pleme-io standard. shikumi wraps figment so this crate doesn't
 # have to depend on figment directly.
-shikumi = "0.1"
+shikumi = { version = "0.1", optional = true }
 
 # Error handling
 thiserror = "2.0"
 
 # Logging
-tracing = "0.1"
+tracing = { version = "0.1", optional = true }
 
 # Temp files
-tempfile = "3.14"
+tempfile = { version = "3.14", optional = true }
 
 # Futures combinators (join_all for parallel collection)
-futures = "0.3"
+futures = { version = "0.3", optional = true }
 
 # HTTP server (mock Akeyless gateway for testing)
-axum = "0.8"
+axum = { version = "0.8", optional = true }
 
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"], optional = true }
 
 [lints.clippy]
 pedantic = "warn"
@@ -87,41 +112,86 @@ tokio-test = "0.4"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.6"
 
+[[test]]
+name = "artifact_matrix"
+required-features = ["full"]
+
+[[test]]
+name = "e2e_attestation"
+required-features = ["full"]
+
+[[test]]
+name = "e2e_gateway_attestation"
+required-features = ["full"]
+
+[[test]]
+name = "exhaustive_mock_matrix"
+required-features = ["full"]
+
+[[test]]
+name = "forensics_integration"
+required-features = ["full"]
+
+[[test]]
+name = "full_chain_integration"
+required-features = ["full"]
+
+[[test]]
+name = "proptest_properties"
+required-features = ["full"]
+
+[[test]]
+name = "receipt_tuple"
+required-features = ["full"]
+
+[[test]]
+name = "spec_validation"
+required-features = ["full"]
+
 [[bench]]
 name = "hash"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "merkle"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "signature"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "gating"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "changeset"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "compliance"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "certification"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "verify"
 harness = false
+required-features = ["full"]
 
 [[bench]]
 name = "fragment"
 harness = false
+required-features = ["full"]
 
 [profile.release]
 opt-level = "z"

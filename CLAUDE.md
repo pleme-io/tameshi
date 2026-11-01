@@ -17,8 +17,16 @@ Core library for the Unified Theory of Infrastructure Proof. Provides cryptograp
 ```bash
 cargo check
 cargo test          # 1834 tests (1712 lib + 122 across 6 integration files; counts include proptest, spec, doctests)
+cargo test --no-default-features --features threshold   # the lean build: the threshold module alone
 cargo build --release
 ```
+
+Features: `full` (default) is every module and the `tameshi` binary; `os-rng`
+adds the threshold entry points that draw from the operating system
+(`trusted_dealer`, `dkg::start`, `commit`); `threshold` is the threshold module
+alone with randomness from the caller. blue's runtime depends on
+`default-features = false, features = ["threshold"]`, which links no tokio,
+reqwest, object_store, axum, ring or getrandom.
 
 ## Test Breakdown
 
@@ -70,11 +78,14 @@ src/
   certification.rs              -- ProductCertification builder (7-stage pipeline)
   certification_artifact.rs     -- CertificationArtifact (3-leaf Merkle: provenance + compliance + intent), ArtifactProofPaths, verify_certification_artifact, verify_proof_path
   signing.rs                    -- MerkleRootSigner + Ed25519Signer traits, LocalSigner (real public-key Ed25519 + verify_signed_root pubkey-only verify), AkeylessDfcSigner (DFC threshold), MockDfcSigner (split-knowledge XOR), BreakGlassToken, SignedRoot, SigningAlgorithm
-  threshold/
+  ed25519.rs                    -- verify_ed25519 (verify_strict), the one Ed25519 check signing.rs and threshold/ share; built with `full` or `threshold`
+  threshold/                    -- feature `threshold`; the OS-randomness entry points need `os-rng`, party.rs needs `full`
     mod.rs                      -- FROST(Ed25519, SHA-512) k-of-n signing (RFC 9591, frost-ed25519): ThresholdParams, ParticipantId, KeyShare, GroupKey, ThresholdError; the group secret is never one scalar
-    keygen.rs                   -- dkg::{start, exchange, finish} (Pedersen DKG, no dealer), trusted_dealer (test path), the public 2-of-3 test group
-    signing.rs                  -- commit, sign, aggregate; Commitment, SigningRequest, SignatureShare (typed round messages, serde); SigningParty, LocalParty, ThresholdSigner (a MerkleRootSigner)
+    keygen.rs                   -- dkg::{start_with_rng, start, exchange, finish} (Pedersen DKG, no dealer), trusted_dealer_with_rng / trusted_dealer (test path), the public 2-of-3 test group; Round1Package / Round2Package to_bytes / from_bytes
+    signing.rs                  -- commit_with_rng, commit, sign, aggregate; Commitment, SigningRequest (new, from_commitments), SignatureShare (typed round messages, serde and frost bytes)
+    party.rs                    -- SigningParty, LocalParty, ThresholdSigner (a MerkleRootSigner), re-exported from signing
     audit.rs                    -- source guard: frost is named only through per-file allowlists, none holding keys::reconstruct, keys::split or SigningKey
+    seeded.rs                   -- tests that run in the lean build: a seeded RNG deals, starts a DKG and commits the same way twice; frost-byte round trips
   shamir_dfc.rs                 -- GF(256) Shamir split/reconstruct, ShamirDfcSigner (RECONSTRUCTS the key in memory on every sign and verify; kept, not a default)
   heartbeat.rs                  -- HeartbeatChain (RwLock thread-safe), HeartbeatEntry, HeartbeatEvent (14 variants), VerificationOutcome, VerifierIdentity, ConsistencyProof, S3Emitter, HeartbeatEmitter trait
   compliance_api.rs             -- ComplianceQuery trait, ComplianceState, ComplianceStatus, ComplianceDistance, FrameworkState, CertificationQueryStatus, DynamicComplianceCheck, CheckDefinition
@@ -232,7 +243,7 @@ darwin host with `sandbox = false`, it reads `true`. Checks:
 - **`SigningAlgorithm`** -- enum: `Ed25519Local`, `AkeylessDfc { key_name }`, `MockDfc`, `BreakGlass`, `FrostEd25519 { min_signers, max_signers }`. `is_ed25519()` is true for `Ed25519Local` and `FrostEd25519`: both are RFC 8032 signatures, and `verify_signed_root` accepts exactly those two.
 - **`LocalSigner`** -- real public-key **Ed25519** (ed25519-dalek), seed-derived + deterministic (RFC 8032). `verifying_key()` is the 32-byte public key; the free function `verify_signed_root(signed, &pubkey)` verifies with **no secret** (`verify_strict`) — the property that lets mutually-untrusting peers verify each other's attestations. (Was a symmetric BLAKE3 keyed MAC before 2026-06-11; the `Ed25519Local` name is now truthful.) Development/testing.
 - **`AkeylessDfcSigner`** -- Calls Akeyless gateway REST API for threshold signing. Key never exists in one piece. Supports mTLS via `TlsConfig`.
-- **`ThresholdSigner<P: SigningParty>`** -- `k`-of-`n` FROST(Ed25519, SHA-512) (RFC 9591, `frost-ed25519` 3.x, wrapped in `src/threshold/`). Keys come from `keygen::dkg` (no party or dealer ever holds the group secret) or `keygen::trusted_dealer` (test path). Signing is two rounds: each party `commit`s, the coordinator builds a `SigningRequest` from at least `k` commitments (fewer is `BelowThreshold`), each party `sign`s (consumes its nonces), `aggregate` adds the signature shares and refuses a forged one naming its participant (`InvalidShares`). The result is an ordinary Ed25519 signature under `GroupKey::verifying_key()`: ed25519-dalek, `verify_signed_root` and `verify_fragment` accept it. `LocalParty` keeps a share in this process; implement `SigningParty` over a transport to keep each share on its own machine. `ThresholdSigner::public_test()` is the public 2-of-3 test group. The `threshold::audit` tests read the module source and fail if it names `keys::reconstruct`, `keys::split` or `SigningKey`.
+- **`ThresholdSigner<P: SigningParty>`** -- `k`-of-`n` FROST(Ed25519, SHA-512) (RFC 9591, `frost-ed25519` 3.x, wrapped in `src/threshold/`). Keys come from `keygen::dkg` (no party or dealer ever holds the group secret) or `keygen::trusted_dealer` (test path). Signing is two rounds: each party `commit`s, the coordinator builds a `SigningRequest` from at least `k` commitments (fewer is `BelowThreshold`), each party `sign`s (consumes its nonces), `aggregate` adds the signature shares and refuses a forged one naming its participant (`InvalidShares`). The result is an ordinary Ed25519 signature under `GroupKey::verifying_key()`: ed25519-dalek, `verify_signed_root` and `verify_fragment` accept it. `LocalParty` keeps a share in this process; implement `SigningParty` over a transport to keep each share on its own machine. `ThresholdSigner::public_test()` is the public 2-of-3 test group. The `threshold::audit` tests read the module source and fail if it names `keys::reconstruct`, `keys::split` or `SigningKey`. Every randomness-drawing step has a `_with_rng` form taking any `rand_core::CryptoRngCore` (`keygen::trusted_dealer_with_rng`, `keygen::dkg::start_with_rng`, `signing::commit_with_rng`), and every round message reads and writes frost's own bytes (`to_bytes` / `from_bytes`), so blue's runtime (`crates/blue-lang-runtime/src/threshold.rs`) runs its seeded provider on this one implementation.
 - **`ShamirDfcSigner`** -- GF(256) Shamir `k`-of-`n` shares, but `sign` and `verify` **reconstruct the whole key in memory** and MAC with BLAKE3 (tagged `MockDfc`). Kept (behaviour is configured off, never deleted); no default selects it. Use `ThresholdSigner` where the key must never exist in one piece.
 - **`MockDfcSigner`** -- Split-knowledge simulation. Two 32-byte fragments (`fragment_a`, `fragment_b`). Key = `BLAKE3(fragment_a XOR fragment_b)`. Neither fragment alone reveals the key. Debug output redacts fragments.
 - **`BreakGlassToken`** -- Emergency bypass with cryptographic logging. Every break-glass event is signed and logged for the 72-hour CIRCIA report.

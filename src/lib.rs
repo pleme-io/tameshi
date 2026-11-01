@@ -19,8 +19,10 @@
 //! # Usage
 //!
 //! ```rust,no_run
+//! # #[cfg(feature = "full")]
 //! use tameshi::{collectors, merkle, signature::MasterSignature};
 //!
+//! # #[cfg(feature = "full")]
 //! # async fn example() -> Result<(), tameshi::error::TameshiError> {
 //! // Collect layer signatures
 //! let nix_sig = collectors::nix::hash_closure("/nix/store/...").await?;
@@ -34,60 +36,87 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! # Features
+//!
+//! - `full` (default): every module and the `tameshi` binary.
+//! - `os-rng`: the threshold entry points that draw from the operating
+//!   system: `threshold::keygen::trusted_dealer`, `threshold::keygen::dkg::start`
+//!   and `threshold::signing::commit`.
+//! - `threshold`: the `threshold` module alone, with randomness from the
+//!   caller. `default-features = false, features = ["threshold"]` links no
+//!   `tokio`, `reqwest`, `object_store`, `axum` or `ring`, and no entropy
+//!   source.
 
-pub mod ai_threat;
-pub mod akeyless_client;
-pub mod alerts;
-pub mod api_types;
-pub mod audit;
-pub mod bpf_loader;
-pub mod cache;
-pub mod canonicalize;
-pub mod certification;
-pub mod certification_artifact;
-pub mod changeset;
-pub mod ci;
-pub mod collectors;
-pub mod compliance;
-pub mod compliance_api;
-pub mod compliance_heartbeat;
-pub mod config;
-pub mod encrypted_chain;
-pub mod ephemeral_attestation;
-pub mod error;
-pub mod forensics;
-pub mod fragment_collector;
-pub mod fragment_extension;
-pub mod gating;
-pub mod global;
-pub mod hash;
-pub mod heartbeat;
-pub mod iac_attestation;
-pub mod merkle;
-pub mod node_salt;
-pub mod pedersen;
-pub mod receipt;
-pub mod reporting;
-pub mod salted_attestation;
-pub mod sdlc;
-pub mod selftest;
-pub mod shamir_dfc;
-pub mod shamir_root;
-pub mod signature;
-pub mod signing;
-pub mod smt_certification;
-pub mod sparse_merkle;
-pub mod testing;
+macro_rules! full {
+    ($($item:item)*) => {
+        $(
+            #[cfg(feature = "full")]
+            $item
+        )*
+    };
+}
+
+full! {
+    pub mod ai_threat;
+    pub mod akeyless_client;
+    pub mod alerts;
+    pub mod api_types;
+    pub mod audit;
+    pub mod bpf_loader;
+    pub mod cache;
+    pub mod canonicalize;
+    pub mod certification;
+    pub mod certification_artifact;
+    pub mod changeset;
+    pub mod ci;
+    pub mod collectors;
+    pub mod compliance;
+    pub mod compliance_api;
+    pub mod compliance_heartbeat;
+    pub mod config;
+    pub mod encrypted_chain;
+    pub mod ephemeral_attestation;
+    pub mod error;
+    pub mod forensics;
+    pub mod fragment_collector;
+    pub mod fragment_extension;
+    pub mod gating;
+    pub mod global;
+    pub mod hash;
+    pub mod heartbeat;
+    pub mod iac_attestation;
+    pub mod merkle;
+    pub mod node_salt;
+    pub mod pedersen;
+    pub mod receipt;
+    pub mod reporting;
+    pub mod salted_attestation;
+    pub mod sdlc;
+    pub mod selftest;
+    pub mod shamir_dfc;
+    pub mod shamir_root;
+    pub mod signature;
+    pub mod signing;
+    pub mod smt_certification;
+    pub mod sparse_merkle;
+    pub mod testing;
+    pub mod traits;
+    pub mod verify;
+    pub mod zk_bpf;
+}
+
+#[cfg(any(feature = "full", feature = "threshold"))]
+mod ed25519;
+#[cfg(feature = "threshold")]
 pub mod threshold;
-pub mod traits;
-pub mod verify;
-pub mod zk_bpf;
 
 /// Prelude module for convenient wildcard imports.
 ///
 /// ```rust
 /// use tameshi::prelude::*;
 /// ```
+#[cfg(feature = "full")]
 pub mod prelude {
     pub use crate::ai_threat::{
         AiAnalysisSummary, AiDecision, AiDeploymentContext, AiFailMode, AiThreatClient,

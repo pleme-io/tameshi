@@ -44,8 +44,10 @@ const KEYGEN_ALLOWED: &[&str] = &[
     "frost::keys::dkg::part2",
     "frost::keys::dkg::part3",
     "frost::keys::dkg::round1::Package",
+    "frost::keys::dkg::round1::Package::deserialize",
     "frost::keys::dkg::round1::SecretPackage",
     "frost::keys::dkg::round2::Package",
+    "frost::keys::dkg::round2::Package::deserialize",
     "frost::keys::dkg::round2::SecretPackage",
     "frost::keys::generate_with_dealer",
 ];
@@ -53,15 +55,22 @@ const KEYGEN_ALLOWED: &[&str] = &[
 const SIGNING_ALLOWED: &[&str] = &[
     "frost::Error::IncorrectCommitment",
     "frost::Error::MissingCommitment",
+    "frost::Identifier",
     "frost::SigningPackage",
     "frost::SigningPackage::new",
     "frost::aggregate",
     "frost::round1::SigningCommitments",
+    "frost::round1::SigningCommitments::deserialize",
     "frost::round1::SigningNonces",
     "frost::round1::commit",
     "frost::round2::SignatureShare",
+    "frost::round2::SignatureShare::deserialize",
     "frost::round2::sign",
 ];
+
+const PARTY_ALLOWED: &[&str] = &[];
+
+const SEEDED_ALLOWED: &[&str] = &[];
 
 const TESTS_ALLOWED: &[&str] = &[
     "frost::SigningPackage::new",
@@ -77,7 +86,9 @@ const FILES: &[(&str, &str, &[&str])] = &[
     ("mod.rs", include_str!("mod.rs"), MOD_ALLOWED),
     ("keygen.rs", include_str!("keygen.rs"), KEYGEN_ALLOWED),
     ("signing.rs", include_str!("signing.rs"), SIGNING_ALLOWED),
+    ("party.rs", include_str!("party.rs"), PARTY_ALLOWED),
     ("tests.rs", include_str!("tests.rs"), TESTS_ALLOWED),
+    ("seeded.rs", include_str!("seeded.rs"), SEEDED_ALLOWED),
 ];
 
 fn frost_paths(source: &str) -> Result<BTreeSet<String>, String> {

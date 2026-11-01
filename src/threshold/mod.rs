@@ -20,8 +20,8 @@
 //!   allowlist holds an item that interpolates, splits or holds a whole key.
 //!   The `audit` tests read this module's source to keep it so.
 //!
-//! [`keygen::trusted_dealer`] is the test path: its dealer samples the
-//! secret before it splits it.
+//! [`keygen::trusted_dealer_with_rng`] is the test path: its dealer samples
+//! the secret before it splits it.
 //!
 //! The protocol, with the type each step sends:
 //!
@@ -38,14 +38,28 @@
 //! in one process never compute the secret, but one memory then holds k
 //! shares. To keep every share on its own machine, implement
 //! [`signing::SigningParty`] over a transport that carries the round messages,
-//! which all serialize.
+//! which all serialize, with serde or as frost's own bytes (`to_bytes`,
+//! `from_bytes`).
+//!
+//! Every step that draws randomness takes it from the caller:
+//! [`keygen::trusted_dealer_with_rng`], [`keygen::dkg::start_with_rng`] and
+//! [`signing::commit_with_rng`] take any [`rand_core::CryptoRngCore`].
+//! `trusted_dealer`, `dkg::start` and `commit` draw from the operating system
+//! and need the `os-rng` feature. The `threshold` feature alone builds this
+//! module with no other part of tameshi; the parties and the signer need
+//! `full`.
 
 pub mod keygen;
 pub mod signing;
 
+#[cfg(feature = "full")]
+mod party;
+
 #[cfg(test)]
 mod audit;
 #[cfg(test)]
+mod seeded;
+#[cfg(all(test, feature = "full"))]
 mod tests;
 
 use frost_ed25519 as frost;
@@ -414,8 +428,10 @@ fn refused(error: frost::Error) -> ThresholdError {
     }
 }
 
+#[cfg(any(test, feature = "full"))]
 struct Xof(blake3::OutputReader);
 
+#[cfg(any(test, feature = "full"))]
 impl Xof {
     fn public(context: &str, input: &[u8]) -> Self {
         let mut hasher = blake3::Hasher::new_derive_key(context);
@@ -424,6 +440,7 @@ impl Xof {
     }
 }
 
+#[cfg(any(test, feature = "full"))]
 impl rand_core::RngCore for Xof {
     fn next_u32(&mut self) -> u32 {
         rand_core::impls::next_u32_via_fill(self)
@@ -443,4 +460,5 @@ impl rand_core::RngCore for Xof {
     }
 }
 
+#[cfg(any(test, feature = "full"))]
 impl rand_core::CryptoRng for Xof {}

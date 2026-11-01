@@ -1,11 +1,12 @@
 //! Key generation for a threshold group.
 //!
 //! [`dkg`] is the production path: no participant, and no dealer, ever holds
-//! the group secret. [`trusted_dealer`] is the test path.
+//! the group secret. [`trusted_dealer_with_rng`] is the test path.
 
 use frost_ed25519 as frost;
+use rand_core::CryptoRngCore;
 
-use super::{GroupKey, KeyShare, ThresholdError, ThresholdParams, Xof, refused};
+use super::{GroupKey, KeyShare, ThresholdError, ThresholdParams, refused};
 
 pub mod dkg {
     //! Distributed key generation: the Pedersen DKG with proofs of knowledge
@@ -15,7 +16,7 @@ pub mod dkg {
     //!
     //! Three steps per participant:
     //!
-    //! 1. [`start`]: broadcast the [`Round1Package`] to every participant.
+    //! 1. [`start_with_rng`]: broadcast the [`Round1Package`] to every participant.
     //! 2. [`exchange`] with every participant's [`Round1Package`]: send each
     //!    [`Round2Package`] privately to the participant it names in `to`.
     //! 3. [`finish`] with the round 1 packages and the round 2 packages
@@ -27,14 +28,16 @@ pub mod dkg {
 
     use std::collections::BTreeMap;
 
+    use rand_core::CryptoRngCore;
     use serde::{Deserialize, Serialize};
+    use zeroize::Zeroizing;
 
     use super::frost;
     use crate::threshold::{
         GroupKey, KeyShare, ParticipantId, ThresholdError, ThresholdParams, refused,
     };
 
-    /// The secret state a participant keeps between [`start`] and [`exchange`].
+    /// The secret state a participant keeps between [`start_with_rng`] and [`exchange`].
     pub struct Round1Secret {
         participant: ParticipantId,
         params: ThresholdParams,
@@ -51,13 +54,50 @@ pub mod dkg {
         }
     }
 
-    /// The public package a participant broadcasts after [`start`]: its
-    /// polynomial commitment and proof of knowledge.
+    impl Round1Secret {
+        /// The participant this state belongs to.
+        #[must_use]
+        pub fn participant(&self) -> ParticipantId {
+            self.participant
+        }
+
+        /// The group's threshold.
+        #[must_use]
+        pub fn params(&self) -> ThresholdParams {
+            self.params
+        }
+    }
+
+    /// The public package a participant broadcasts after [`start_with_rng`]:
+    /// its polynomial commitment and proof of knowledge.
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
     pub struct Round1Package {
         /// The participant that sent it.
         pub from: ParticipantId,
         package: frost::keys::dkg::round1::Package,
+    }
+
+    impl Round1Package {
+        /// The package as frost's bytes, without its sender.
+        ///
+        /// # Errors
+        ///
+        /// Refuses when frost cannot encode the package.
+        pub fn to_bytes(&self) -> Result<Vec<u8>, ThresholdError> {
+            self.package.serialize().map_err(refused)
+        }
+
+        /// The package `from` sent, read back from [`Round1Package::to_bytes`].
+        ///
+        /// # Errors
+        ///
+        /// Refuses bytes that are not a round 1 package.
+        pub fn from_bytes(from: ParticipantId, bytes: &[u8]) -> Result<Self, ThresholdError> {
+            Ok(Self {
+                from,
+                package: frost::keys::dkg::round1::Package::deserialize(bytes).map_err(refused)?,
+            })
+        }
     }
 
     /// The secret state a participant keeps between [`exchange`] and [`finish`].
@@ -74,6 +114,20 @@ pub mod dkg {
                 .field("params", &self.params)
                 .field("package", &"REDACTED")
                 .finish()
+        }
+    }
+
+    impl Round2Secret {
+        /// The participant this state belongs to.
+        #[must_use]
+        pub fn participant(&self) -> ParticipantId {
+            self.participant
+        }
+
+        /// The group's threshold.
+        #[must_use]
+        pub fn params(&self) -> ThresholdParams {
+            self.params
         }
     }
 
@@ -99,21 +153,69 @@ pub mod dkg {
         }
     }
 
-    /// Step 1: sample this participant's polynomial.
+    impl Round2Package {
+        /// The package as frost's bytes, without its sender and recipient.
+        /// They are secret: send them only to `to`.
+        ///
+        /// # Errors
+        ///
+        /// Refuses when frost cannot encode the package.
+        pub fn to_bytes(&self) -> Result<Zeroizing<Vec<u8>>, ThresholdError> {
+            self.package
+                .serialize()
+                .map(Zeroizing::new)
+                .map_err(refused)
+        }
+
+        /// The package `from` sent to `to`, read back from
+        /// [`Round2Package::to_bytes`].
+        ///
+        /// # Errors
+        ///
+        /// Refuses bytes that are not a round 2 package.
+        pub fn from_bytes(
+            from: ParticipantId,
+            to: ParticipantId,
+            bytes: &[u8],
+        ) -> Result<Self, ThresholdError> {
+            Ok(Self {
+                from,
+                to,
+                package: frost::keys::dkg::round2::Package::deserialize(bytes).map_err(refused)?,
+            })
+        }
+    }
+
+    /// Step 1: sample this participant's polynomial from the operating
+    /// system's randomness.
     ///
     /// # Errors
     ///
     /// Refuses a participant outside `1..=n`.
+    #[cfg(feature = "os-rng")]
     pub fn start(
         participant: ParticipantId,
         params: ThresholdParams,
+    ) -> Result<(Round1Secret, Round1Package), ThresholdError> {
+        start_with_rng(participant, params, &mut rand_core::OsRng)
+    }
+
+    /// Step 1: sample this participant's polynomial from `rng`.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a participant outside `1..=n`.
+    pub fn start_with_rng(
+        participant: ParticipantId,
+        params: ThresholdParams,
+        rng: &mut impl CryptoRngCore,
     ) -> Result<(Round1Secret, Round1Package), ThresholdError> {
         params.admits(participant)?;
         let (secret, package) = frost::keys::dkg::part1(
             participant.identifier(),
             params.max_signers(),
             params.min_signers(),
-            rand_core::OsRng,
+            &mut *rng,
         )
         .map_err(refused)?;
         Ok((
@@ -216,41 +318,37 @@ pub mod dkg {
     }
 }
 
-/// Generate a group with a trusted dealer: the test path.
-///
-/// The dealer samples the group secret and splits it, so the secret exists in
-/// this process while it runs. Use [`dkg`] for a key that must never exist
-/// in one piece.
+/// Generate a group with a trusted dealer from the operating system's
+/// randomness: the test path.
 ///
 /// # Errors
 ///
 /// Refuses when frost refuses the parameters.
+#[cfg(feature = "os-rng")]
 pub fn trusted_dealer(
     params: ThresholdParams,
 ) -> Result<(Vec<KeyShare>, GroupKey), ThresholdError> {
-    dealt(params, rand_core::OsRng)
+    trusted_dealer_with_rng(params, &mut rand_core::OsRng)
 }
 
-pub(crate) const PUBLIC_TEST_GROUP_CONTEXT: &str = "tameshi threshold public test group v1";
-
-/// The public 2-of-3 test group: dealt from a public seed, so every share is
-/// public and the group key proves integrity only, like
-/// [`LocalSigner::for_testing`](crate::signing::LocalSigner::for_testing).
-pub(crate) fn public_test_group() -> (Vec<KeyShare>, GroupKey) {
-    let params = ThresholdParams::new(2, 3).expect("2-of-3 is a threshold");
-    dealt(params, Xof::public(PUBLIC_TEST_GROUP_CONTEXT, b""))
-        .expect("the public test group deals from fixed parameters")
-}
-
-fn dealt<R: rand_core::RngCore + rand_core::CryptoRng>(
+/// Generate a group with a trusted dealer drawing from `rng`: the test path.
+///
+/// The dealer samples the group secret and splits it, so the secret exists in
+/// this process while it runs. Use [`dkg`] for a key that must never exist
+/// in one piece. The same `rng` stream deals the same shares.
+///
+/// # Errors
+///
+/// Refuses when frost refuses the parameters.
+pub fn trusted_dealer_with_rng(
     params: ThresholdParams,
-    rng: R,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<(Vec<KeyShare>, GroupKey), ThresholdError> {
     let (secret_shares, group) = frost::keys::generate_with_dealer(
         params.max_signers(),
         params.min_signers(),
         frost::keys::IdentifierList::Default,
-        rng,
+        &mut *rng,
     )
     .map_err(refused)?;
     let shares = secret_shares
@@ -260,4 +358,20 @@ fn dealt<R: rand_core::RngCore + rand_core::CryptoRng>(
         })
         .collect::<Result<Vec<_>, ThresholdError>>()?;
     Ok((shares, GroupKey::new(group)?))
+}
+
+#[cfg(feature = "full")]
+pub(crate) const PUBLIC_TEST_GROUP_CONTEXT: &str = "tameshi threshold public test group v1";
+
+/// The public 2-of-3 test group: dealt from a public seed, so every share is
+/// public and the group key proves integrity only, like
+/// [`LocalSigner::for_testing`](crate::signing::LocalSigner::for_testing).
+#[cfg(feature = "full")]
+pub(crate) fn public_test_group() -> (Vec<KeyShare>, GroupKey) {
+    let params = ThresholdParams::new(2, 3).expect("2-of-3 is a threshold");
+    trusted_dealer_with_rng(
+        params,
+        &mut super::Xof::public(PUBLIC_TEST_GROUP_CONTEXT, b""),
+    )
+    .expect("the public test group deals from fixed parameters")
 }
