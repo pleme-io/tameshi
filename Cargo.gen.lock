@@ -2,7 +2,7 @@
   "schema_version": 2,
   "cargo_lock_sha256": "8387bb47d08b188116c833272f29e02d25af40785b71ad83fba8900901f556ac",
   "manifest_sha256": {
-    "Cargo.toml": "cb040c65d45f764f41645cdf8549082af871f3d0bc01fda2df2409ef37567c88"
+    "Cargo.toml": "6879b57d9d09f08eb7e6a0dc8e8a8ae144f4ed2b0fe5f25a72a809db52863b34"
   },
   "target_resolves": {
     "base": {
@@ -7862,6 +7862,7 @@
         ],
         "build_dependencies": [],
         "features": [
+          "content-address",
           "default",
           "full",
           "os-rng",

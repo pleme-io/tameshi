@@ -25,6 +25,7 @@ required-features = ["full"]
 default = ["full"]
 full = [
     "os-rng",
+    "content-address",
     "dep:sha2",
     "dep:rs_merkle",
     "dep:serde_json",
@@ -43,6 +44,7 @@ full = [
     "dep:clap",
 ]
 os-rng = ["threshold", "rand_core/getrandom"]
+content-address = ["dep:serde_json"]
 threshold = ["dep:frost-ed25519", "dep:rand_core"]
 
 [dependencies]
@@ -111,6 +113,10 @@ pedantic = "warn"
 tokio-test = "0.4"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.6"
+
+[[test]]
+name = "content_address"
+required-features = ["content-address"]
 
 [[test]]
 name = "artifact_matrix"

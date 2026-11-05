@@ -47,6 +47,8 @@
 //!   caller. `default-features = false, features = ["threshold"]` links no
 //!   `tokio`, `reqwest`, `object_store`, `axum` or `ring`, and no entropy
 //!   source.
+//! - `content-address`: the `content_address` module alone, BLAKE3 over one
+//!   canonical JSON; it links `serde_json` and nothing heavier.
 
 macro_rules! full {
     ($($item:item)*) => {
@@ -106,6 +108,8 @@ full! {
     pub mod zk_bpf;
 }
 
+#[cfg(feature = "content-address")]
+pub mod content_address;
 #[cfg(any(feature = "full", feature = "threshold"))]
 mod ed25519;
 #[cfg(feature = "threshold")]

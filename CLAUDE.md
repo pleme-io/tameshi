@@ -18,13 +18,18 @@ Core library for the Unified Theory of Infrastructure Proof. Provides cryptograp
 cargo check
 cargo test          # 1834 tests (1712 lib + 122 across 6 integration files; counts include proptest, spec, doctests)
 cargo test --no-default-features --features threshold   # the lean build: the threshold module alone
+cargo test --no-default-features --features content-address   # ContentAddress alone (serde_json only)
 cargo build --release
 ```
 
 Features: `full` (default) is every module and the `tameshi` binary; `os-rng`
 adds the threshold entry points that draw from the operating system
 (`trusted_dealer`, `dkg::start`, `commit`); `threshold` is the threshold module
-alone with randomness from the caller. blue's runtime depends on
+alone with randomness from the caller. `content-address` is `content_address::ContentAddress`
+alone: BLAKE3 over one canonical JSON (keys sorted by byte order in a
+`BTreeMap` tree, compact, `b3:` text); a failed `Serialize`, a non-finite
+float, a non-string key or a duplicate key is refused, never hashed. Golden
+vectors: `tests/content_address.rs`. blue's runtime depends on
 `default-features = false, features = ["threshold"]`, which links no tokio,
 reqwest, object_store, axum, ring or getrandom.
 
