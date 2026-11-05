@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "8387bb47d08b188116c833272f29e02d25af40785b71ad83fba8900901f556ac",
+  "cargo_lock_sha256": "aee4f4f47485fa8e2f67b1b463d8da941fd85bdef7a2079ebd1202b491ddddb4",
   "manifest_sha256": {
-    "Cargo.toml": "6879b57d9d09f08eb7e6a0dc8e8a8ae144f4ed2b0fe5f25a72a809db52863b34"
+    "Cargo.toml": "27edf01d593e7debdf423f40b0ee19b6dc4cbb720d6f5d8ebd15e2205fd5e20f"
   },
   "target_resolves": {
     "base": {
@@ -786,7 +786,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "cc-1.10.0": {
+      "cc-1.11.0": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -5021,7 +5021,7 @@
         "runtime_dependencies": [
           {
             "name": "toml_edit",
-            "package_key": "toml_edit-0.25.17+spec-1.1.0",
+            "package_key": "toml_edit-0.25.18+spec-1.1.0",
             "kind": "normal",
             "features": [
               "parse"
@@ -7597,7 +7597,7 @@
           "proc-macro"
         ]
       },
-      "tameshi-0.1.9": {
+      "tameshi-0.1.10": {
         "runtime_dependencies": [
           {
             "name": "axum",
@@ -8564,7 +8564,7 @@
           "serde"
         ]
       },
-      "toml_edit-0.25.17+spec-1.1.0": {
+      "toml_edit-0.25.18+spec-1.1.0": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -8600,7 +8600,7 @@
           },
           {
             "name": "winnow",
-            "package_key": "winnow-1.0.4",
+            "package_key": "winnow-1.0.5",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -8618,7 +8618,7 @@
         "runtime_dependencies": [
           {
             "name": "winnow",
-            "package_key": "winnow-1.0.4",
+            "package_key": "winnow-1.0.5",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -9251,7 +9251,7 @@
           "std"
         ]
       },
-      "winnow-1.0.4": {
+      "winnow-1.0.5": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
@@ -9724,7 +9724,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -10221,7 +10221,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -10464,7 +10464,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -10914,7 +10914,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -11101,7 +11101,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -11551,7 +11551,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -11748,7 +11748,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -12277,7 +12277,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -12556,7 +12556,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -13038,7 +13038,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -13261,7 +13261,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -13743,7 +13743,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.10.0",
+                "package_key": "cc-1.11.0",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -14012,7 +14012,7 @@
     "cast-0.3.0": {
       "edition": "2018"
     },
-    "cc-1.10.0": {
+    "cc-1.11.0": {
       "edition": "2021"
     },
     "cfg-if-1.0.5": {
@@ -14714,7 +14714,7 @@
     "synstructure-0.14.0": {
       "edition": "2018"
     },
-    "tameshi-0.1.9": {
+    "tameshi-0.1.10": {
       "edition": "2024",
       "lib_target": {
         "name": "tameshi",
@@ -14778,7 +14778,7 @@
     "toml_edit-0.22.27": {
       "edition": "2021"
     },
-    "toml_edit-0.25.17+spec-1.1.0": {
+    "toml_edit-0.25.18+spec-1.1.0": {
       "edition": "2024"
     },
     "toml_parser-1.1.5+spec-1.1.0": {
@@ -14892,7 +14892,7 @@
     "winnow-0.7.15": {
       "edition": "2021"
     },
-    "winnow-1.0.4": {
+    "winnow-1.0.5": {
       "edition": "2021"
     },
     "writeable-0.6.4": {
