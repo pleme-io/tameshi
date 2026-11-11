@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "1fe248d5648db80e41557c6862a18bea9ec8ffe666b956a87721d609b917e697",
+  "cargo_lock_sha256": "eb29923b984cd5959a166ebf9edf721af6c888459aa729e314627e55cbfea5ca",
   "manifest_sha256": {
-    "Cargo.toml": "324c709dd19a445499b1114f82e0696f2b6e04eafa934df0c539d70d66de22e6"
+    "Cargo.toml": "265a75540ad64d70886a6f3fe97eea3998a1383e2e26aaf84340498f0b9e1890"
   },
   "target_resolves": {
     "base": {
@@ -122,7 +122,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "arc-swap-1.9.3": {
+      "arc-swap-1.9.5": {
         "runtime_dependencies": [
           {
             "name": "rustversion",
@@ -167,7 +167,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -296,7 +296,7 @@
           },
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -326,7 +326,7 @@
           },
           {
             "name": "mime",
-            "package_key": "mime-0.3.17",
+            "package_key": "mime-0.3.18",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -529,7 +529,7 @@
           },
           {
             "name": "mime",
-            "package_key": "mime-0.3.17",
+            "package_key": "mime-0.3.18",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -630,7 +630,7 @@
         "runtime_dependencies": [
           {
             "name": "bit_vec",
-            "package_key": "bit-vec-0.10.1",
+            "package_key": "bit-vec-0.10.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -645,7 +645,7 @@
           "std"
         ]
       },
-      "bit-vec-0.10.1": {
+      "bit-vec-0.10.2": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
@@ -751,7 +751,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "fold",
@@ -786,7 +786,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "cc-1.11.0": {
+      "cc-1.11.1": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -1074,7 +1074,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "full"
@@ -1581,7 +1581,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2387,7 +2387,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "full"
@@ -2533,7 +2533,7 @@
           "std"
         ]
       },
-      "gen-macros-0.1.55": {
+      "gen-macros-0.1.57": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -2572,11 +2572,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.55": {
+      "gen-platform-0.1.57": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.55",
+            "package_key": "gen-macros-0.1.57",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2586,7 +2586,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.55",
+            "package_key": "gen-types-0.1.57",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2640,7 +2640,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.55": {
+      "gen-types-0.1.57": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -3121,7 +3121,7 @@
           },
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -3350,7 +3350,7 @@
           },
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -3370,7 +3370,7 @@
           },
           {
             "name": "smallvec",
-            "package_key": "smallvec-1.16.4",
+            "package_key": "smallvec-1.16.5",
             "kind": "normal",
             "features": [
               "const_generics",
@@ -3500,7 +3500,7 @@
           },
           {
             "name": "webpki_roots",
-            "package_key": "webpki-roots-1.0.11",
+            "package_key": "webpki-roots-1.0.12",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -3868,7 +3868,7 @@
           },
           {
             "name": "smallvec",
-            "package_key": "smallvec-1.16.4",
+            "package_key": "smallvec-1.16.5",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -4086,7 +4086,7 @@
           },
           {
             "name": "smallvec",
-            "package_key": "smallvec-1.16.4",
+            "package_key": "smallvec-1.16.5",
             "kind": "normal",
             "features": [
               "const_generics"
@@ -4263,7 +4263,7 @@
           "use_std"
         ]
       },
-      "itoa-1.0.18": {
+      "itoa-1.0.19": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -4357,7 +4357,7 @@
           "std"
         ]
       },
-      "mime-0.3.17": {
+      "mime-0.3.18": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -4819,7 +4819,7 @@
           },
           {
             "name": "smallvec",
-            "package_key": "smallvec-1.16.4",
+            "package_key": "smallvec-1.16.5",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -5095,7 +5095,7 @@
         "runtime_dependencies": [
           {
             "name": "toml_edit",
-            "package_key": "toml_edit-0.25.18+spec-1.1.0",
+            "package_key": "toml_edit-0.25.19+spec-1.1.0",
             "kind": "normal",
             "features": [
               "parse"
@@ -5203,7 +5203,7 @@
           },
           {
             "name": "bit_vec",
-            "package_key": "bit-vec-0.10.1",
+            "package_key": "bit-vec-0.10.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -5897,7 +5897,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -6160,7 +6160,7 @@
           },
           {
             "name": "rustls_pki_types",
-            "package_key": "rustls-pki-types-1.15.1",
+            "package_key": "rustls-pki-types-1.16.0",
             "kind": "normal",
             "features": [
               "std"
@@ -6307,7 +6307,7 @@
           },
           {
             "name": "webpki_roots",
-            "package_key": "webpki-roots-1.0.11",
+            "package_key": "webpki-roots-1.0.12",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -6402,7 +6402,7 @@
           },
           {
             "name": "pki_types",
-            "package_key": "rustls-pki-types-1.15.1",
+            "package_key": "rustls-pki-types-1.16.0",
             "kind": "normal",
             "features": [
               "alloc"
@@ -6452,7 +6452,7 @@
           "tls12"
         ]
       },
-      "rustls-pki-types-1.15.1": {
+      "rustls-pki-types-1.16.0": {
         "runtime_dependencies": [
           {
             "name": "zeroize",
@@ -6488,7 +6488,7 @@
           },
           {
             "name": "pki_types",
-            "package_key": "rustls-pki-types-1.15.1",
+            "package_key": "rustls-pki-types-1.16.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -6788,7 +6788,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -6885,7 +6885,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -6970,7 +6970,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -6991,7 +6991,7 @@
         "runtime_dependencies": [
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7052,7 +7052,7 @@
           },
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7098,7 +7098,7 @@
         "runtime_dependencies": [
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7154,7 +7154,7 @@
           },
           {
             "name": "itoa",
-            "package_key": "itoa-1.0.18",
+            "package_key": "itoa-1.0.19",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7254,11 +7254,11 @@
           "std"
         ]
       },
-      "shikumi-0.1.1084": {
+      "shikumi-0.1.1086": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
-            "package_key": "arc-swap-1.9.3",
+            "package_key": "arc-swap-1.9.5",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7291,7 +7291,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.55",
+            "package_key": "gen-platform-0.1.57",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7301,7 +7301,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.55",
+            "package_key": "gen-types-0.1.57",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7311,7 +7311,7 @@
           },
           {
             "name": "notify",
-            "package_key": "notify-8.2.1",
+            "package_key": "notify-8.2.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -7321,7 +7321,7 @@
           },
           {
             "name": "notify",
-            "package_key": "notify-8.2.1",
+            "package_key": "notify-8.2.2",
             "kind": "normal",
             "features": [
               "macos_fsevent"
@@ -7449,7 +7449,7 @@
           "std"
         ]
       },
-      "smallvec-1.16.4": {
+      "smallvec-1.16.5": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
@@ -7562,7 +7562,7 @@
           "visit-mut"
         ]
       },
-      "syn-3.0.9": {
+      "syn-3.0.10": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -7653,7 +7653,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -7675,7 +7675,7 @@
           "proc-macro"
         ]
       },
-      "tameshi-0.1.10": {
+      "tameshi-0.1.11": {
         "runtime_dependencies": [
           {
             "name": "axum",
@@ -7874,7 +7874,7 @@
           },
           {
             "name": "shikumi",
-            "package_key": "shikumi-0.1.1084",
+            "package_key": "shikumi-0.1.1086",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -7926,7 +7926,7 @@
           },
           {
             "name": "uuid",
-            "package_key": "uuid-1.29.0",
+            "package_key": "uuid-1.29.2",
             "kind": "normal",
             "features": [
               "serde",
@@ -8063,7 +8063,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -8305,7 +8305,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "full"
@@ -8579,7 +8579,7 @@
           "serde"
         ]
       },
-      "toml_datetime-1.1.2+spec-1.1.0": {
+      "toml_datetime-1.1.3+spec-1.1.0": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
@@ -8662,7 +8662,7 @@
           "serde"
         ]
       },
-      "toml_edit-0.25.18+spec-1.1.0": {
+      "toml_edit-0.25.19+spec-1.1.0": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -8678,7 +8678,7 @@
           },
           {
             "name": "toml_datetime",
-            "package_key": "toml_datetime-1.1.2+spec-1.1.0",
+            "package_key": "toml_datetime-1.1.3+spec-1.1.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -9203,7 +9203,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "uuid-1.29.0": {
+      "uuid-1.29.2": {
         "runtime_dependencies": [
           {
             "name": "getrandom",
@@ -9212,7 +9212,7 @@
             "features": [],
             "uses_default_features": true,
             "optional": true,
-            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "target": "cfg(not(all(target_family = \"wasm\", any(target_os = \"unknown\", target_os = \"none\"))))",
             "tree": "target"
           },
           {
@@ -9382,11 +9382,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "webpki-roots-1.0.11": {
+      "webpki-roots-1.0.12": {
         "runtime_dependencies": [
           {
             "name": "pki_types",
-            "package_key": "rustls-pki-types-1.15.1",
+            "package_key": "rustls-pki-types-1.16.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -9496,7 +9496,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "fold",
@@ -9631,7 +9631,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "fold",
@@ -9821,7 +9821,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.9",
+            "package_key": "syn-3.0.10",
             "kind": "normal",
             "features": [
               "extra-traits"
@@ -9880,7 +9880,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -10168,7 +10168,7 @@
               "fallback"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -10377,7 +10377,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -10469,7 +10469,7 @@
             "runtime_dependencies": [
               {
                 "name": "pki_types",
-                "package_key": "rustls-pki-types-1.15.1",
+                "package_key": "rustls-pki-types-1.16.0",
                 "kind": "normal",
                 "features": [
                   "std"
@@ -10620,7 +10620,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -10924,7 +10924,7 @@
               "no_std"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -11070,7 +11070,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -11203,7 +11203,7 @@
               },
               {
                 "name": "pki_types",
-                "package_key": "rustls-pki-types-1.15.1",
+                "package_key": "rustls-pki-types-1.16.0",
                 "kind": "normal",
                 "features": [
                   "std"
@@ -11257,7 +11257,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -11561,7 +11561,7 @@
               "no_std"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -11707,7 +11707,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -11840,7 +11840,7 @@
               },
               {
                 "name": "pki_types",
-                "package_key": "rustls-pki-types-1.15.1",
+                "package_key": "rustls-pki-types-1.16.0",
                 "kind": "normal",
                 "features": [
                   "std"
@@ -11904,7 +11904,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -12244,7 +12244,7 @@
               "fallback"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "bitflags",
@@ -12433,7 +12433,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -12525,7 +12525,7 @@
             "runtime_dependencies": [
               {
                 "name": "pki_types",
-                "package_key": "rustls-pki-types-1.15.1",
+                "package_key": "rustls-pki-types-1.16.0",
                 "kind": "normal",
                 "features": [
                   "std"
@@ -12712,7 +12712,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -13068,7 +13068,7 @@
               "no_std"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -13194,7 +13194,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -13327,7 +13327,7 @@
               },
               {
                 "name": "pki_types",
-                "package_key": "rustls-pki-types-1.15.1",
+                "package_key": "rustls-pki-types-1.16.0",
                 "kind": "normal",
                 "features": [
                   "std"
@@ -13417,7 +13417,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -13773,7 +13773,7 @@
               "no_std"
             ]
           },
-          "notify-8.2.1": {
+          "notify-8.2.2": {
             "runtime_dependencies": [
               {
                 "name": "inotify",
@@ -13899,7 +13899,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.11.0",
+                "package_key": "cc-1.11.1",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": false,
@@ -14032,7 +14032,7 @@
               },
               {
                 "name": "pki_types",
-                "package_key": "rustls-pki-types-1.15.1",
+                "package_key": "rustls-pki-types-1.16.0",
                 "kind": "normal",
                 "features": [
                   "std"
@@ -14095,7 +14095,7 @@
     "anstyle-query-1.1.5": {
       "edition": "2021"
     },
-    "arc-swap-1.9.3": {
+    "arc-swap-1.9.5": {
       "edition": "2018"
     },
     "arrayvec-0.7.8": {
@@ -14132,7 +14132,7 @@
     "bit-set-0.11.1": {
       "edition": "2021"
     },
-    "bit-vec-0.10.1": {
+    "bit-vec-0.10.2": {
       "edition": "2021"
     },
     "bitflags-2.13.2": {
@@ -14168,7 +14168,7 @@
     "cast-0.3.0": {
       "edition": "2018"
     },
-    "cc-1.11.0": {
+    "cc-1.11.1": {
       "edition": "2021"
     },
     "cfg-if-1.0.5": {
@@ -14379,14 +14379,14 @@
     "futures-util-0.3.34": {
       "edition": "2018"
     },
-    "gen-macros-0.1.55": {
+    "gen-macros-0.1.57": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.55": {
+    "gen-platform-0.1.57": {
       "edition": "2024"
     },
-    "gen-types-0.1.55": {
+    "gen-types-0.1.57": {
       "edition": "2024"
     },
     "generic-array-0.14.7": {
@@ -14519,7 +14519,7 @@
     "itertools-0.14.0": {
       "edition": "2018"
     },
-    "itoa-1.0.18": {
+    "itoa-1.0.19": {
       "edition": "2021"
     },
     "libc-0.2.191": {
@@ -14557,13 +14557,13 @@
     "memchr-2.8.3": {
       "edition": "2021"
     },
-    "mime-0.3.17": {
+    "mime-0.3.18": {
       "edition": "2015"
     },
     "mio-1.2.4": {
       "edition": "2021"
     },
-    "notify-8.2.1": {
+    "notify-8.2.2": {
       "edition": "2021"
     },
     "notify-types-2.2.0": {
@@ -14732,7 +14732,7 @@
     "rustls-native-certs-0.8.5": {
       "edition": "2021"
     },
-    "rustls-pki-types-1.15.1": {
+    "rustls-pki-types-1.16.0": {
       "edition": "2021"
     },
     "rustls-webpki-0.103.16": {
@@ -14831,7 +14831,7 @@
     "sha2-0.10.9": {
       "edition": "2018"
     },
-    "shikumi-0.1.1084": {
+    "shikumi-0.1.1086": {
       "edition": "2024"
     },
     "shlex-2.0.1": {
@@ -14846,7 +14846,7 @@
     "slab-0.4.12": {
       "edition": "2018"
     },
-    "smallvec-1.16.4": {
+    "smallvec-1.16.5": {
       "edition": "2018"
     },
     "socket2-0.6.5": {
@@ -14870,7 +14870,7 @@
     "syn-2.0.119": {
       "edition": "2021"
     },
-    "syn-3.0.9": {
+    "syn-3.0.10": {
       "edition": "2021"
     },
     "sync_wrapper-1.0.2": {
@@ -14879,7 +14879,7 @@
     "synstructure-0.14.0": {
       "edition": "2018"
     },
-    "tameshi-0.1.10": {
+    "tameshi-0.1.11": {
       "edition": "2024",
       "lib_target": {
         "name": "tameshi",
@@ -14937,13 +14937,13 @@
     "toml_datetime-0.6.11": {
       "edition": "2021"
     },
-    "toml_datetime-1.1.2+spec-1.1.0": {
+    "toml_datetime-1.1.3+spec-1.1.0": {
       "edition": "2024"
     },
     "toml_edit-0.22.27": {
       "edition": "2021"
     },
-    "toml_edit-0.25.18+spec-1.1.0": {
+    "toml_edit-0.25.19+spec-1.1.0": {
       "edition": "2024"
     },
     "toml_parser-1.1.5+spec-1.1.0": {
@@ -15018,7 +15018,7 @@
     "utf_types-1.0.0": {
       "edition": "2021"
     },
-    "uuid-1.29.0": {
+    "uuid-1.29.2": {
       "edition": "2021"
     },
     "version_check-0.9.5": {
@@ -15054,7 +15054,7 @@
     "want-0.3.2": {
       "edition": "2018"
     },
-    "webpki-roots-1.0.11": {
+    "webpki-roots-1.0.12": {
       "edition": "2021"
     },
     "winnow-0.7.15": {
