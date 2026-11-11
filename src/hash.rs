@@ -129,6 +129,12 @@ impl Blake3Hash {
     }
 }
 
+/// Compare a BLAKE3 keyed hash with a tag in constant time.
+#[must_use]
+pub(crate) fn keyed_mac_matches(key: &[u8; 32], message: &[u8], tag: &[u8]) -> bool {
+    blake3::keyed_hash(key, message) == *tag
+}
+
 /// Encode each field as a u32 big-endian byte length followed by its bytes.
 ///
 /// The encoding is injective over field tuples, so `("AB","C")` and

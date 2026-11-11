@@ -26,6 +26,8 @@ default = ["full"]
 full = [
     "os-rng",
     "content-address",
+    "dep:vsss-rs",
+    "dep:ff",
     "dep:sha2",
     "dep:rs_merkle",
     "dep:serde_json",
@@ -64,6 +66,10 @@ ed25519-dalek = "2"
 frost-ed25519 = { version = "3", default-features = false, features = ["serialization"], optional = true }
 rand_core = { version = "0.6", default-features = false, optional = true }
 zeroize = "1"
+
+# Branch-free GF(256) field for Shamir sharing (src/shamir_dfc.rs).
+vsss-rs = { version = "6.0.1", default-features = false, optional = true }
+ff = { version = "0.14", default-features = false, optional = true }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

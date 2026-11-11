@@ -32,41 +32,20 @@ use crate::signing::{MerkleRootSigner, SignedRoot, SigningAlgorithm};
 // GF(256) Arithmetic
 // =========================================================================
 
-/// Multiply two elements in GF(256) using the AES irreducible polynomial.
+type Field = vsss_rs::Gf256;
+
 #[inline]
-fn gf256_mul(mut a: u8, mut b: u8) -> u8 {
-    let mut result: u8 = 0;
-    while b > 0 {
-        if b & 1 != 0 {
-            result ^= a;
-        }
-        let carry = a & 0x80;
-        a <<= 1;
-        if carry != 0 {
-            a ^= 0x1B; // x^8 + x^4 + x^3 + x + 1 (low byte of 0x11B)
-        }
-        b >>= 1;
-    }
-    result
+fn gf256_mul(a: u8, b: u8) -> u8 {
+    (Field::from(a) * Field::from(b)).0
 }
 
-/// Compute the multiplicative inverse in GF(256) using the extended Euclidean algorithm.
-/// Returns 0 for input 0 (which has no inverse, but we define it as 0 for convenience).
 #[inline]
 fn gf256_inv(a: u8) -> u8 {
-    if a == 0 {
-        return 0;
-    }
-    // a^254 = a^(-1) in GF(256) (since a^255 = 1 for all non-zero a)
-    let mut result = a;
-    for _ in 0..6 {
-        result = gf256_mul(result, result);
-        result = gf256_mul(result, a);
-    }
-    gf256_mul(result, result)
+    ff::Field::invert(&Field::from(a))
+        .unwrap_or(<Field as ff::Field>::ZERO)
+        .0
 }
 
-/// Divide in GF(256): a / b = a * b^(-1).
 #[inline]
 fn gf256_div(a: u8, b: u8) -> u8 {
     gf256_mul(a, gf256_inv(b))
@@ -135,92 +114,64 @@ pub struct Share {
 /// Split a secret into n shares with threshold k.
 ///
 /// Any k shares can reconstruct the secret. k-1 shares reveal nothing.
+/// The polynomial coefficients come from the operating system CSPRNG.
 ///
 /// # Panics
-/// Panics if k == 0, n < k, or n > 255.
+/// Panics if k == 0, n < k, or the operating system CSPRNG fails.
 #[must_use]
 pub fn split(secret: &[u8], k: u8, n: u8) -> Vec<Share> {
     assert!(k > 0, "threshold must be at least 1");
     assert!(n >= k, "n must be >= k");
-    assert!(n > 0, "n must be at least 1");
-
-    let mut shares: Vec<Share> = (1..=n)
-        .map(|x| Share {
-            x,
-            y: Vec::with_capacity(secret.len()),
-        })
-        .collect();
-
-    // For each byte of the secret, create a random polynomial of degree k-1
-    // and evaluate it at x=1, x=2, ..., x=n.
-    let mut rng_state: u64 = 0x5A5A_5A5A_5A5A_5A5A;
-    for &secret_byte in secret {
-        // Coefficients: a[0] = secret_byte, a[1..k-1] = random
-        let mut coeffs = vec![secret_byte];
-        for _ in 1..k {
-            // Simple deterministic PRNG for reproducibility in tests.
-            // In production, use a CSPRNG.
-            rng_state = rng_state
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1_442_695_040_888_963_407);
-            coeffs.push((rng_state >> 33) as u8);
-        }
-
-        // Evaluate polynomial at each share's x-coordinate
-        for share in &mut shares {
-            let mut y: u8 = 0;
-            let mut x_pow: u8 = 1; // x^0 = 1
-            for &coeff in &coeffs {
-                y ^= gf256_mul(coeff, x_pow);
-                x_pow = gf256_mul(x_pow, share.x);
-            }
-            share.y.push(y);
-        }
-    }
-
-    shares
+    let mut coefficients =
+        zeroize::Zeroizing::new(vec![0u8; (usize::from(k) - 1) * secret.len()]);
+    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut coefficients);
+    split_with_coefficients(secret, k, n, &coefficients)
 }
 
-/// Split a secret with explicit random coefficients (for deterministic testing).
+/// Split a secret with caller-supplied random coefficients.
 ///
-/// `random_bytes` must contain exactly `(k-1) * secret.len()` bytes.
+/// `random_bytes` holds the `(k-1) * secret.len()` coefficients, in order.
+/// The shares are only as secret as these bytes: they must come from a
+/// CSPRNG. Use this function for reproducible tests, or when the caller
+/// derives the coefficients from its own secret key. [`split`] draws them
+/// from the operating system.
+///
+/// # Panics
+/// Panics if k == 0, n < k, or `random_bytes` is shorter than needed.
 #[must_use]
 pub fn split_deterministic(secret: &[u8], k: u8, n: u8, random_bytes: &[u8]) -> Vec<Share> {
     assert!(k > 0 && n >= k);
-    let needed = (k as usize - 1) * secret.len();
+    let needed = (usize::from(k) - 1) * secret.len();
     assert!(
         random_bytes.len() >= needed,
         "need {} random bytes, got {}",
         needed,
         random_bytes.len()
     );
+    split_with_coefficients(secret, k, n, &random_bytes[..needed])
+}
 
+fn split_with_coefficients(secret: &[u8], k: u8, n: u8, coefficients: &[u8]) -> Vec<Share> {
+    let degree = usize::from(k) - 1;
     let mut shares: Vec<Share> = (1..=n)
         .map(|x| Share {
             x,
             y: Vec::with_capacity(secret.len()),
         })
         .collect();
-
-    let mut rand_idx = 0;
-    for &secret_byte in secret {
-        let mut coeffs = vec![secret_byte];
-        for _ in 1..k {
-            coeffs.push(random_bytes[rand_idx]);
-            rand_idx += 1;
-        }
-
+    for (index, &secret_byte) in secret.iter().enumerate() {
+        let higher = &coefficients[index * degree..(index + 1) * degree];
         for share in &mut shares {
-            let mut y: u8 = 0;
-            let mut x_pow: u8 = 1;
-            for &coeff in &coeffs {
-                y ^= gf256_mul(coeff, x_pow);
-                x_pow = gf256_mul(x_pow, share.x);
+            let x = Field::from(share.x);
+            let mut y = Field::from(secret_byte);
+            let mut x_pow = x;
+            for &coefficient in higher {
+                y += Field::from(coefficient) * x_pow;
+                x_pow *= x;
             }
-            share.y.push(y);
+            share.y.push(y.0);
         }
     }
-
     shares
 }
 
@@ -369,8 +320,11 @@ impl MerkleRootSigner for ShamirDfcSigner {
 
     async fn verify(&self, signed: &SignedRoot) -> crate::error::Result<bool> {
         let key = self.reconstruct_key();
-        let expected = blake3::keyed_hash(&key, &signed.root.0).as_bytes().to_vec();
-        Ok(expected == signed.signature)
+        Ok(crate::hash::keyed_mac_matches(
+            &key,
+            &signed.root.0,
+            &signed.signature,
+        ))
     }
 }
 
@@ -624,5 +578,75 @@ mod tests {
         let shares = scheme.split(&secret, 2, 3);
         let recovered = scheme.reconstruct(&shares[0..2]);
         assert_eq!(recovered, secret);
+    }
+
+    const SAMPLES: u32 = 25_600;
+    const CHI_SQUARE_LIMIT: f64 = 400.0;
+
+    fn chi_square(counts: &[u32; 256]) -> f64 {
+        let expected = f64::from(SAMPLES) / 256.0;
+        counts
+            .iter()
+            .map(|&count| {
+                let delta = f64::from(count) - expected;
+                delta * delta / expected
+            })
+            .sum()
+    }
+
+    #[test]
+    fn field_arithmetic_is_the_branch_free_vsss_gf256() {
+        assert_eq!(std::any::type_name::<Field>(), "vsss_rs::gf256::Gf256");
+        for a in 0..=255u8 {
+            for b in 0..=255u8 {
+                assert_eq!(gf256_mul(a, b), (vsss_rs::Gf256(a) * vsss_rs::Gf256(b)).0);
+            }
+            let expected = Option::<vsss_rs::Gf256>::from(ff::Field::invert(&vsss_rs::Gf256(a)))
+                .map_or(0, |inverse| inverse.0);
+            assert_eq!(gf256_inv(a), expected);
+        }
+    }
+
+    #[test]
+    fn two_splits_of_one_secret_draw_fresh_coefficients() {
+        let secret = [0x5A; 32];
+        let first = split(&secret, 3, 5);
+        let second = split(&secret, 3, 5);
+        assert_ne!(first, second);
+        assert_eq!(reconstruct(&first[..3]), secret);
+        assert_eq!(reconstruct(&second[2..]), secret);
+    }
+
+    #[test]
+    fn one_share_below_threshold_is_uniform_for_every_secret() {
+        for secret in [0x00u8, 0x01, 0x80, 0xFF] {
+            let mut counts = [0u32; 256];
+            for _ in 0..SAMPLES {
+                let shares = split(&[secret], 2, 3);
+                counts[usize::from(shares[1].y[0])] += 1;
+            }
+            let statistic = chi_square(&counts);
+            assert!(
+                statistic < CHI_SQUARE_LIMIT,
+                "secret {secret:#04x}: chi-square {statistic}"
+            );
+        }
+    }
+
+    #[test]
+    fn two_shares_below_threshold_are_jointly_uniform_for_every_secret() {
+        for secret in [0x00u8, 0x01, 0x80, 0xFF] {
+            let mut counts = [0u32; 256];
+            for _ in 0..SAMPLES {
+                let shares = split(&[secret], 3, 5);
+                let bin = (shares[0].y[0] & 0xF0) | (shares[3].y[0] >> 4);
+                counts[usize::from(bin)] += 1;
+            }
+            let statistic = chi_square(&counts);
+            assert!(
+                statistic < CHI_SQUARE_LIMIT,
+                "secret {secret:#04x}: chi-square {statistic}"
+            );
+        }
     }
 }

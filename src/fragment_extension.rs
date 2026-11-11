@@ -201,8 +201,8 @@ pub fn verify_extended(
     data: &Blake3Hash,
     signature: &[u8],
 ) -> bool {
-    let expected = sign_extended(frag_a, frag_b, root, data);
-    expected == signature
+    let key = reconstruct_key_extended(frag_a, frag_b, root);
+    crate::hash::keyed_mac_matches(&key, &data.0, signature)
 }
 
 #[cfg(test)]

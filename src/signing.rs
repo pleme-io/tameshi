@@ -545,8 +545,11 @@ impl MerkleRootSigner for MockDfcSigner {
 
     async fn verify(&self, signed: &SignedRoot) -> crate::error::Result<bool> {
         let key = self.reconstruct_key();
-        let expected = blake3::keyed_hash(&key, &signed.root.0).as_bytes().to_vec();
-        Ok(expected == signed.signature)
+        Ok(crate::hash::keyed_mac_matches(
+            &key,
+            &signed.root.0,
+            &signed.signature,
+        ))
     }
 }
 

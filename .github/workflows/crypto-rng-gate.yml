@@ -1,0 +1,8 @@
+name: crypto-rng-gate
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  gate:
+    uses: pleme-io/substrate/.github/workflows/crypto-rng-gate.yml@main
