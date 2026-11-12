@@ -49,6 +49,10 @@
 //!   source.
 //! - `content-address`: the `content_address` module alone, BLAKE3 over one
 //!   canonical JSON; it links `serde_json` and nothing heavier.
+//! - `merkle`: the `hash`, `merkle` and `sparse_merkle` modules alone:
+//!   `Blake3Hash`, the domain-separated leaf root with its inclusion proofs,
+//!   and the sparse Merkle tree. It links `blake3`, `rs_merkle`, `serde` and
+//!   `const-hex`.
 
 macro_rules! full {
     ($($item:item)*) => {
@@ -85,10 +89,8 @@ full! {
     pub mod fragment_extension;
     pub mod gating;
     pub mod global;
-    pub mod hash;
     pub mod heartbeat;
     pub mod iac_attestation;
-    pub mod merkle;
     pub mod node_salt;
     pub mod pedersen;
     pub mod receipt;
@@ -101,7 +103,6 @@ full! {
     pub mod signature;
     pub mod signing;
     pub mod smt_certification;
-    pub mod sparse_merkle;
     pub mod testing;
     pub mod traits;
     pub mod verify;
@@ -110,6 +111,12 @@ full! {
 
 #[cfg(feature = "content-address")]
 pub mod content_address;
+#[cfg(any(feature = "full", feature = "merkle"))]
+pub mod hash;
+#[cfg(any(feature = "full", feature = "merkle"))]
+pub mod merkle;
+#[cfg(any(feature = "full", feature = "merkle"))]
+pub mod sparse_merkle;
 #[cfg(any(feature = "full", feature = "threshold"))]
 mod ed25519;
 #[cfg(feature = "threshold")]

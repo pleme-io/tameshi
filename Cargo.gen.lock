@@ -2,7 +2,7 @@
   "schema_version": 2,
   "cargo_lock_sha256": "eb29923b984cd5959a166ebf9edf721af6c888459aa729e314627e55cbfea5ca",
   "manifest_sha256": {
-    "Cargo.toml": "265a75540ad64d70886a6f3fe97eea3998a1383e2e26aaf84340498f0b9e1890"
+    "Cargo.toml": "9e46ca0fa91ab2489315a4d5a724f6b766eca0a6d51036b2e0cb2143bcd6b305"
   },
   "target_resolves": {
     "base": {
@@ -7737,7 +7737,7 @@
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
-            "optional": false,
+            "optional": true,
             "target": null,
             "tree": "target"
           },
@@ -7898,7 +7898,7 @@
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
-            "optional": false,
+            "optional": true,
             "target": null,
             "tree": "target"
           },
@@ -7953,7 +7953,7 @@
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
-            "optional": false,
+            "optional": true,
             "target": null,
             "tree": "target"
           }
@@ -7963,6 +7963,7 @@
           "content-address",
           "default",
           "full",
+          "merkle",
           "os-rng",
           "threshold"
         ]

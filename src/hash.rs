@@ -5,6 +5,7 @@
 //! SHA-256 is available for interop with OCI manifests and Nix store paths.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
 use sha2::{Digest as Sha2Digest, Sha256};
 use std::fmt;
 use std::str::FromStr;
@@ -13,6 +14,7 @@ use std::str::FromStr;
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Blake3Hash(#[serde(with = "hex_bytes")] pub [u8; 32]);
 
+full! {
 impl schemars::JsonSchema for Blake3Hash {
     fn schema_name() -> String {
         "Blake3Hash".to_string()
@@ -25,6 +27,7 @@ impl schemars::JsonSchema for Blake3Hash {
             ..Default::default()
         })
     }
+}
 }
 
 impl AsRef<[u8]> for Blake3Hash {
@@ -103,6 +106,7 @@ impl Blake3Hash {
         format!("b3:{}", self.to_hex())
     }
 
+    #[cfg(feature = "full")]
     /// Parse the strict `b3:<64 lowercase hex>` form; anything else is refused.
     ///
     /// # Errors
@@ -129,10 +133,12 @@ impl Blake3Hash {
     }
 }
 
+full! {
 /// Compare a BLAKE3 keyed hash with a tag in constant time.
 #[must_use]
 pub(crate) fn keyed_mac_matches(key: &[u8; 32], message: &[u8], tag: &[u8]) -> bool {
     blake3::keyed_hash(key, message) == *tag
+}
 }
 
 /// Encode each field as a u32 big-endian byte length followed by its bytes.
@@ -154,6 +160,7 @@ pub fn length_prefixed(fields: &[&[u8]]) -> Vec<u8> {
     out
 }
 
+full! {
 const TREE_DOMAIN: &str = "tameshi tree v1";
 
 /// Hash a file or a directory tree.
@@ -219,6 +226,7 @@ fn is_executable(meta: &std::fs::Metadata) -> bool {
 fn is_executable(_meta: &std::fs::Metadata) -> bool {
     false
 }
+}
 
 impl fmt::Debug for Blake3Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -266,6 +274,7 @@ impl<'a> TryFrom<&'a str> for Blake3Hash {
     }
 }
 
+full! {
 /// A SHA-256 hash value (32 bytes).
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sha256Hash(#[serde(with = "hex_bytes")] pub [u8; 32]);
@@ -330,6 +339,7 @@ impl fmt::Display for Sha256Hash {
         write!(f, "{}", self.to_hex())
     }
 }
+}
 
 /// Hash arbitrary bytes with BLAKE3 and return hex string.
 #[inline]
@@ -338,6 +348,7 @@ pub fn blake3_hex(data: &[u8]) -> String {
     Blake3Hash::digest(data).to_hex()
 }
 
+full! {
 /// Hash a file's contents with BLAKE3 using streaming 64KB buffers.
 ///
 /// This avoids loading the entire file into memory, making it suitable
@@ -378,6 +389,7 @@ pub async fn blake3_file_async(path: &std::path::Path) -> crate::error::Result<B
     }
     Ok(Blake3Hash(hasher.finalize().into()))
 }
+}
 
 /// Hash a string with BLAKE3.
 #[inline]
@@ -386,6 +398,7 @@ pub fn blake3_str(s: &str) -> Blake3Hash {
     Blake3Hash::digest(s.as_bytes())
 }
 
+full! {
 /// Generic hasher trait for attestation hashing.
 ///
 /// Enables consumers to use different hash algorithms while maintaining
@@ -492,6 +505,7 @@ impl AttestationHasher for Sha256Hasher {
             .map_err(|e| crate::error::TameshiError::InvalidInput(format!("invalid hex: {e}")))
     }
 }
+}
 
 /// Serde helper for [u8; 32] as hex.
 mod hex_bytes {
@@ -522,7 +536,7 @@ mod hex_bytes {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full"))]
 mod tests {
     use super::*;
 

@@ -27,6 +27,7 @@ use rs_merkle::{Hasher as MerkleHasher, MerkleProof, MerkleTree};
 use serde::{Deserialize, Serialize};
 
 use crate::hash::Blake3Hash;
+#[cfg(feature = "full")]
 use crate::signature::{LayerSignature, MasterSignature};
 
 /// Domain-separated BLAKE3 hasher adapter for `rs_merkle`.
@@ -97,6 +98,7 @@ pub struct MerkleNode {
 }
 
 impl MerkleNode {
+    #[cfg(feature = "full")]
     /// Create a leaf node from a layer signature.
     ///
     /// Applies the `0x00` domain separation prefix so the leaf hash matches
@@ -127,6 +129,7 @@ impl MerkleNode {
     }
 }
 
+full! {
 /// Sort layer signatures by layer type for deterministic ordering.
 fn sorted_layers(layers: &[LayerSignature]) -> Vec<&LayerSignature> {
     let mut sorted: Vec<&LayerSignature> = layers.iter().collect();
@@ -153,6 +156,7 @@ fn layer_hashes(layers: &[LayerSignature]) -> Vec<Blake3Hash> {
         .into_iter()
         .map(|sig| sig.hash.clone())
         .collect()
+}
 }
 
 /// Build the domain-separated `rs_merkle` tree over leaves in the given order.
@@ -216,6 +220,7 @@ pub fn verify_leaf_inclusion(
     proof.verify(root.0, &[index], &[ds_leaf], total)
 }
 
+full! {
 /// Compute the Merkle root from a set of layer signatures.
 ///
 /// Signatures are sorted by [`LayerType`] to ensure deterministic ordering
@@ -317,8 +322,9 @@ pub fn verify_proof(
     let path: Vec<Blake3Hash> = proof_hashes.iter().map(|h| Blake3Hash(*h)).collect();
     verify_leaf_inclusion(&path, root, &leaf.hash, index, total)
 }
+}
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full"))]
 mod tests {
     use super::*;
     use crate::signature::LayerType;

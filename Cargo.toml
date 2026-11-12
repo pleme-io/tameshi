@@ -26,10 +26,13 @@ default = ["full"]
 full = [
     "os-rng",
     "content-address",
+    "merkle",
+    "dep:ed25519-dalek",
+    "dep:zeroize",
+    "dep:thiserror",
     "dep:vsss-rs",
     "dep:ff",
     "dep:sha2",
-    "dep:rs_merkle",
     "dep:serde_json",
     "dep:serde_norway",
     "dep:schemars",
@@ -46,8 +49,9 @@ full = [
     "dep:clap",
 ]
 os-rng = ["threshold", "rand_core/getrandom"]
-content-address = ["dep:serde_json"]
-threshold = ["dep:frost-ed25519", "dep:rand_core"]
+content-address = ["dep:serde_json", "dep:thiserror"]
+threshold = ["dep:frost-ed25519", "dep:rand_core", "dep:ed25519-dalek", "dep:zeroize", "dep:thiserror"]
+merkle = ["dep:rs_merkle"]
 
 [dependencies]
 # Cryptographic hashing
@@ -59,13 +63,13 @@ rs_merkle = { version = "1.4", optional = true }
 # Asymmetric signing — real public-key Ed25519 for LocalSigner / SignedRoot.
 # Deterministic (RFC 8032), seed-derived keypair, public-key-only verification.
 # Default features keep `zeroize` (secret hygiene on SigningKey) + `fast` + `std`.
-ed25519-dalek = "2"
+ed25519-dalek = { version = "2", optional = true }
 
 # Threshold Ed25519: FROST(Ed25519, SHA-512), RFC 9591, Zcash Foundation.
 # Wrapped by src/threshold.rs; no other module names it.
 frost-ed25519 = { version = "3", default-features = false, features = ["serialization"], optional = true }
 rand_core = { version = "0.6", default-features = false, optional = true }
-zeroize = "1"
+zeroize = { version = "1", optional = true }
 
 # Branch-free GF(256) field for Shamir sharing (src/shamir_dfc.rs).
 vsss-rs = { version = "6.0.1", default-features = false, optional = true }
@@ -96,7 +100,7 @@ object_store = { version = "0.13", features = ["aws"], optional = true }
 shikumi = { version = "0.1", optional = true }
 
 # Error handling
-thiserror = "2.0"
+thiserror = { version = "2.0", optional = true }
 
 # Logging
 tracing = { version = "0.1", optional = true }
@@ -119,6 +123,10 @@ pedantic = "warn"
 tokio-test = "0.4"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.6"
+
+[[test]]
+name = "merkle_lean"
+required-features = ["merkle"]
 
 [[test]]
 name = "content_address"

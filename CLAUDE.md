@@ -19,6 +19,7 @@ cargo check
 cargo test          # 1834 tests (1712 lib + 122 across 6 integration files; counts include proptest, spec, doctests)
 cargo test --no-default-features --features threshold   # the lean build: the threshold module alone
 cargo test --no-default-features --features content-address   # ContentAddress alone (serde_json only)
+cargo test --no-default-features --features merkle --test merkle_lean   # hash, merkle, sparse_merkle alone
 cargo build --release
 ```
 
@@ -29,7 +30,13 @@ alone with randomness from the caller. `content-address` is `content_address::Co
 alone: BLAKE3 over one canonical JSON (keys sorted by byte order in a
 `BTreeMap` tree, compact, `b3:` text); a failed `Serialize`, a non-finite
 float, a non-string key or a duplicate key is refused, never hashed. Golden
-vectors: `tests/content_address.rs`. blue's runtime depends on
+vectors: `tests/content_address.rs`. `merkle` is the `hash`, `merkle` and
+`sparse_merkle` modules alone (`Blake3Hash`, `compute_leaf_root`,
+`leaf_inclusion_proof`, `verify_leaf_inclusion`, `SparseMerkleTree`); it links
+blake3, rs_merkle, serde and const-hex, nothing else
+(`tests/merkle_lean.rs`). `ed25519-dalek`, `zeroize` and `thiserror` are
+optional: `full` and `threshold` link them, `content-address` links
+`thiserror`. blue's runtime depends on
 `default-features = false, features = ["threshold"]`, which links no tokio,
 reqwest, object_store, axum, ring or getrandom.
 
