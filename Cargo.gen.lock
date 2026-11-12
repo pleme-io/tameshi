@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "eb29923b984cd5959a166ebf9edf721af6c888459aa729e314627e55cbfea5ca",
+  "cargo_lock_sha256": "03d3c0475de95534ee436fd2cb045dd454096281fda7281810eef28005106430",
   "manifest_sha256": {
-    "Cargo.toml": "9e46ca0fa91ab2489315a4d5a724f6b766eca0a6d51036b2e0cb2143bcd6b305"
+    "Cargo.toml": "a1e4193e4e419de0ed714951d431a0ab3641fe97b63decf145a56e4184f8fb65"
   },
   "target_resolves": {
     "base": {
@@ -7675,7 +7675,7 @@
           "proc-macro"
         ]
       },
-      "tameshi-0.1.11": {
+      "tameshi-0.1.12": {
         "runtime_dependencies": [
           {
             "name": "axum",
@@ -14880,7 +14880,7 @@
     "synstructure-0.14.0": {
       "edition": "2018"
     },
-    "tameshi-0.1.11": {
+    "tameshi-0.1.12": {
       "edition": "2024",
       "lib_target": {
         "name": "tameshi",
