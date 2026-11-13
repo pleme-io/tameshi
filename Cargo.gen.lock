@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "03d3c0475de95534ee436fd2cb045dd454096281fda7281810eef28005106430",
+  "cargo_lock_sha256": "e57fd45344c6844c9883793376b1fbe375c48525fefce086177e4c7437f9ca52",
   "manifest_sha256": {
-    "Cargo.toml": "a1e4193e4e419de0ed714951d431a0ab3641fe97b63decf145a56e4184f8fb65"
+    "Cargo.toml": "a772cff9c395ccc470b323be165f46876fed6fa0dce42b64fb48c831d4ed6005"
   },
   "target_resolves": {
     "base": {
@@ -195,6 +195,95 @@
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
+      },
+      "aws-lc-rs-1.19.0": {
+        "runtime_dependencies": [
+          {
+            "name": "aws_lc_sys",
+            "package_key": "aws-lc-sys-0.47.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "zeroize",
+            "package_key": "zeroize-1.9.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "aws-lc-sys",
+          "prebuilt-nasm"
+        ]
+      },
+      "aws-lc-sys-0.47.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [
+          {
+            "name": "cc",
+            "package_key": "cc-1.11.1",
+            "kind": "build",
+            "features": [
+              "parallel"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "cmake",
+            "package_key": "cmake-0.1.58",
+            "kind": "build",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "dunce",
+            "package_key": "dunce-1.0.5",
+            "kind": "build",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "fs_extra",
+            "package_key": "fs_extra-1.3.0",
+            "kind": "build",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          },
+          {
+            "name": "pkg_config",
+            "package_key": "pkg-config-0.3.34",
+            "kind": "build",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(unix)",
+            "tree": "host"
+          }
+        ],
+        "features": [
+          "prebuilt-nasm"
+        ]
       },
       "axum-0.8.9": {
         "runtime_dependencies": [
@@ -676,6 +765,22 @@
         "build_dependencies": [],
         "features": []
       },
+      "block-buffer-0.12.1": {
+        "runtime_dependencies": [
+          {
+            "name": "hybrid_array",
+            "package_key": "hybrid-array-0.4.15",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "borsh-1.8.1": {
         "runtime_dependencies": [
           {
@@ -799,6 +904,26 @@
             "tree": "target"
           },
           {
+            "name": "jobserver",
+            "package_key": "jobserver-0.1.35",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "libc",
+            "package_key": "libc-0.2.191",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": "cfg(unix)",
+            "tree": "target"
+          },
+          {
             "name": "shlex",
             "package_key": "shlex-2.0.1",
             "kind": "normal",
@@ -810,7 +935,9 @@
           }
         ],
         "build_dependencies": [],
-        "features": []
+        "features": [
+          "parallel"
+        ]
       },
       "cfg-if-1.0.5": {
         "runtime_dependencies": [],
@@ -1095,6 +1222,22 @@
         "build_dependencies": [],
         "features": []
       },
+      "cmake-0.1.58": {
+        "runtime_dependencies": [
+          {
+            "name": "cc",
+            "package_key": "cc-1.11.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "cobs-0.3.0": {
         "runtime_dependencies": [
           {
@@ -1138,6 +1281,76 @@
         "build_dependencies": [],
         "features": [
           "default"
+        ]
+      },
+      "crc-fast-1.10.0": {
+        "runtime_dependencies": [
+          {
+            "name": "digest",
+            "package_key": "digest-0.10.7",
+            "kind": "normal",
+            "features": [
+              "alloc"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "spin",
+            "package_key": "spin-0.10.1",
+            "kind": "normal",
+            "features": [
+              "mutex",
+              "once",
+              "rwlock",
+              "spin_mutex"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(target_arch = \"aarch64\")",
+            "tree": "target"
+          },
+          {
+            "name": "spin",
+            "package_key": "spin-0.10.1",
+            "kind": "normal",
+            "features": [
+              "mutex",
+              "once",
+              "rwlock",
+              "spin_mutex"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(target_arch = \"x86\")",
+            "tree": "target"
+          },
+          {
+            "name": "spin",
+            "package_key": "spin-0.10.1",
+            "kind": "normal",
+            "features": [
+              "mutex",
+              "once",
+              "rwlock",
+              "spin_mutex"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(target_arch = \"x86_64\")",
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "alloc",
+          "default",
+          "digest",
+          "ffi",
+          "panic-handler",
+          "std"
         ]
       },
       "criterion-0.5.1": {
@@ -1454,6 +1667,22 @@
           "std"
         ]
       },
+      "crypto-common-0.2.2": {
+        "runtime_dependencies": [
+          {
+            "name": "hybrid_array",
+            "package_key": "hybrid-array-0.4.15",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "der-0.7.10": {
         "runtime_dependencies": [
           {
@@ -1557,6 +1786,35 @@
           "std"
         ]
       },
+      "digest-0.11.3": {
+        "runtime_dependencies": [
+          {
+            "name": "block_buffer",
+            "package_key": "block-buffer-0.12.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "common",
+            "package_key": "crypto-common-0.2.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "block-api",
+          "default"
+        ]
+      },
       "displaydoc-0.2.7": {
         "runtime_dependencies": [
           {
@@ -1610,6 +1868,11 @@
         "features": [
           "default"
         ]
+      },
+      "dunce-1.0.5": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "dyn-clone-1.0.20": {
         "runtime_dependencies": [],
@@ -2189,6 +2452,11 @@
           "serde",
           "serialization"
         ]
+      },
+      "fs_extra-1.3.0": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "futures-0.3.34": {
         "runtime_dependencies": [
@@ -3459,16 +3727,6 @@
             "tree": "target"
           },
           {
-            "name": "rustls_native_certs",
-            "package_key": "rustls-native-certs-0.8.5",
-            "kind": "normal",
-            "features": [],
-            "uses_default_features": true,
-            "optional": true,
-            "target": null,
-            "tree": "target"
-          },
-          {
             "name": "tokio",
             "package_key": "tokio-1.54.1",
             "kind": "normal",
@@ -3511,11 +3769,10 @@
         ],
         "build_dependencies": [],
         "features": [
+          "aws-lc-rs",
           "http1",
           "http2",
-          "native-tokio",
           "ring",
-          "rustls-native-certs",
           "tls12",
           "webpki-roots",
           "webpki-tokio"
@@ -4257,6 +4514,22 @@
           }
         ],
         "build_dependencies": [],
+        "features": []
+      },
+      "itertools-0.15.0": {
+        "runtime_dependencies": [
+          {
+            "name": "either",
+            "package_key": "either-1.19.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
         "features": [
           "default",
           "use_alloc",
@@ -4268,11 +4541,28 @@
         "build_dependencies": [],
         "features": []
       },
+      "jobserver-0.1.35": {
+        "runtime_dependencies": [
+          {
+            "name": "libc",
+            "package_key": "libc-0.2.191",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(unix)",
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": []
+      },
       "libc-0.2.191": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
           "default",
+          "extra_traits",
           "std"
         ]
       },
@@ -4322,7 +4612,7 @@
           "default"
         ]
       },
-      "md-5-0.10.6": {
+      "md-5-0.11.0": {
         "runtime_dependencies": [
           {
             "name": "cfg_if",
@@ -4336,7 +4626,7 @@
           },
           {
             "name": "digest",
-            "package_key": "digest-0.10.7",
+            "package_key": "digest-0.11.3",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -4394,6 +4684,55 @@
           "os-poll"
         ]
       },
+      "nix-0.31.3": {
+        "runtime_dependencies": [
+          {
+            "name": "bitflags",
+            "package_key": "bitflags-2.13.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "cfg_if",
+            "package_key": "cfg-if-1.0.5",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "libc",
+            "package_key": "libc-0.2.191",
+            "kind": "normal",
+            "features": [
+              "extra_traits"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [
+          {
+            "name": "cfg_aliases",
+            "package_key": "cfg_aliases-0.2.2",
+            "kind": "build",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "host"
+          }
+        ],
+        "features": []
+      },
       "notify-types-2.2.0": {
         "runtime_dependencies": [
           {
@@ -4429,7 +4768,7 @@
           "std"
         ]
       },
-      "object_store-0.13.2": {
+      "object_store-0.14.2": {
         "runtime_dependencies": [
           {
             "name": "async_trait",
@@ -4442,8 +4781,18 @@
             "tree": "host"
           },
           {
+            "name": "aws_lc_rs",
+            "package_key": "aws-lc-rs-1.19.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
             "name": "base64",
-            "package_key": "base64-0.22.1",
+            "package_key": "base64-0.23.1",
             "kind": "normal",
             "features": [
               "std"
@@ -4472,6 +4821,16 @@
             ],
             "uses_default_features": false,
             "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "crc_fast",
+            "package_key": "crc-fast-1.10.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
             "target": null,
             "tree": "target"
           },
@@ -4549,7 +4908,7 @@
           },
           {
             "name": "itertools",
-            "package_key": "itertools-0.14.0",
+            "package_key": "itertools-0.15.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -4559,12 +4918,22 @@
           },
           {
             "name": "md5",
-            "package_key": "md-5-0.10.6",
+            "package_key": "md-5-0.11.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
             "optional": false,
             "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "nix",
+            "package_key": "nix-0.31.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": "cfg(target_family = \"unix\")",
             "tree": "target"
           },
           {
@@ -4589,7 +4958,7 @@
           },
           {
             "name": "quick_xml",
-            "package_key": "quick-xml-0.39.4",
+            "package_key": "quick-xml-0.41.0",
             "kind": "normal",
             "features": [
               "overlapped-lists",
@@ -4616,11 +4985,10 @@
           },
           {
             "name": "reqwest",
-            "package_key": "reqwest-0.12.28",
+            "package_key": "reqwest-0.13.5",
             "kind": "normal",
             "features": [
-              "http2",
-              "rustls-tls-native-roots"
+              "http2"
             ],
             "uses_default_features": false,
             "optional": true,
@@ -4628,8 +4996,8 @@
             "tree": "target"
           },
           {
-            "name": "ring",
-            "package_key": "ring-0.17.14",
+            "name": "rustls_pki_types",
+            "package_key": "rustls-pki-types-1.16.0",
             "kind": "normal",
             "features": [
               "std"
@@ -4733,23 +5101,28 @@
         "build_dependencies": [],
         "features": [
           "aws",
+          "aws-base",
+          "aws-lc-rs",
           "base64",
-          "cloud",
+          "cloud-base",
+          "crc-fast",
           "default",
           "form_urlencoded",
           "fs",
           "http-body-util",
           "hyper",
           "md-5",
+          "nix",
           "quick-xml",
           "rand",
           "reqwest",
-          "ring",
+          "rustls-pki-types",
           "serde",
           "serde_json",
           "serde_urlencoded",
           "tokio",
-          "walkdir"
+          "walkdir",
+          "windows-sys"
         ]
       },
       "once_cell-1.21.4": {
@@ -4965,6 +5338,11 @@
           "alloc",
           "std"
         ]
+      },
+      "pkg-config-0.3.34": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "plotters-0.3.7": {
         "runtime_dependencies": [
@@ -5334,7 +5712,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "quick-xml-0.39.4": {
+      "quick-xml-0.41.0": {
         "runtime_dependencies": [
           {
             "name": "memchr",
@@ -5489,14 +5867,26 @@
           }
         ],
         "features": [
+          "aws-lc-rs",
           "ring",
           "runtime-tokio",
           "rustls",
+          "rustls-aws-lc-rs",
           "rustls-ring"
         ]
       },
       "quinn-proto-0.11.19": {
         "runtime_dependencies": [
+          {
+            "name": "aws_lc_rs",
+            "package_key": "aws-lc-rs-1.19.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
           {
             "name": "bytes",
             "package_key": "bytes-1.12.1",
@@ -5629,7 +6019,9 @@
         ],
         "build_dependencies": [],
         "features": [
+          "aws-lc-rs",
           "ring",
+          "rustls-aws-lc-rs",
           "rustls-ring"
         ]
       },
@@ -6014,26 +6406,6 @@
             "tree": "target"
           },
           {
-            "name": "futures_util",
-            "package_key": "futures-util-0.3.34",
-            "kind": "normal",
-            "features": [],
-            "uses_default_features": false,
-            "optional": true,
-            "target": null,
-            "tree": "target"
-          },
-          {
-            "name": "h2",
-            "package_key": "h2-0.4.20",
-            "kind": "normal",
-            "features": [],
-            "uses_default_features": true,
-            "optional": true,
-            "target": "cfg(not(target_arch = \"wasm32\"))",
-            "tree": "target"
-          },
-          {
             "name": "http",
             "package_key": "http-1.5.0",
             "kind": "normal",
@@ -6149,16 +6521,6 @@
             "tree": "target"
           },
           {
-            "name": "rustls_native_certs",
-            "package_key": "rustls-native-certs-0.8.5",
-            "kind": "normal",
-            "features": [],
-            "uses_default_features": true,
-            "optional": true,
-            "target": "cfg(not(target_arch = \"wasm32\"))",
-            "tree": "target"
-          },
-          {
             "name": "rustls_pki_types",
             "package_key": "rustls-pki-types-1.16.0",
             "kind": "normal",
@@ -6248,18 +6610,6 @@
             "tree": "target"
           },
           {
-            "name": "tokio_util",
-            "package_key": "tokio-util-0.7.20",
-            "kind": "normal",
-            "features": [
-              "io"
-            ],
-            "uses_default_features": false,
-            "optional": true,
-            "target": "cfg(not(target_arch = \"wasm32\"))",
-            "tree": "target"
-          },
-          {
             "name": "tower",
             "package_key": "tower-0.5.3",
             "kind": "normal",
@@ -6321,14 +6671,304 @@
           "__rustls",
           "__rustls-ring",
           "__tls",
-          "h2",
-          "http2",
           "json",
           "rustls-tls",
-          "rustls-tls-native-roots",
-          "rustls-tls-native-roots-no-provider",
           "rustls-tls-webpki-roots",
-          "rustls-tls-webpki-roots-no-provider",
+          "rustls-tls-webpki-roots-no-provider"
+        ]
+      },
+      "reqwest-0.13.5": {
+        "runtime_dependencies": [
+          {
+            "name": "base64",
+            "package_key": "base64-0.23.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "bytes",
+            "package_key": "bytes-1.12.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "futures_core",
+            "package_key": "futures-core-0.3.34",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "futures_util",
+            "package_key": "futures-util-0.3.34",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "h2",
+            "package_key": "h2-0.4.20",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "http",
+            "package_key": "http-1.5.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "http_body",
+            "package_key": "http-body-1.1.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "http_body_util",
+            "package_key": "http-body-util-0.1.5",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "hyper",
+            "package_key": "hyper-1.12.0",
+            "kind": "normal",
+            "features": [
+              "client",
+              "http1"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "hyper_rustls",
+            "package_key": "hyper-rustls-0.27.10",
+            "kind": "normal",
+            "features": [
+              "http1",
+              "tls12"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "hyper_util",
+            "package_key": "hyper-util-0.1.21",
+            "kind": "normal",
+            "features": [
+              "client",
+              "client-legacy",
+              "client-proxy",
+              "http1",
+              "tokio"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "log",
+            "package_key": "log-0.4.35",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "percent_encoding",
+            "package_key": "percent-encoding-2.3.2",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "pin_project_lite",
+            "package_key": "pin-project-lite-0.2.17",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "rustls",
+            "package_key": "rustls-0.23.46",
+            "kind": "normal",
+            "features": [
+              "std",
+              "tls12"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "rustls_pki_types",
+            "package_key": "rustls-pki-types-1.16.0",
+            "kind": "normal",
+            "features": [
+              "std"
+            ],
+            "uses_default_features": true,
+            "optional": true,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "rustls_platform_verifier",
+            "package_key": "rustls-platform-verifier-0.7.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "sync_wrapper",
+            "package_key": "sync_wrapper-1.0.2",
+            "kind": "normal",
+            "features": [
+              "futures"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "tokio",
+            "package_key": "tokio-1.54.1",
+            "kind": "normal",
+            "features": [
+              "net",
+              "time"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "tokio_rustls",
+            "package_key": "tokio-rustls-0.26.6",
+            "kind": "normal",
+            "features": [
+              "tls12"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "tokio_util",
+            "package_key": "tokio-util-0.7.20",
+            "kind": "normal",
+            "features": [
+              "io"
+            ],
+            "uses_default_features": false,
+            "optional": true,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "tower",
+            "package_key": "tower-0.5.3",
+            "kind": "normal",
+            "features": [
+              "retry",
+              "timeout",
+              "util"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "tower_http",
+            "package_key": "tower-http-0.6.11",
+            "kind": "normal",
+            "features": [
+              "follow-redirect"
+            ],
+            "uses_default_features": false,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "tower_service",
+            "package_key": "tower-service-0.3.3",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": "cfg(not(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\"))))",
+            "tree": "target"
+          },
+          {
+            "name": "url",
+            "package_key": "url-2.5.8",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "__rustls",
+          "__rustls-aws-lc-rs",
+          "__tls",
+          "http2",
+          "rustls",
           "stream"
         ]
       },
@@ -6377,6 +7017,16 @@
       },
       "rustls-0.23.46": {
         "runtime_dependencies": [
+          {
+            "name": "aws_lc_rs",
+            "package_key": "aws-lc-rs-1.19.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
           {
             "name": "once_cell",
             "package_key": "once_cell-1.21.4",
@@ -6447,6 +7097,8 @@
         ],
         "build_dependencies": [],
         "features": [
+          "aws-lc-rs",
+          "aws_lc_rs",
           "ring",
           "std",
           "tls12"
@@ -6476,6 +7128,16 @@
       },
       "rustls-webpki-0.103.16": {
         "runtime_dependencies": [
+          {
+            "name": "aws_lc_rs",
+            "package_key": "aws-lc-rs-1.19.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": false,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
           {
             "name": "ring",
             "package_key": "ring-0.17.14",
@@ -6510,6 +7172,7 @@
         "build_dependencies": [],
         "features": [
           "alloc",
+          "aws-lc-rs",
           "ring",
           "std"
         ]
@@ -7475,6 +8138,16 @@
           "all"
         ]
       },
+      "spin-0.10.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": [
+          "mutex",
+          "once",
+          "rwlock",
+          "spin_mutex"
+        ]
+      },
       "spki-0.7.3": {
         "runtime_dependencies": [
           {
@@ -7775,7 +8448,7 @@
           },
           {
             "name": "object_store",
-            "package_key": "object_store-0.13.2",
+            "package_key": "object_store-0.14.2",
             "kind": "normal",
             "features": [
               "aws"
@@ -8347,6 +9020,8 @@
         ],
         "build_dependencies": [],
         "features": [
+          "aws-lc-rs",
+          "aws_lc_rs",
           "ring",
           "tls12"
         ]
@@ -10391,7 +11066,6 @@
               "alloc",
               "default",
               "dev_urandom_fallback",
-              "std",
               "wasm32_unknown_unknown_js"
             ]
           },
@@ -10466,16 +11140,46 @@
               "std"
             ]
           },
-          "rustls-native-certs-0.8.5": {
+          "rustls-platform-verifier-0.7.1": {
             "runtime_dependencies": [
               {
-                "name": "pki_types",
-                "package_key": "rustls-pki-types-1.16.0",
+                "name": "core_foundation",
+                "package_key": "core-foundation-0.10.1",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(any(target_vendor = \"apple\"))",
+                "tree": "target"
+              },
+              {
+                "name": "core_foundation_sys",
+                "package_key": "core-foundation-sys-0.8.7",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(any(target_vendor = \"apple\"))",
+                "tree": "target"
+              },
+              {
+                "name": "log",
+                "package_key": "log-0.4.35",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls",
+                "package_key": "rustls-0.23.46",
                 "kind": "normal",
                 "features": [
                   "std"
                 ],
-                "uses_default_features": true,
+                "uses_default_features": false,
                 "optional": false,
                 "target": null,
                 "tree": "target"
@@ -10487,7 +11191,17 @@
                 "features": [],
                 "uses_default_features": true,
                 "optional": false,
-                "target": "cfg(target_os = \"macos\")",
+                "target": "cfg(any(target_vendor = \"apple\"))",
+                "tree": "target"
+              },
+              {
+                "name": "security_framework_sys",
+                "package_key": "security-framework-sys-2.17.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(any(target_vendor = \"apple\"))",
                 "tree": "target"
               }
             ],
@@ -10579,7 +11293,10 @@
               }
             ],
             "build_dependencies": [],
-            "features": []
+            "features": [
+              "OSX_10_13",
+              "default"
+            ]
           }
         }
       },
@@ -11084,7 +11801,6 @@
               "alloc",
               "default",
               "dev_urandom_fallback",
-              "std",
               "wasm32_unknown_unknown_js"
             ]
           },
@@ -11212,6 +11928,74 @@
                 "uses_default_features": true,
                 "optional": false,
                 "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": []
+          },
+          "rustls-platform-verifier-0.7.1": {
+            "runtime_dependencies": [
+              {
+                "name": "log",
+                "package_key": "log-0.4.35",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls",
+                "package_key": "rustls-0.23.46",
+                "kind": "normal",
+                "features": [
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls_native_certs",
+                "package_key": "rustls-native-certs-0.8.5",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_arch = \"wasm32\")",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_os = \"android\")",
                 "tree": "target"
               }
             ],
@@ -11721,7 +12505,6 @@
               "alloc",
               "default",
               "dev_urandom_fallback",
-              "std",
               "wasm32_unknown_unknown_js"
             ]
           },
@@ -11849,6 +12632,74 @@
                 "uses_default_features": true,
                 "optional": false,
                 "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": []
+          },
+          "rustls-platform-verifier-0.7.1": {
+            "runtime_dependencies": [
+              {
+                "name": "log",
+                "package_key": "log-0.4.35",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls",
+                "package_key": "rustls-0.23.46",
+                "kind": "normal",
+                "features": [
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls_native_certs",
+                "package_key": "rustls-native-certs-0.8.5",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_arch = \"wasm32\")",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_os = \"android\")",
                 "tree": "target"
               }
             ],
@@ -12447,7 +13298,6 @@
               "alloc",
               "default",
               "dev_urandom_fallback",
-              "std",
               "wasm32_unknown_unknown_js"
             ]
           },
@@ -12522,16 +13372,46 @@
               "std"
             ]
           },
-          "rustls-native-certs-0.8.5": {
+          "rustls-platform-verifier-0.7.1": {
             "runtime_dependencies": [
               {
-                "name": "pki_types",
-                "package_key": "rustls-pki-types-1.16.0",
+                "name": "core_foundation",
+                "package_key": "core-foundation-0.10.1",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(any(target_vendor = \"apple\"))",
+                "tree": "target"
+              },
+              {
+                "name": "core_foundation_sys",
+                "package_key": "core-foundation-sys-0.8.7",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(any(target_vendor = \"apple\"))",
+                "tree": "target"
+              },
+              {
+                "name": "log",
+                "package_key": "log-0.4.35",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls",
+                "package_key": "rustls-0.23.46",
                 "kind": "normal",
                 "features": [
                   "std"
                 ],
-                "uses_default_features": true,
+                "uses_default_features": false,
                 "optional": false,
                 "target": null,
                 "tree": "target"
@@ -12543,7 +13423,17 @@
                 "features": [],
                 "uses_default_features": true,
                 "optional": false,
-                "target": "cfg(target_os = \"macos\")",
+                "target": "cfg(any(target_vendor = \"apple\"))",
+                "tree": "target"
+              },
+              {
+                "name": "security_framework_sys",
+                "package_key": "security-framework-sys-2.17.0",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(any(target_vendor = \"apple\"))",
                 "tree": "target"
               }
             ],
@@ -12635,7 +13525,10 @@
               }
             ],
             "build_dependencies": [],
-            "features": []
+            "features": [
+              "OSX_10_13",
+              "default"
+            ]
           },
           "spin-0.9.9": {
             "runtime_dependencies": [
@@ -13208,7 +14101,6 @@
               "alloc",
               "default",
               "dev_urandom_fallback",
-              "std",
               "wasm32_unknown_unknown_js"
             ]
           },
@@ -13336,6 +14228,74 @@
                 "uses_default_features": true,
                 "optional": false,
                 "target": null,
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": []
+          },
+          "rustls-platform-verifier-0.7.1": {
+            "runtime_dependencies": [
+              {
+                "name": "log",
+                "package_key": "log-0.4.35",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls",
+                "package_key": "rustls-0.23.46",
+                "kind": "normal",
+                "features": [
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls_native_certs",
+                "package_key": "rustls-native-certs-0.8.5",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_arch = \"wasm32\")",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_os = \"android\")",
                 "tree": "target"
               }
             ],
@@ -13913,7 +14873,6 @@
               "alloc",
               "default",
               "dev_urandom_fallback",
-              "std",
               "wasm32_unknown_unknown_js"
             ]
           },
@@ -14047,6 +15006,74 @@
             "build_dependencies": [],
             "features": []
           },
+          "rustls-platform-verifier-0.7.1": {
+            "runtime_dependencies": [
+              {
+                "name": "log",
+                "package_key": "log-0.4.35",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls",
+                "package_key": "rustls-0.23.46",
+                "kind": "normal",
+                "features": [
+                  "std"
+                ],
+                "uses_default_features": false,
+                "optional": false,
+                "target": null,
+                "tree": "target"
+              },
+              {
+                "name": "rustls_native_certs",
+                "package_key": "rustls-native-certs-0.8.5",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": true,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(all(unix, not(target_os = \"android\"), not(target_vendor = \"apple\"), not(target_arch = \"wasm32\")))",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_arch = \"wasm32\")",
+                "tree": "target"
+              },
+              {
+                "name": "webpki",
+                "package_key": "rustls-webpki-0.103.16",
+                "kind": "normal",
+                "features": [],
+                "uses_default_features": false,
+                "optional": false,
+                "target": "cfg(target_os = \"android\")",
+                "tree": "target"
+              }
+            ],
+            "build_dependencies": [],
+            "features": []
+          },
           "spin-0.9.9": {
             "runtime_dependencies": [
               {
@@ -14112,6 +15139,16 @@
     "autocfg-1.5.1": {
       "edition": "2015"
     },
+    "aws-lc-rs-1.19.0": {
+      "edition": "2021",
+      "build_script": "build.rs",
+      "links": "aws_lc_rs_1_19_0_sys"
+    },
+    "aws-lc-sys-0.47.0": {
+      "edition": "2021",
+      "build_script": "builder/main.rs",
+      "links": "aws_lc_0_47_0"
+    },
     "axum-0.8.9": {
       "edition": "2021"
     },
@@ -14145,6 +15182,9 @@
     },
     "block-buffer-0.10.4": {
       "edition": "2018"
+    },
+    "block-buffer-0.12.1": {
+      "edition": "2024"
     },
     "borsh-1.8.1": {
       "edition": "2018",
@@ -14212,6 +15252,9 @@
     "clap_lex-1.1.1": {
       "edition": "2024"
     },
+    "cmake-0.1.58": {
+      "edition": "2021"
+    },
     "cobs-0.3.0": {
       "edition": "2021"
     },
@@ -14245,6 +15288,27 @@
     "cpufeatures-0.3.1": {
       "edition": "2024"
     },
+    "crc-fast-1.10.0": {
+      "edition": "2021",
+      "binaries": [
+        {
+          "name": "arch-check",
+          "path": "src/bin/arch-check.rs"
+        },
+        {
+          "name": "checksum",
+          "path": "src/bin/checksum.rs"
+        },
+        {
+          "name": "generate-tables",
+          "path": "src/bin/generate-tables.rs"
+        },
+        {
+          "name": "get-custom-params",
+          "path": "src/bin/get-custom-params.rs"
+        }
+      ]
+    },
     "criterion-0.5.1": {
       "edition": "2018"
     },
@@ -14266,6 +15330,9 @@
     "crypto-common-0.1.7": {
       "edition": "2018"
     },
+    "crypto-common-0.2.2": {
+      "edition": "2024"
+    },
     "curve25519-dalek-4.1.3": {
       "edition": "2021",
       "build_script": "build.rs"
@@ -14284,6 +15351,9 @@
     "digest-0.10.7": {
       "edition": "2018"
     },
+    "digest-0.11.3": {
+      "edition": "2024"
+    },
     "displaydoc-0.2.7": {
       "edition": "2021",
       "proc_macro": true
@@ -14295,6 +15365,9 @@
         "name": "document_features",
         "path": "lib.rs"
       }
+    },
+    "dunce-1.0.5": {
+      "edition": "2021"
     },
     "dyn-clone-1.0.20": {
       "edition": "2018"
@@ -14351,6 +15424,9 @@
     },
     "frost-rerandomized-3.0.0": {
       "edition": "2021"
+    },
+    "fs_extra-1.3.0": {
+      "edition": "2018"
     },
     "futures-0.3.34": {
       "edition": "2018"
@@ -14520,7 +15596,13 @@
     "itertools-0.14.0": {
       "edition": "2018"
     },
+    "itertools-0.15.0": {
+      "edition": "2018"
+    },
     "itoa-1.0.19": {
+      "edition": "2021"
+    },
+    "jobserver-0.1.35": {
       "edition": "2021"
     },
     "libc-0.2.191": {
@@ -14548,8 +15630,8 @@
     "matchit-0.8.4": {
       "edition": "2021"
     },
-    "md-5-0.10.6": {
-      "edition": "2018",
+    "md-5-0.11.0": {
+      "edition": "2024",
       "lib_target": {
         "name": "md5",
         "path": "src/lib.rs"
@@ -14563,6 +15645,10 @@
     },
     "mio-1.2.4": {
       "edition": "2021"
+    },
+    "nix-0.31.3": {
+      "edition": "2021",
+      "build_script": "build.rs"
     },
     "notify-8.2.2": {
       "edition": "2021"
@@ -14580,7 +15666,7 @@
     "objc2-core-services-0.3.2": {
       "edition": "2021"
     },
-    "object_store-0.13.2": {
+    "object_store-0.14.2": {
       "edition": "2024"
     },
     "once_cell-1.21.4": {
@@ -14615,6 +15701,9 @@
     "pkcs8-0.10.2": {
       "edition": "2021"
     },
+    "pkg-config-0.3.34": {
+      "edition": "2021"
+    },
     "plotters-0.3.7": {
       "edition": "2018"
     },
@@ -14647,7 +15736,7 @@
     "quick-error-1.2.3": {
       "edition": "2015"
     },
-    "quick-xml-0.39.4": {
+    "quick-xml-0.41.0": {
       "edition": "2021"
     },
     "quinn-0.11.12": {
@@ -14708,6 +15797,9 @@
     "reqwest-0.12.28": {
       "edition": "2021"
     },
+    "reqwest-0.13.5": {
+      "edition": "2021"
+    },
     "ring-0.17.14": {
       "edition": "2021",
       "build_script": "build.rs",
@@ -14734,6 +15826,9 @@
       "edition": "2021"
     },
     "rustls-pki-types-1.16.0": {
+      "edition": "2021"
+    },
+    "rustls-platform-verifier-0.7.1": {
       "edition": "2021"
     },
     "rustls-webpki-0.103.16": {
@@ -14852,6 +15947,9 @@
     },
     "socket2-0.6.5": {
       "edition": "2021"
+    },
+    "spin-0.10.1": {
+      "edition": "2015"
     },
     "spin-0.9.9": {
       "edition": "2015"
