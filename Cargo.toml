@@ -71,7 +71,7 @@ frost-ed25519 = { version = "3", default-features = false, features = ["serializ
 rand_core = { version = "0.6", default-features = false, optional = true }
 zeroize = { version = "1", optional = true }
 
-# Branch-free GF(256) field for Shamir sharing (src/shamir_dfc.rs).
+# Branch-free GF(256) field for Shamir sharing (src/shamir_fragment.rs).
 vsss-rs = { version = "6.0.1", default-features = false, optional = true }
 ff = { version = "0.14", default-features = false, optional = true }
 
@@ -111,7 +111,7 @@ tempfile = { version = "3.14", optional = true }
 # Futures combinators (join_all for parallel collection)
 futures = { version = "0.3", optional = true }
 
-# HTTP server (mock Akeyless gateway for testing)
+# HTTP server (mock secrets-manager gateway for testing)
 axum = { version = "0.8", optional = true }
 
 clap = { version = "4.5", features = ["derive"], optional = true }

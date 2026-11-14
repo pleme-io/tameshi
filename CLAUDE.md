@@ -89,7 +89,7 @@ src/
   changeset.rs                  -- CertifiedChangeset, hash_changeset
   certification.rs              -- ProductCertification builder (7-stage pipeline)
   certification_artifact.rs     -- CertificationArtifact (3-leaf Merkle: provenance + compliance + intent), ArtifactProofPaths, verify_certification_artifact, verify_proof_path
-  signing.rs                    -- MerkleRootSigner + Ed25519Signer traits, LocalSigner (real public-key Ed25519 + verify_signed_root pubkey-only verify), AkeylessDfcSigner (DFC threshold), MockDfcSigner (split-knowledge XOR), BreakGlassToken, SignedRoot, SigningAlgorithm
+  signing.rs                    -- MerkleRootSigner + Ed25519Signer traits, LocalSigner (real public-key Ed25519 + verify_signed_root pubkey-only verify), RemoteFragmentSigner (Fragment threshold), MockFragmentSigner (split-knowledge XOR), BreakGlassToken, SignedRoot, SigningAlgorithm
   ed25519.rs                    -- verify_ed25519 (verify_strict), the one Ed25519 check signing.rs and threshold/ share; built with `full` or `threshold`
   threshold/                    -- feature `threshold`; the OS-randomness entry points need `os-rng`, party.rs needs `full`
     mod.rs                      -- FROST(Ed25519, SHA-512) k-of-n signing (RFC 9591, frost-ed25519): ThresholdParams, ParticipantId, KeyShare, GroupKey, ThresholdError; the group secret is never one scalar
@@ -98,7 +98,7 @@ src/
     party.rs                    -- SigningParty, LocalParty, ThresholdSigner (a MerkleRootSigner), re-exported from signing
     audit.rs                    -- source guard: frost is named only through per-file allowlists, none holding keys::reconstruct, keys::split or SigningKey
     seeded.rs                   -- tests that run in the lean build: a seeded RNG deals, starts a DKG and commits the same way twice; frost-byte round trips
-  shamir_dfc.rs                 -- GF(256) Shamir split/reconstruct, ShamirDfcSigner (RECONSTRUCTS the key in memory on every sign and verify; kept, not a default)
+  shamir_fragment.rs            -- GF(256) Shamir split/reconstruct, ShamirFragmentSigner (RECONSTRUCTS the key in memory on every sign and verify; kept, not a default)
   heartbeat.rs                  -- HeartbeatChain (RwLock thread-safe), HeartbeatEntry, HeartbeatEvent (14 variants), VerificationOutcome, VerifierIdentity, ConsistencyProof, S3Emitter, HeartbeatEmitter trait
   compliance_api.rs             -- ComplianceQuery trait, ComplianceState, ComplianceStatus, ComplianceDistance, FrameworkState, CertificationQueryStatus, DynamicComplianceCheck, CheckDefinition
   iac_attestation.rs            -- IacTestAttester trait, IacTestPhase, IacTestPhaseResult, IacTestSuiteReport, MockIacTestAttester
@@ -107,11 +107,11 @@ src/
   reporting.rs                  -- EnvironmentReport, ComplianceSummary, DriftReport
   selftest.rs                   -- FrameworkAttestation, attest_framework, compute_framework_hash, framework_nist_controls
   alerts.rs                     -- AlertSeverity, AlertTarget, AlertMessage
-  ci.rs                         -- CI/CD helpers, akeyless_attestation
+  ci.rs                         -- CI/CD helpers, secrets_manager_attestation
   error.rs                      -- TameshiError (8 variants)
   cache.rs                      -- CacheEntry, CacheStore
   canonicalize.rs               -- CanonicalMode, Canonicalizer, JsonCanonicalizer, RawCanonicalizer, YamlCanonicalizer, canonical_hash, canonicalizer_for
-  testing.rs                    -- testing utilities, MockAkeylessGateway
+  testing.rs                    -- testing utilities, MockSecretsGateway
   traits.rs                     -- 10 core abstraction traits (see below)
   forensics/
     mod.rs                      -- re-exports
@@ -132,8 +132,8 @@ src/
     tofu.rs                     -- hash_state, TofuCollector
     kindling.rs                 -- hash_identity, KindlingCollector
     tatara.rs                   -- hash_allocation, TataraCollector
-    akeyless.rs                 -- LiveAkeylessCollector
-    akeyless_target.rs          -- AkeylessTargetCollector, LiveAkeylessTargetCollector (30 target types)
+    secrets_manager.rs          -- LiveSecretsManagerCollector
+    secret_target.rs            -- SecretTargetCollector, LiveSecretTargetCollector (30 target types)
     fluxcd.rs                   -- FluxCDCollector
     argocd.rs                   -- ArgoCDCollector
     generic.rs                  -- GenericCollector
@@ -154,8 +154,8 @@ src/
     standards.rs                -- Standards enumeration
     dimensions.rs               -- Compliance dimensions
     result.rs                   -- Compliance result types
-    akeyless.rs                 -- Akeyless secret attestation
-    akeyless_target.rs          -- AkeylessTargetAttestation, AkeylessTargetType (30 variants), ProducerAssociation, compute_target_attestation_hash, compute_multi_target_hash
+    secrets.rs                  -- secrets-manager secret attestation
+    secret_target.rs            -- SecretTargetAttestation, SecretTargetType (30 variants), ProducerAssociation, compute_target_attestation_hash, compute_multi_target_hash
 spec/
   openapi.yaml                  -- OpenAPI 3.0.3 spec (sekiban + kensa + tameshi endpoints)
 ```
@@ -231,7 +231,7 @@ darwin host with `sandbox = false`, it reads `true`. Checks:
 
 ### Layer Signatures
 
-- **`LayerType`** -- enum with 14 variants: `Nix`, `Oci`, `Helm`, `Tofu`, `Kubernetes`, `Kindling`, `Tatara`, `FluxCD`, `ArgoCD`, `Akeyless`, `AkeylessTarget`, `PangeaSynthesis`, `RSpecResult`, `InSpecResult`. All derive `Serialize`, `Deserialize`, `JsonSchema`, `Ord`.
+- **`LayerType`** -- enum with 14 variants: `Nix`, `Oci`, `Helm`, `Tofu`, `Kubernetes`, `Kindling`, `Tatara`, `FluxCD`, `ArgoCD`, `SecretsManager`, `SecretTarget`, `PangeaSynthesis`, `RSpecResult`, `InSpecResult`. All derive `Serialize`, `Deserialize`, `JsonSchema`, `Ord`.
 - **`LayerSignature`** -- layer type + BLAKE3 hash + metadata + input hashes. The atomic unit of attestation.
 - **`InputHash`** -- named sub-hash within a layer (e.g., per-resource within a Helm chart).
 - **`MasterSignature`** -- composite: untested hash (Merkle root of layers) + compliance hash + secure hash (both combined).
@@ -252,12 +252,12 @@ darwin host with `sandbox = false`, it reads `true`. Checks:
 ### Signing (Pillar 2)
 
 - **`SignedRoot`** -- root hash + signature bytes + algorithm + signer ID + timestamp.
-- **`SigningAlgorithm`** -- enum: `Ed25519Local`, `AkeylessDfc { key_name }`, `MockDfc`, `BreakGlass`, `FrostEd25519 { min_signers, max_signers }`. `is_ed25519()` is true for `Ed25519Local` and `FrostEd25519`: both are RFC 8032 signatures, and `verify_signed_root` accepts exactly those two.
+- **`SigningAlgorithm`** -- enum: `Ed25519Local`, `RemoteFragment { key_name }`, `MockFragment`, `BreakGlass`, `FrostEd25519 { min_signers, max_signers }`. `is_ed25519()` is true for `Ed25519Local` and `FrostEd25519`: both are RFC 8032 signatures, and `verify_signed_root` accepts exactly those two.
 - **`LocalSigner`** -- real public-key **Ed25519** (ed25519-dalek), seed-derived + deterministic (RFC 8032). `verifying_key()` is the 32-byte public key; the free function `verify_signed_root(signed, &pubkey)` verifies with **no secret** (`verify_strict`) — the property that lets mutually-untrusting peers verify each other's attestations. (Was a symmetric BLAKE3 keyed MAC before 2026-06-11; the `Ed25519Local` name is now truthful.) Development/testing.
-- **`AkeylessDfcSigner`** -- Calls Akeyless gateway REST API for threshold signing. Key never exists in one piece. Supports mTLS via `TlsConfig`.
+- **`RemoteFragmentSigner`** -- Calls secrets-manager gateway REST API for threshold signing. Key never exists in one piece. Supports mTLS via `TlsConfig`.
 - **`ThresholdSigner<P: SigningParty>`** -- `k`-of-`n` FROST(Ed25519, SHA-512) (RFC 9591, `frost-ed25519` 3.x, wrapped in `src/threshold/`). Keys come from `keygen::dkg` (no party or dealer ever holds the group secret) or `keygen::trusted_dealer` (test path). Signing is two rounds: each party `commit`s, the coordinator builds a `SigningRequest` from at least `k` commitments (fewer is `BelowThreshold`), each party `sign`s (consumes its nonces), `aggregate` adds the signature shares and refuses a forged one naming its participant (`InvalidShares`). The result is an ordinary Ed25519 signature under `GroupKey::verifying_key()`: ed25519-dalek, `verify_signed_root` and `verify_fragment` accept it. `LocalParty` keeps a share in this process; implement `SigningParty` over a transport to keep each share on its own machine. `ThresholdSigner::public_test()` is the public 2-of-3 test group. The `threshold::audit` tests read the module source and fail if it names `keys::reconstruct`, `keys::split` or `SigningKey`. Every randomness-drawing step has a `_with_rng` form taking any `rand_core::CryptoRngCore` (`keygen::trusted_dealer_with_rng`, `keygen::dkg::start_with_rng`, `signing::commit_with_rng`), and every round message reads and writes frost's own bytes (`to_bytes` / `from_bytes`), so blue's runtime (`crates/blue-lang-runtime/src/threshold.rs`) runs its seeded provider on this one implementation.
-- **`ShamirDfcSigner`** -- GF(256) Shamir `k`-of-`n` shares, but `sign` and `verify` **reconstruct the whole key in memory** and MAC with BLAKE3 (tagged `MockDfc`). Kept (behaviour is configured off, never deleted); no default selects it. Use `ThresholdSigner` where the key must never exist in one piece.
-- **`MockDfcSigner`** -- Split-knowledge simulation. Two 32-byte fragments (`fragment_a`, `fragment_b`). Key = `BLAKE3(fragment_a XOR fragment_b)`. Neither fragment alone reveals the key. Debug output redacts fragments.
+- **`ShamirFragmentSigner`** -- GF(256) Shamir `k`-of-`n` shares, but `sign` and `verify` **reconstruct the whole key in memory** and MAC with BLAKE3 (tagged `MockFragment`). Kept (behaviour is configured off, never deleted); no default selects it. Use `ThresholdSigner` where the key must never exist in one piece.
+- **`MockFragmentSigner`** -- Split-knowledge simulation. Two 32-byte fragments (`fragment_a`, `fragment_b`). Key = `BLAKE3(fragment_a XOR fragment_b)`. Neither fragment alone reveals the key. Debug output redacts fragments.
 - **`BreakGlassToken`** -- Emergency bypass with cryptographic logging. Every break-glass event is signed and logged for the 72-hour CIRCIA report.
 
 ### Heartbeat Chain (Audit Trail)
@@ -313,8 +313,8 @@ darwin host with `sandbox = false`, it reads `true`. Checks:
 | `TataraCollector` | `Tatara` | Tatara cluster allocation state |
 | `FluxCDCollector` | `FluxCD` | FluxCD reconciliation state |
 | `ArgoCDCollector` | `ArgoCD` | ArgoCD application state |
-| `LiveAkeylessCollector` | `Akeyless` | Akeyless secret metadata (hashes VALUES, never stores them) |
-| `LiveAkeylessTargetCollector` | `AkeylessTarget` | 30 Akeyless target types with producer associations |
+| `LiveSecretsManagerCollector` | `SecretsManager` | Secrets-manager secret metadata (hashes VALUES, never stores them) |
+| `LiveSecretTargetCollector` | `SecretTarget` | 30 secrets-manager target types with producer associations |
 | `PangeaSynthesisCollector` | `PangeaSynthesis` | Pangea deterministic Terraform JSON |
 | `RSpecResultCollector` | `RSpecResult` | RSpec JSON reporter output (per-example hashes) |
 | `InSpecResultCollector` | `InSpecResult` | InSpec JSON reporter output (per-control hashes) |
@@ -330,7 +330,7 @@ All API-facing types derive `schemars::JsonSchema`: `Blake3Hash`, `LayerType`, `
 cargo test                           # all 1427 tests
 cargo test hash                      # hash module (42 tests)
 cargo test merkle                    # merkle tree
-cargo test signing                   # signing + MockDfcSigner + BreakGlassToken + FailableDfcSigner
+cargo test signing                   # signing + MockFragmentSigner + BreakGlassToken + FailableFragmentSigner
 cargo test threshold                 # FROST DKG, two-round signing, k-1 refusal, forged shares, source audit
 cargo test certification_artifact    # 3-leaf Merkle artifact
 cargo test heartbeat                 # heartbeat chain + consistency proofs
@@ -346,7 +346,7 @@ cargo test global                    # global state root, cluster root computati
 cargo test --test forensics_integration  # e2e forensics + chaos tests (21 tests)
 ```
 
-Mock types: `MockCollector`, `MockCommandRunner`, `MockFileSystem`, `MockHttpClient`, `MockGatingEngine`, `MockVerifier`, `MockIacTestAttester`, `MockDfcSigner`, `FailableDfcSigner` (chaos testing), `MockAkeylessClient`, `MockAkeylessGateway`, `MockGlobalStateClient`, `InMemoryLedgerStore`, `FixedClock`, `NoopMetrics`, `MemStore<T>`.
+Mock types: `MockCollector`, `MockCommandRunner`, `MockFileSystem`, `MockHttpClient`, `MockGatingEngine`, `MockVerifier`, `MockIacTestAttester`, `MockFragmentSigner`, `FailableFragmentSigner` (chaos testing), `MockSecretsManagerClient`, `MockSecretsGateway`, `MockGlobalStateClient`, `InMemoryLedgerStore`, `FixedClock`, `NoopMetrics`, `MemStore<T>`.
 
 ## Dependencies
 
@@ -363,7 +363,7 @@ Mock types: `MockCollector`, `MockCommandRunner`, `MockFileSystem`, `MockHttpCli
 | figment | Layered config (YAML + env vars) |
 | chrono | Timestamps (DateTime<Utc>) |
 | uuid | Unique identifiers |
-| reqwest | HTTP client (OCI, Akeyless, S3) |
+| reqwest | HTTP client (OCI, the secrets manager, S3) |
 | object_store | S3-compatible storage (heartbeat persistence) |
 | schemars | JSON Schema generation for API types |
 | thiserror | Error type derivation |
@@ -403,7 +403,7 @@ Three-layer verification strategy. See `docs/verification-strategy.md` for full 
 |----------|---------|
 | `docs/OVERVIEW.md` | **Start here.** Plain-language stakeholder guide: what it is, how it works, what we've proved, where doubts are addressed with real tests, and where to go deeper. |
 | `docs/grand-unified-specification.md` | Grand Unified Specification: 7-level narrative from executive business case through data hierarchy, integration bridge, kernel enforcement, verification matrix, performance attestation, and sovereign integrity. |
-| `docs/quick-start-guide.md` | Quick start for the Akeyless dev team: prerequisites, key files, common tasks, do-nots. Zero to verified in 5 minutes. |
+| `docs/quick-start-guide.md` | Quick start for an integrating team: prerequisites, key files, common tasks, do-nots. Zero to verified in 5 minutes. |
 | `docs/tameshi-technical-specification.md` | System architecture: CertificationArtifact → HeartbeatChain → BPF bridge → kanshi eBPF → verification matrix. Full top-down trace from Merkle root to CPU registers. |
 | `docs/mathematical-foundations.md` | Formal mathematical proofs: 15 theorems, 7 corollaries, security reductions, complexity analysis. All Merkle tree properties, hash chain integrity, split-knowledge security, and ecosystem components derived as consequences. |
 | `docs/verification-strategy.md` | Three-layer verification strategy: proptest (380k random checks), Kani (exhaustive bounded proofs), F* (unbounded formal proofs). Theorem coverage matrix, trust model explanation. |

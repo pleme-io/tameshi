@@ -65,7 +65,7 @@ macro_rules! full {
 
 full! {
     pub mod ai_threat;
-    pub mod akeyless_client;
+    pub mod secrets_client;
     pub mod alerts;
     pub mod api_types;
     pub mod audit;
@@ -98,7 +98,7 @@ full! {
     pub mod salted_attestation;
     pub mod sdlc;
     pub mod selftest;
-    pub mod shamir_dfc;
+    pub mod shamir_fragment;
     pub mod shamir_root;
     pub mod signature;
     pub mod signing;
@@ -135,9 +135,9 @@ pub mod prelude {
         DemoAiThreatClient, FailableAiThreatClient, FeedbackLabel, HttpAiThreatClient,
         MockAiThreatClient, ModelHealthStatus, RecommendedAction, Urgency,
     };
-    pub use crate::akeyless_client::{
-        AkeylessClient, AkeylessClientError, AkeylessConfig, DynamicSecretInfo, HttpAkeylessClient,
-        ItemAssociation, MockAkeylessClient, TargetInfo, TlsConfig, build_tls_client,
+    pub use crate::secrets_client::{
+        SecretsManagerClient, SecretsManagerError, SecretsManagerConfig, DynamicSecretInfo, HttpSecretsManagerClient,
+        ItemAssociation, MockSecretsManagerClient, TargetInfo, TlsConfig, build_tls_client,
     };
     pub use crate::canonicalize::{
         CanonicalMode, Canonicalizer, JsonCanonicalizer, RawCanonicalizer, YamlCanonicalizer,
@@ -173,16 +173,16 @@ pub mod prelude {
         AgentSkillsCollector, AgentSkillsConfig, SkillAttestation, SkillComplianceStatus,
         SkillDefinition, SkillSource, attest_skill,
     };
-    pub use crate::collectors::akeyless::LiveAkeylessCollector;
-    pub use crate::collectors::akeyless_target::{
-        AkeylessTargetCollector, LiveAkeylessTargetCollector,
+    pub use crate::collectors::secrets_manager::LiveSecretsManagerCollector;
+    pub use crate::collectors::secret_target::{
+        SecretTargetCollector, LiveSecretTargetCollector,
     };
     pub use crate::collectors::pangea::{
         PangeaSynthesisCollector, hash_synthesis_file, hash_synthesis_json,
     };
     pub use crate::collectors::traits::LayerCollector;
-    pub use crate::compliance::akeyless_target::{
-        AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation,
+    pub use crate::compliance::secret_target::{
+        SecretTargetAttestation, SecretTargetType, ProducerAssociation,
         compute_multi_target_hash, compute_target_attestation_hash,
     };
     pub use crate::compliance::plugin::{

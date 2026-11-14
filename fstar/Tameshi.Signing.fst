@@ -5,7 +5,7 @@ open Tameshi.Hash
 (** ================================================================
     Split-Knowledge OTP Signing
     ================================================================
-    Models the tameshi DFC (Dual-Fragment Certification) scheme:
+    Models the tameshi Fragment scheme:
       - A signing key is reconstructed from two fragments via XOR
       - key = hash(xor(fragment_a, fragment_b))
       - Neither fragment alone reveals the key (information-theoretic)

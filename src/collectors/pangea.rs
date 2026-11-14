@@ -175,14 +175,14 @@ mod tests {
     async fn hash_synthesis_json_one_resource() {
         let json = br#"{
             "resource": {
-                "akeyless_auth_method": {
+                "secret_auth_method": {
                     "my_auth": {"name": "/my-auth", "type": "api_key"}
                 }
             }
         }"#;
         let sig = hash_synthesis_json(json, "single.json").await.unwrap();
         assert_eq!(sig.inputs.len(), 1);
-        assert_eq!(sig.inputs[0].name, "akeyless_auth_method.my_auth");
+        assert_eq!(sig.inputs[0].name, "secret_auth_method.my_auth");
         assert!(sig.inputs[0].size_bytes.is_some());
     }
 
@@ -193,19 +193,19 @@ mod tests {
     async fn hash_synthesis_json_multiple_types_sorted() {
         let json = br#"{
             "resource": {
-                "akeyless_target": {
+                "secret_target": {
                     "t1": {"name": "target-1"}
                 },
-                "akeyless_auth_method": {
+                "secret_auth_method": {
                     "a1": {"name": "auth-1"}
                 }
             }
         }"#;
         let sig = hash_synthesis_json(json, "multi.json").await.unwrap();
         assert_eq!(sig.inputs.len(), 2);
-        // Should be sorted by resource type: akeyless_auth_method before akeyless_target
-        assert_eq!(sig.inputs[0].name, "akeyless_auth_method.a1");
-        assert_eq!(sig.inputs[1].name, "akeyless_target.t1");
+        // Should be sorted by resource type: secret_auth_method before secret_target
+        assert_eq!(sig.inputs[0].name, "secret_auth_method.a1");
+        assert_eq!(sig.inputs[1].name, "secret_target.t1");
     }
 
     // -----------------------------------------------------------------------
@@ -215,20 +215,20 @@ mod tests {
     async fn hash_synthesis_json_with_data_sources() {
         let json = br#"{
             "resource": {
-                "akeyless_auth_method": {
+                "secret_auth_method": {
                     "a1": {"name": "auth-1"}
                 }
             },
             "data": {
-                "akeyless_secret": {
+                "managed_secret": {
                     "s1": {"path": "/secret"}
                 }
             }
         }"#;
         let sig = hash_synthesis_json(json, "data.json").await.unwrap();
         assert_eq!(sig.inputs.len(), 2);
-        assert_eq!(sig.inputs[0].name, "akeyless_auth_method.a1");
-        assert_eq!(sig.inputs[1].name, "data.akeyless_secret.s1");
+        assert_eq!(sig.inputs[0].name, "secret_auth_method.a1");
+        assert_eq!(sig.inputs[1].name, "data.managed_secret.s1");
     }
 
     // -----------------------------------------------------------------------
@@ -418,8 +418,8 @@ mod tests {
             LayerType::Tatara,
             LayerType::FluxCD,
             LayerType::ArgoCD,
-            LayerType::Akeyless,
-            LayerType::AkeylessTarget,
+            LayerType::SecretsManager,
+            LayerType::SecretTarget,
             LayerType::PangeaSynthesis,
             LayerType::RSpecResult,
             LayerType::InSpecResult,
@@ -443,7 +443,7 @@ mod tests {
             Blake3Hash::digest(b"pangea-data"),
             "synthesis.tf.json",
             vec![InputHash {
-                name: "akeyless_auth_method.my_auth".to_string(),
+                name: "secret_auth_method.my_auth".to_string(),
                 hash: Blake3Hash::digest(b"auth-block"),
                 size_bytes: Some(42),
             }],
@@ -457,13 +457,13 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // 19. hash_synthesis_json with Akeyless-style resources (real-world)
+    // 19. hash_synthesis_json with secrets-manager-style resources (real-world)
     // -----------------------------------------------------------------------
     #[tokio::test]
-    async fn hash_synthesis_json_akeyless_real_world() {
+    async fn hash_synthesis_json_secrets_manager_real_world() {
         let json = br#"{
             "resource": {
-                "akeyless_auth_method": {
+                "sm_auth_method": {
                     "api_key": {
                         "name": "/pleme/auth/api-key",
                         "type": "api_key",
@@ -475,14 +475,14 @@ mod tests {
                         "idp_metadata_url": "https://idp.example.com/metadata"
                     }
                 },
-                "akeyless_target": {
+                "sm_target": {
                     "aws_prod": {
                         "name": "/pleme/targets/aws-prod",
                         "type": "aws",
                         "region": "us-east-1"
                     }
                 },
-                "akeyless_dynamic_secret": {
+                "sm_dynamic_secret": {
                     "db_creds": {
                         "name": "/pleme/dynamic/db-creds",
                         "target_name": "/pleme/targets/aws-prod"
@@ -490,21 +490,21 @@ mod tests {
                 }
             },
             "data": {
-                "akeyless_secret": {
+                "sm_secret": {
                     "master_key": {
                         "path": "/pleme/secrets/master-key"
                     }
                 }
             }
         }"#;
-        let sig = hash_synthesis_json(json, "akeyless.tf.json").await.unwrap();
+        let sig = hash_synthesis_json(json, "secrets.tf.json").await.unwrap();
         // 2 auth methods + 1 target + 1 dynamic secret + 1 data source = 5
         assert_eq!(sig.inputs.len(), 5);
         // Verify sorted ordering
-        assert!(sig.inputs[0].name.starts_with("akeyless_auth_method"));
-        assert!(sig.inputs[2].name.starts_with("akeyless_dynamic_secret"));
-        assert!(sig.inputs[3].name.starts_with("akeyless_target"));
-        assert!(sig.inputs[4].name.starts_with("data.akeyless_secret"));
+        assert!(sig.inputs[0].name.starts_with("sm_auth_method"));
+        assert!(sig.inputs[2].name.starts_with("sm_dynamic_secret"));
+        assert!(sig.inputs[3].name.starts_with("sm_target"));
+        assert!(sig.inputs[4].name.starts_with("data.sm_secret"));
     }
 
     // -----------------------------------------------------------------------
@@ -636,7 +636,7 @@ mod tests {
     async fn hash_synthesis_json_data_only() {
         let json = br#"{
             "data": {
-                "akeyless_secret": {
+                "managed_secret": {
                     "s1": {"path": "/a"},
                     "s2": {"path": "/b"}
                 }
@@ -644,7 +644,7 @@ mod tests {
         }"#;
         let sig = hash_synthesis_json(json, "data-only.json").await.unwrap();
         assert_eq!(sig.inputs.len(), 2);
-        assert_eq!(sig.inputs[0].name, "data.akeyless_secret.s1");
-        assert_eq!(sig.inputs[1].name, "data.akeyless_secret.s2");
+        assert_eq!(sig.inputs[0].name, "data.managed_secret.s1");
+        assert_eq!(sig.inputs[1].name, "data.managed_secret.s2");
     }
 }

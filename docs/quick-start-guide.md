@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-*For the Akeyless development team. Get from zero to verified in 5 minutes.*
+*For a team integrating tameshi. Get from zero to verified in 5 minutes.*
 
 ---
 
@@ -50,7 +50,7 @@ a theorem from `docs/mathematical-foundations.md` has been violated.
 | `src/bpf_loader.rs` | The `#[repr(C)]` structs shared with the kernel | When touching the FFI boundary — do not change field order |
 | `src/collectors/ferrite.rs` | FerriteCollector: ingests PoMS JSON, rejects violations > 0 | When integrating a new Ferrite output format |
 | `src/heartbeat.rs` | The append-only audit chain | When adding new event types or querying the ledger |
-| `src/signing.rs` | MockDfcSigner: split-knowledge fragment signing | When testing signing without Akeyless gateway |
+| `src/signing.rs` | MockFragmentSigner: split-knowledge fragment signing | When testing signing without a secrets-manager gateway |
 
 ## 5. The Critical Invariant
 

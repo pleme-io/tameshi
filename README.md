@@ -20,14 +20,14 @@ tameshi closes the last mile with eBPF LSM hooks that verify BLAKE3 content hash
 - **Compliance** -- kensa assessment result (NIST 800-53 / OSCAL)
 - **Intent** -- Pangea synthesis output (infrastructure-as-code declaration)
 
-These three inputs compose into a 3-leaf Merkle tree with RFC 9162 domain separation, signed by Akeyless Distributed Fragment Cryptography (threshold signing where the key never exists in one piece). The composed root populates the BPF allow map. If the hash is not in the map, the kernel returns `EPERM`.
+These three inputs compose into a 3-leaf Merkle tree with RFC 9162 domain separation, signed by the secrets manager's fragmented-key cryptography (threshold signing where the key never exists in one piece). The composed root populates the BPF allow map. If the hash is not in the map, the kernel returns `EPERM`.
 
 ```mermaid
 flowchart LR
     A["Nix Build / OCI Image"] -->|"BLAKE3(closure)"| B["CertificationArtifact<br/>3-leaf Merkle tree"]
     C["kensa Compliance<br/>Assessment"] -->|"BLAKE3(assessment)"| B
     D["Pangea Synthesis<br/>JSON"] -->|"BLAKE3(synthesis)"| B
-    B -->|"composed_root"| E["DFC Threshold<br/>Signing"]
+    B -->|"composed_root"| E["Fragment Threshold<br/>Signing"]
     E -->|"SignedRoot"| F["inshou<br/>Nix Gate"]
     E -->|"SignedRoot"| G["sekiban<br/>K8s Admission"]
     G -->|"SignatureGate CRD"| H["kanshi<br/>eBPF LSM"]
@@ -70,7 +70,7 @@ flowchart LR
 | **NIST SP 800-53 Rev. 5** | 14 controls: SR-4 (provenance), SI-7 (software integrity), CM-2/CM-3/CM-6/CM-8 (configuration), AC-3/AC-6 (access enforcement), AU-2/AU-3/AU-6/AU-9/AU-10 (audit), SC-12 (key management) |
 | **CIRCIA** | HeartbeatChain provides continuous tamper-evident evidence; CirciaReport covers 72-hour reporting window; BreakGlassToken events cryptographically logged |
 | **FedRAMP / OSCAL** | kensa produces OSCAL 1.1.2 assessment results; machine-readable compliance evidence chains to CertificationArtifact |
-| **SLSA** | Level 1: Nix flake build graph (provenance exists). Level 2: CI + SignedRoot (signed provenance). Level 3: Nix hermetic builds + DFC threshold signing (hardened, non-falsifiable). Level 4: organizational control (two-person review) |
+| **SLSA** | Level 1: Nix flake build graph (provenance exists). Level 2: CI + SignedRoot (signed provenance). Level 3: Nix hermetic builds + Fragment threshold signing (hardened, non-falsifiable). Level 4: organizational control (two-person review) |
 
 ## Quick Start
 
@@ -120,7 +120,7 @@ EOF
 
 1. **Build** -- Nix produces a deterministic closure. `NixCollector` computes `BLAKE3(closure)`.
 2. **Attest** -- `compose_certification_artifact()` binds artifact hash (leaf 0), compliance hash (leaf 1), and intent hash (leaf 2) into a 3-leaf Merkle tree with RFC 9162 domain separation (`0x00` leaf prefix, `0x01` internal node prefix).
-3. **Sign** -- `AkeylessDfcSigner` signs the `composed_root` via threshold cryptography. The signing key never exists in one piece -- fragments are distributed across Akeyless infrastructure.
+3. **Sign** -- `RemoteFragmentSigner` signs the `composed_root` via threshold cryptography. The signing key never exists in one piece -- fragments are distributed across secrets-manager infrastructure.
 4. **Gate (Nix)** -- inshou verifies the `SignedRoot` before allowing `nixos-rebuild switch`. Fail-secure: no fallback paths.
 5. **Gate (K8s)** -- sekiban's `ValidatingAdmissionWebhook` intercepts every K8s API mutation, verifies the `sekiban.pleme.io/signature` annotation against the `SignatureGate` CRD. Fail-closed with 3-second timeout. `validate_image_digests()` rejects mutable tags, requiring `@sha256:` digest references.
 6. **Enforce (kernel)** -- kanshi's eBPF LSM `bprm_check_security` hook verifies the BLAKE3 hash at `execve()`. Revocation list checked before allow map. `enforce_or_fail()`: Enforce mode without BPF LSM is a hard error -- no silent degradation.

@@ -153,7 +153,7 @@ The MerkleLedger is an append-only, BLAKE3-chained log of every
 CertificationArtifact produced by the system. Each entry includes:
 
 - The full CertificationArtifact (3-leaf Merkle: provenance + compliance + intent)
-- The SignedRoot (Ed25519 or Akeyless DFC signature)
+- The SignedRoot (Ed25519 or remote Fragment signature)
 - The DeploymentContext (cluster, namespace, node, pod, container, binary paths)
 - A BLAKE3 hash of all fields (entry_hash)
 - A pointer to the previous entry's hash (chain linkage)
@@ -240,7 +240,7 @@ within 72 hours. The forensics system ensures:
 |-------------|----------------|
 | Rapid blast radius | In-memory hot tier covers 72h; sub-second query latency |
 | Evidence integrity | BLAKE3 hash chain; S3 Object Lock (WORM) |
-| Independent verification | ConsistencyProof API; Akeyless Secure Audit Log replica |
+| Independent verification | ConsistencyProof API; secrets-manager Secure Audit Log replica |
 | Machine-readable evidence | All API responses are structured JSON with BLAKE3 evidence hashes |
 
 ### Regulatory Retention (2-Year)

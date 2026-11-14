@@ -2,7 +2,7 @@
 //!
 //! Uses Kani's bounded model checking with `#[kani::unwind]` to prove
 //! that all attestation algorithms terminate within bounded iterations.
-//! This guarantees tameshi will never hang the Akeyless Gateway's
+//! This guarantees tameshi will never hang the secrets-manager Gateway's
 //! execution thread or cause resource starvation.
 //!
 //! Properties verified:

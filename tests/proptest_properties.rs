@@ -14,7 +14,7 @@ use tameshi::merkle::{
     compose_merkle, compute_merkle_root, domain_separated_leaf, merkle_proof, verify_proof,
 };
 use tameshi::signature::{LayerSignature, LayerType, MasterSignature};
-use tameshi::signing::{LocalSigner, MerkleRootSigner, MockDfcSigner};
+use tameshi::signing::{LocalSigner, MerkleRootSigner, MockFragmentSigner};
 
 fn arb_layer_type() -> impl Strategy<Value = LayerType> {
     prop_oneof![
@@ -27,8 +27,8 @@ fn arb_layer_type() -> impl Strategy<Value = LayerType> {
         Just(LayerType::Tatara),
         Just(LayerType::FluxCD),
         Just(LayerType::ArgoCD),
-        Just(LayerType::Akeyless),
-        Just(LayerType::AkeylessTarget),
+        Just(LayerType::SecretsManager),
+        Just(LayerType::SecretTarget),
         Just(LayerType::FerritePoms),
     ]
 }
@@ -108,8 +108,8 @@ proptest! {
             LayerType::Tatara,
             LayerType::FluxCD,
             LayerType::ArgoCD,
-            LayerType::Akeyless,
-            LayerType::AkeylessTarget,
+            LayerType::SecretsManager,
+            LayerType::SecretTarget,
         ];
         let layers: Vec<LayerSignature> = all_types[..count]
             .iter()
@@ -581,8 +581,8 @@ proptest! {
         prop_assume!(frag_a1 != frag_a2);
         let rt = tokio::runtime::Runtime::new().unwrap();
         let root = Blake3Hash::digest(&root_data);
-        let signer1 = MockDfcSigner::from_fragments(frag_a1, frag_b, "signer-1");
-        let signer2 = MockDfcSigner::from_fragments(frag_a2, frag_b, "signer-2");
+        let signer1 = MockFragmentSigner::from_fragments(frag_a1, frag_b, "signer-1");
+        let signer2 = MockFragmentSigner::from_fragments(frag_a2, frag_b, "signer-2");
         let sig1 = rt.block_on(signer1.sign(&root)).unwrap();
         let sig2 = rt.block_on(signer2.sign(&root)).unwrap();
         prop_assert_ne!(sig1.signature, sig2.signature, "Different fragments must produce different signatures");
@@ -600,8 +600,8 @@ proptest! {
         prop_assume!(frag_a != frag_a_wrong);
         let rt = tokio::runtime::Runtime::new().unwrap();
         let root = Blake3Hash::digest(&root_data);
-        let signer = MockDfcSigner::from_fragments(frag_a, frag_b, "signer");
-        let wrong_signer = MockDfcSigner::from_fragments(frag_a_wrong, frag_b, "signer");
+        let signer = MockFragmentSigner::from_fragments(frag_a, frag_b, "signer");
+        let wrong_signer = MockFragmentSigner::from_fragments(frag_a_wrong, frag_b, "signer");
         let signed = rt.block_on(signer.sign(&root)).unwrap();
         let verified = rt.block_on(wrong_signer.verify(&signed)).unwrap();
         prop_assert!(!verified, "Verification with wrong fragment_a must fail");
@@ -618,7 +618,7 @@ proptest! {
             LayerType::Nix, LayerType::Oci, LayerType::Helm,
             LayerType::Tofu, LayerType::Kubernetes, LayerType::Kindling,
             LayerType::Tatara, LayerType::FluxCD, LayerType::ArgoCD,
-            LayerType::Akeyless, LayerType::AkeylessTarget, LayerType::FerritePoms,
+            LayerType::SecretsManager, LayerType::SecretTarget, LayerType::FerritePoms,
         ];
         let count = count.min(all_types.len());
         let layers: Vec<LayerSignature> = all_types[..count]

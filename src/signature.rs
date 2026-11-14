@@ -35,11 +35,12 @@ pub enum LayerType {
     FluxCD,
     /// ArgoCD application state
     ArgoCD,
-    /// Akeyless secret management
-    Akeyless,
-    /// Akeyless target infrastructure
-    #[serde(rename = "akeyless_target")]
-    AkeylessTarget,
+    /// Secrets-manager secret management
+    #[serde(rename = "secrets_manager")]
+    SecretsManager,
+    /// Secrets-manager target infrastructure
+    #[serde(rename = "secret_target")]
+    SecretTarget,
     /// Pangea synthesis output (deterministic Terraform JSON).
     #[serde(rename = "pangea_synthesis")]
     PangeaSynthesis,
@@ -100,8 +101,8 @@ impl fmt::Display for LayerType {
             Self::Tatara => write!(f, "tatara"),
             Self::FluxCD => write!(f, "fluxcd"),
             Self::ArgoCD => write!(f, "argocd"),
-            Self::Akeyless => write!(f, "akeyless"),
-            Self::AkeylessTarget => write!(f, "akeyless_target"),
+            Self::SecretsManager => write!(f, "secrets_manager"),
+            Self::SecretTarget => write!(f, "secret_target"),
             Self::PangeaSynthesis => write!(f, "pangea_synthesis"),
             Self::RSpecResult => write!(f, "rspec_result"),
             Self::InSpecResult => write!(f, "inspec_result"),
@@ -135,8 +136,8 @@ impl FromStr for LayerType {
             "tatara" => Ok(Self::Tatara),
             "fluxcd" | "flux" => Ok(Self::FluxCD),
             "argocd" | "argo" => Ok(Self::ArgoCD),
-            "akeyless" => Ok(Self::Akeyless),
-            "akeyless_target" | "akeylesstarget" => Ok(Self::AkeylessTarget),
+            "secrets_manager" | "secretsmanager" => Ok(Self::SecretsManager),
+            "secret_target" | "secrettarget" => Ok(Self::SecretTarget),
             "pangea_synthesis" | "pangeasynthesis" | "pangea" => Ok(Self::PangeaSynthesis),
             "rspec_result" | "rspecresult" | "rspec" => Ok(Self::RSpecResult),
             "inspec_result" | "inspecresult" => Ok(Self::InSpecResult),
@@ -418,8 +419,8 @@ mod tests {
             LayerType::Tatara,
             LayerType::FluxCD,
             LayerType::ArgoCD,
-            LayerType::Akeyless,
-            LayerType::AkeylessTarget,
+            LayerType::SecretsManager,
+            LayerType::SecretTarget,
             LayerType::PangeaSynthesis,
             LayerType::RSpecResult,
             LayerType::InSpecResult,
@@ -581,8 +582,8 @@ mod tests {
             LayerType::Tatara,
             LayerType::FluxCD,
             LayerType::ArgoCD,
-            LayerType::Akeyless,
-            LayerType::AkeylessTarget,
+            LayerType::SecretsManager,
+            LayerType::SecretTarget,
             LayerType::PangeaSynthesis,
             LayerType::RSpecResult,
             LayerType::InSpecResult,

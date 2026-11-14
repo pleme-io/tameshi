@@ -1,6 +1,6 @@
-//! Akeyless target attestation compliance dimension.
+//! Secrets-manager target attestation compliance dimension.
 //!
-//! Provides attestation types for Akeyless target infrastructure,
+//! Provides attestation types for secrets-manager target infrastructure,
 //! recording which targets were configured, how they connect to backends,
 //! and computing a deterministic compliance hash from these records.
 //!
@@ -11,13 +11,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-use crate::compliance::akeyless::AkeylessSecretType;
+use crate::compliance::secrets::SecretKind;
 use crate::hash::Blake3Hash;
 
-/// Akeyless target types.
+/// Secrets-manager target types.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum AkeylessTargetType {
+pub enum SecretTargetType {
     /// Database target.
     Database,
     /// AWS target.
@@ -80,7 +80,7 @@ pub enum AkeylessTargetType {
     Custom,
 }
 
-impl fmt::Display for AkeylessTargetType {
+impl fmt::Display for SecretTargetType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Database => write!(f, "database"),
@@ -117,7 +117,7 @@ impl fmt::Display for AkeylessTargetType {
     }
 }
 
-impl FromStr for AkeylessTargetType {
+impl FromStr for SecretTargetType {
     type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
@@ -163,7 +163,7 @@ pub struct ProducerAssociation {
     /// Name of the producer (dynamic secret).
     pub producer_name: String,
     /// Type of secret the producer generates.
-    pub producer_type: AkeylessSecretType,
+    pub producer_type: SecretKind,
     /// User TTL for the produced credentials.
     pub user_ttl: String,
     /// Target association ID (if available).
@@ -171,13 +171,13 @@ pub struct ProducerAssociation {
     pub target_assoc_id: Option<String>,
 }
 
-/// Attestation for an Akeyless target's infrastructure configuration.
+/// Attestation for a secrets-manager target's infrastructure configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AkeylessTargetAttestation {
-    /// Name of the target in Akeyless.
+pub struct SecretTargetAttestation {
+    /// Name of the target in the secrets manager.
     pub target_name: String,
     /// Type of target.
-    pub target_type: AkeylessTargetType,
+    pub target_type: SecretTargetType,
     /// Hash of the target configuration (connection details, parameters).
     pub target_config_hash: Blake3Hash,
     /// Hash of the target credentials.
@@ -201,7 +201,7 @@ pub struct AkeylessTargetAttestation {
 /// backend endpoint hash, TLS cert hash, TLS verification status, and
 /// each associated producer (sorted by name for determinism).
 #[must_use]
-pub fn compute_target_attestation_hash(attestation: &AkeylessTargetAttestation) -> Blake3Hash {
+pub fn compute_target_attestation_hash(attestation: &SecretTargetAttestation) -> Blake3Hash {
     let mut data = Vec::new();
     data.extend_from_slice(attestation.target_name.as_bytes());
     data.extend_from_slice(attestation.target_type.to_string().as_bytes());
@@ -233,7 +233,7 @@ pub fn compute_target_attestation_hash(attestation: &AkeylessTargetAttestation) 
 ///
 /// Targets are sorted by name before hashing to ensure order-independence.
 #[must_use]
-pub fn compute_multi_target_hash(attestations: &[AkeylessTargetAttestation]) -> Blake3Hash {
+pub fn compute_multi_target_hash(attestations: &[SecretTargetAttestation]) -> Blake3Hash {
     let mut sorted = attestations.to_vec();
     sorted.sort_by(|a, b| a.target_name.cmp(&b.target_name));
 
@@ -249,10 +249,10 @@ pub fn compute_multi_target_hash(attestations: &[AkeylessTargetAttestation]) -> 
 mod tests {
     use super::*;
 
-    fn sample_target_attestation() -> AkeylessTargetAttestation {
-        AkeylessTargetAttestation {
+    fn sample_target_attestation() -> SecretTargetAttestation {
+        SecretTargetAttestation {
             target_name: "/targets/prod/database".to_string(),
-            target_type: AkeylessTargetType::Database,
+            target_type: SecretTargetType::Database,
             target_config_hash: Blake3Hash::digest(b"db-config"),
             target_credential_hash: Blake3Hash::digest(b"db-creds"),
             backend_endpoint_hash: Blake3Hash::digest(b"db.prod.internal:5432"),
@@ -260,7 +260,7 @@ mod tests {
             backend_tls_verified: true,
             associated_producers: vec![ProducerAssociation {
                 producer_name: "/producers/db-dynamic".to_string(),
-                producer_type: AkeylessSecretType::DynamicDatabase,
+                producer_type: SecretKind::DynamicDatabase,
                 user_ttl: "1h".to_string(),
                 target_assoc_id: Some("assoc-123".to_string()),
             }],
@@ -313,47 +313,47 @@ mod tests {
     fn target_attestation_serde_roundtrip() {
         let att = sample_target_attestation();
         let json = serde_json::to_string(&att).unwrap();
-        let deserialized: AkeylessTargetAttestation = serde_json::from_str(&json).unwrap();
+        let deserialized: SecretTargetAttestation = serde_json::from_str(&json).unwrap();
         assert_eq!(att, deserialized);
     }
 
     #[test]
     fn target_type_display_roundtrip() {
         let types = vec![
-            AkeylessTargetType::Database,
-            AkeylessTargetType::Aws,
-            AkeylessTargetType::Azure,
-            AkeylessTargetType::Gcp,
-            AkeylessTargetType::Kubernetes,
-            AkeylessTargetType::Eks,
-            AkeylessTargetType::Gke,
-            AkeylessTargetType::Ssh,
-            AkeylessTargetType::HashiVault,
-            AkeylessTargetType::RabbitMq,
-            AkeylessTargetType::Artifactory,
-            AkeylessTargetType::GitHub,
-            AkeylessTargetType::GitLab,
-            AkeylessTargetType::DockerHub,
-            AkeylessTargetType::Salesforce,
-            AkeylessTargetType::Ldap,
-            AkeylessTargetType::Web,
-            AkeylessTargetType::Windows,
-            AkeylessTargetType::LetsEncrypt,
-            AkeylessTargetType::ZeroSsl,
-            AkeylessTargetType::GoDaddy,
-            AkeylessTargetType::Sectigo,
-            AkeylessTargetType::GlobalSign,
-            AkeylessTargetType::GlobalSignAtlas,
-            AkeylessTargetType::Ping,
-            AkeylessTargetType::OpenAi,
-            AkeylessTargetType::Gemini,
-            AkeylessTargetType::Splunk,
-            AkeylessTargetType::Linked,
-            AkeylessTargetType::Custom,
+            SecretTargetType::Database,
+            SecretTargetType::Aws,
+            SecretTargetType::Azure,
+            SecretTargetType::Gcp,
+            SecretTargetType::Kubernetes,
+            SecretTargetType::Eks,
+            SecretTargetType::Gke,
+            SecretTargetType::Ssh,
+            SecretTargetType::HashiVault,
+            SecretTargetType::RabbitMq,
+            SecretTargetType::Artifactory,
+            SecretTargetType::GitHub,
+            SecretTargetType::GitLab,
+            SecretTargetType::DockerHub,
+            SecretTargetType::Salesforce,
+            SecretTargetType::Ldap,
+            SecretTargetType::Web,
+            SecretTargetType::Windows,
+            SecretTargetType::LetsEncrypt,
+            SecretTargetType::ZeroSsl,
+            SecretTargetType::GoDaddy,
+            SecretTargetType::Sectigo,
+            SecretTargetType::GlobalSign,
+            SecretTargetType::GlobalSignAtlas,
+            SecretTargetType::Ping,
+            SecretTargetType::OpenAi,
+            SecretTargetType::Gemini,
+            SecretTargetType::Splunk,
+            SecretTargetType::Linked,
+            SecretTargetType::Custom,
         ];
         for tt in types {
             let s = tt.to_string();
-            let parsed: AkeylessTargetType = s.parse().unwrap();
+            let parsed: SecretTargetType = s.parse().unwrap();
             assert_eq!(tt, parsed);
         }
     }
@@ -363,7 +363,7 @@ mod tests {
         let att1 = sample_target_attestation();
         let mut att2 = sample_target_attestation();
         att2.target_name = "/targets/prod/api-gateway".to_string();
-        att2.target_type = AkeylessTargetType::Web;
+        att2.target_type = SecretTargetType::Web;
 
         let h1 = compute_multi_target_hash(&[att1.clone(), att2.clone()]);
         let h2 = compute_multi_target_hash(&[att1, att2]);
@@ -375,7 +375,7 @@ mod tests {
         let att1 = sample_target_attestation();
         let mut att2 = sample_target_attestation();
         att2.target_name = "/targets/prod/api-gateway".to_string();
-        att2.target_type = AkeylessTargetType::Web;
+        att2.target_type = SecretTargetType::Web;
 
         let h_forward = compute_multi_target_hash(&[att1.clone(), att2.clone()]);
         let h_reverse = compute_multi_target_hash(&[att2, att1]);
@@ -388,13 +388,13 @@ mod tests {
         att1.associated_producers = vec![
             ProducerAssociation {
                 producer_name: "/producers/z-producer".to_string(),
-                producer_type: AkeylessSecretType::DynamicDatabase,
+                producer_type: SecretKind::DynamicDatabase,
                 user_ttl: "2h".to_string(),
                 target_assoc_id: None,
             },
             ProducerAssociation {
                 producer_name: "/producers/a-producer".to_string(),
-                producer_type: AkeylessSecretType::DynamicCustom,
+                producer_type: SecretKind::DynamicCustom,
                 user_ttl: "30m".to_string(),
                 target_assoc_id: None,
             },
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn target_type_from_str_invalid() {
-        let result = "nonexistent_type".parse::<AkeylessTargetType>();
+        let result = "nonexistent_type".parse::<SecretTargetType>();
         assert!(result.is_err());
     }
 }

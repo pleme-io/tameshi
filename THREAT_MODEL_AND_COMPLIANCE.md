@@ -7,7 +7,7 @@ tameshi defends against supply chain injection, post-deployment binary tampering
 The security model rests on four pillars:
 
 1. **CertificationArtifact** -- cryptographic binding of provenance, compliance, and intent
-2. **Threshold signing** -- non-repudiation via Akeyless DFC (key never assembled)
+2. **Threshold signing** -- non-repudiation via remote Fragment (key never assembled)
 3. **eBPF LSM enforcement** -- kernel-level binary verification at `execve()`
 4. **HeartbeatChain** -- tamper-evident audit trail for regulatory evidence
 
@@ -20,13 +20,13 @@ The security model rests on four pillars:
 | 1 | **Supply chain injection** -- modified dependency in build | Nix closure hash changes if any dependency changes; CertificationArtifact root invalidated | inshou | 457 tests |
 | 2 | **Binary tampering** -- modified binary on disk post-deploy | BLAKE3 content hash does not match BPF allow map; kernel returns EPERM | kanshi LSM | 135 tests |
 | 3 | **Compliance forgery** -- fabricated compliance report | Compliance hash is BLAKE3 of actual kensa assessment; changing it invalidates the CertificationArtifact composed_root | kensa | 546 tests |
-| 4 | **Secret exposure** -- Akeyless secrets leaked via attestation | `LiveAkeylessCollector` hashes secret VALUES with gateway+path salt but never stores them; only salted hashes appear in signatures | tameshi collector | 6 tests |
+| 4 | **Secret exposure** -- secrets-manager secrets leaked via attestation | `LiveSecretsManagerCollector` hashes secret VALUES with gateway+path salt but never stores them; only salted hashes appear in signatures | tameshi collector | 6 tests |
 | 5 | **Infrastructure drift** -- config changed without re-attestation | HeartbeatChain provides continuous verification record; gaps detectable by missing sequence numbers | heartbeat | 51+ tests |
 | 6 | **Admission bypass** -- deploy without webhook | `ValidatingAdmissionWebhook` with `failurePolicy: Fail`; K8s API server itself enforces the call | sekiban | 417 tests |
 | 7 | **Break-glass abuse** -- emergency bypass used maliciously | Every break-glass event is cryptographically signed, scoped, time-bounded, and recorded as `HeartbeatEvent::BreakGlass` | signing + heartbeat | 11 tests |
 | 8 | **Signature replay** -- reuse old valid signature for new binary | `GatingPolicy.max_signature_age_secs` rejects stale signatures (default: 1 hour); `FixedClock` injection enables deterministic age testing | gating engine | 4 tests |
 | 9 | **Merkle tree manipulation** -- present internal node as leaf | RFC 9162 domain separation: `0x00` leaf prefix, `0x01` internal node prefix; `Blake3Algorithm.concat_and_hash()` enforces at type level | merkle construction | 5 tests |
-| 10 | **DFC key theft** -- steal signing key | Production: key never assembled (Akeyless DFC, fragments distributed). Mock: split-knowledge requires both fragments (XOR = one-time pad) | signing architecture | 70 tests |
+| 10 | **Fragment key theft** -- steal signing key | Production: key never assembled (remote Fragment, fragments distributed). Mock: split-knowledge requires both fragments (XOR = one-time pad) | signing architecture | 70 tests |
 | 11 | **Audit trail tampering** -- delete/modify heartbeat entries | BLAKE3 hash chain: modifying any field in any entry changes its `entry_hash`, breaking linkage at the next entry; `ConsistencyProof` enables remote verification | heartbeat chain | 12 tests |
 | 12 | **Namespace escape** -- execute in wrong namespace to avoid policy | Per-namespace `EnforcementPolicy` in BPF `tameshi_policy_map`; cgroup ID identifies container namespace at kernel level | kanshi policy | 8 tests |
 | 13 | **dlopen/JIT injection** -- load malicious shared library | `mmap_file` LSM hook verifies hash at `mmap()` time, not just `execve()` | kanshi eBPF | BPF design |
@@ -142,7 +142,7 @@ pub fn enforce_or_fail(lsm_available: bool, policy: EnforcementPolicy) -> Result
 | Control ID | Control Name | tameshi Implementation | Component |
 |:----------:|-------------|----------------------|:---------:|
 | **SR-4** | Provenance | `CertificationArtifact` binds artifact to build origin via `artifact_hash` (Leaf 0). `NixCollector` captures Nix closure. `OciCollector` captures OCI manifest digest. | tameshi |
-| **SR-11** | Component Authenticity | `CertificationArtifact.composed_root` = Merkle commitment to provenance + compliance + intent. Signed by `MerkleRootSigner` (DFC threshold). | tameshi |
+| **SR-11** | Component Authenticity | `CertificationArtifact.composed_root` = Merkle commitment to provenance + compliance + intent. Signed by `MerkleRootSigner` (Fragment threshold). | tameshi |
 | **SI-7** | Software, Firmware, and Information Integrity | kanshi eBPF `bprm_check_security` hook verifies BLAKE3 content hash at `execve()` time. `verify_by_hash()` immune to inode reuse. | kanshi |
 | **SI-3** | Malicious Code Protection | BPF `tameshi_revocation_list` blocks known-bad hashes. Revocation checked before allow map. tameshi-watch ingests CVE feeds for automatic revocation. | kanshi + tameshi-watch |
 | **CM-2** | Baseline Configuration | Nix closure hash captures exact package set. `NixCollector` hashes the full closure via `nix-store --query --requisites`. | tameshi |
@@ -154,7 +154,7 @@ pub fn enforce_or_fail(lsm_available: bool, policy: EnforcementPolicy) -> Result
 | **AU-2** | Event Logging | `HeartbeatChain` records all verification events across all components (sekiban, kensa, inshou, kanshi). 14 event types. | heartbeat |
 | **AU-3** | Content of Audit Records | `HeartbeatEntry` includes: sequence, timestamp, verifier identity (component + instance + version), event type, outcome, resource identifier, signature hash. | heartbeat |
 | **AU-9** | Protection of Audit Information | BLAKE3 hash chain: each entry's `entry_hash` includes `previous_hash`. Modifying any entry breaks the chain at the next entry. `S3Emitter` for off-host persistence. | heartbeat |
-| **SC-12** | Cryptographic Key Establishment and Management | Akeyless DFC threshold signing: key never exists in one piece. `MockDfcSigner` split-knowledge: `key = BLAKE3(fragment_a XOR fragment_b)`. `BreakGlassToken` for emergency bypass with full audit. | signing |
+| **SC-12** | Cryptographic Key Establishment and Management | remote Fragment threshold signing: key never exists in one piece. `MockFragmentSigner` split-knowledge: `key = BLAKE3(fragment_a XOR fragment_b)`. `BreakGlassToken` for emergency bypass with full audit. | signing |
 
 ---
 
@@ -196,8 +196,8 @@ pub struct CirciaReport {
 | SLSA Level | Requirement | tameshi Coverage | Status |
 |:----------:|-------------|-----------------|:------:|
 | **Level 1** | Build process documented | Nix flake captures entire build graph. `SdlcChain` records 8 pipeline phases. | Covered |
-| **Level 2** | Hosted build service + signed provenance | CI builds on hosted runners. `SignedRoot` with `AkeylessDfcSigner` or `LocalSigner`. | Covered |
-| **Level 3** | Hardened build platform + non-falsifiable provenance | Nix hermetic builds (no network, no ambient state). DFC threshold signing (key never assembled). `CertificationArtifact` binds provenance to compliance and intent. | Covered |
+| **Level 2** | Hosted build service + signed provenance | CI builds on hosted runners. `SignedRoot` with `RemoteFragmentSigner` or `LocalSigner`. | Covered |
+| **Level 3** | Hardened build platform + non-falsifiable provenance | Nix hermetic builds (no network, no ambient state). Fragment threshold signing (key never assembled). `CertificationArtifact` binds provenance to compliance and intent. | Covered |
 | **Level 4** | Two-person review + hermetic, reproducible builds | tameshi does not enforce code review policy (organizational control). Nix builds are hermetic and reproducible. | Partial |
 
 ---
@@ -254,7 +254,7 @@ All test counts obtained by running the full suite across 9 repositories. Zero f
 | Collision resistance (different inputs -> different hashes) | 30 | Exhaustive single-byte enumeration (256 inputs) + proptest |
 | Merkle composition determinism | 30 | Repeated construction, reordering, proptest tamper detection |
 | CertificationArtifact binding (3-leaf Merkle) | 109 | Composition, proof paths, tamper detection, proptest roundtrip |
-| Threshold signing correctness | 70 | LocalSigner, MockDfcSigner split-knowledge, AkeylessDfcSigner API, BreakGlassToken |
+| Threshold signing correctness | 70 | LocalSigner, MockFragmentSigner split-knowledge, RemoteFragmentSigner API, BreakGlassToken |
 | HeartbeatChain integrity | 51 | Chain linkage, tamper detection, consistency proofs, concurrent access |
 | K8s admission gating | 417 | Webhook handler, CRD reconciliation, OCI digest enforcement, changeset verification |
 | eBPF enforcement | 135 | BPF map operations, inode reuse detection, `verify_by_hash`, `enforce_or_fail`, policy engine |

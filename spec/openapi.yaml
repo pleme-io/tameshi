@@ -557,7 +557,7 @@ paths:
       summary: Sign a Merkle root
       description: |
         Signs a BLAKE3 Merkle root using the specified algorithm. Supports local
-        Ed25519 signing and Akeyless DFC (Dynamic Fragment Cryptography) for
+        Ed25519 signing and remote Fragment signing for
         remote key management.
       tags: [signing]
       requestBody:
@@ -1162,8 +1162,8 @@ components:
         - tatara
         - fluxcd
         - argocd
-        - akeyless
-        - akeyless_target
+        - secrets_manager
+        - secret_target
         - pangea_synthesis
         - rspec_result
         - inspec_result
@@ -2160,11 +2160,11 @@ components:
       description: SLSA (Supply-chain Levels for Software Artifacts) level
 
     # =========================================================================
-    # Akeyless Integration Types
+    # Secrets-manager Integration Types
     # =========================================================================
-    AkeylessSecretAttestation:
+    SecretAttestation:
       type: object
-      description: Attestation of Akeyless secret access during deployment
+      description: Attestation of secrets-manager secret access during deployment
       required:
         - gatewayUrl
         - authMethod
@@ -2174,13 +2174,13 @@ components:
       properties:
         gatewayUrl:
           type: string
-          description: URL of the Akeyless Gateway
+          description: URL of the secrets-manager Gateway
         authMethod:
-          $ref: "#/components/schemas/AkeylessAuthMethod"
+          $ref: "#/components/schemas/SecretAuthMethod"
         secretsAccessed:
           type: array
           items:
-            $ref: "#/components/schemas/AkeylessSecretAccess"
+            $ref: "#/components/schemas/SecretAccess"
           description: List of secrets accessed during deployment
         gatewayCertificateHash:
           type: string
@@ -2189,7 +2189,7 @@ components:
           type: string
           description: BLAKE3 hash of the authentication session
 
-    AkeylessAuthMethod:
+    SecretAuthMethod:
       type: string
       enum:
         - ApiKey
@@ -2201,11 +2201,11 @@ components:
         - Oidc
         - Certificate
         - Universal
-      description: Akeyless authentication method type
+      description: Secrets-manager authentication method type
 
-    AkeylessSecretAccess:
+    SecretAccess:
       type: object
-      description: Record of a single Akeyless secret access
+      description: Record of a single secrets-manager secret access
       required:
         - path
         - secretType
@@ -2214,9 +2214,9 @@ components:
       properties:
         path:
           type: string
-          description: Akeyless secret path
+          description: Secrets-manager secret path
         secretType:
-          $ref: "#/components/schemas/AkeylessSecretType"
+          $ref: "#/components/schemas/SecretKind"
         valueHash:
           type: string
           description: BLAKE3 hash of the secret value (not the secret itself)
@@ -2229,7 +2229,7 @@ components:
           nullable: true
           description: Secret version number
 
-    AkeylessSecretType:
+    SecretKind:
       type: string
       enum:
         - Static
@@ -2242,7 +2242,7 @@ components:
         - RotatedSecret
         - SshCertificate
         - PkiCertificate
-      description: Type of Akeyless secret
+      description: Type of secrets-manager secret
 
     # =========================================================================
     # Compliance Dimension Types
@@ -2641,7 +2641,7 @@ components:
         keyName:
           type: string
           nullable: true
-          description: Key name for remote signing (required for akeyless_dfc)
+          description: Key name for remote signing (required for remote_fragment)
 
     SignedRoot:
       type: object
@@ -2662,7 +2662,7 @@ components:
           $ref: "#/components/schemas/SigningAlgorithm"
         signerId:
           type: string
-          description: Identity of the signer (key fingerprint or Akeyless key path)
+          description: Identity of the signer (key fingerprint or secrets-manager key path)
         signedAt:
           type: string
           format: date-time
@@ -2670,7 +2670,7 @@ components:
 
     SigningAlgorithm:
       type: string
-      enum: [ed25519_local, akeyless_dfc, mock_dfc, break_glass]
+      enum: [ed25519_local, remote_fragment, mock_fragment, break_glass]
       description: Algorithm used to sign a Merkle root
 
     # =========================================================================

@@ -42,8 +42,8 @@ The federation layer adds:
   state
 - **Periodic reporting**: Each cluster publishes its ClusterRoot to the Master Server at
   configurable intervals (default: 60 seconds, matching `FederationConfig.replication_interval_secs`)
-- **Signed roots**: Each ClusterRoot is signed by the cluster's DFC signer
-  (`AkeylessDfcSigner` in production, `MockDfcSigner` for testing)
+- **Signed roots**: Each ClusterRoot is signed by the cluster's Fragment signer
+  (`RemoteFragmentSigner` in production, `MockFragmentSigner` for testing)
 
 ```
 ClusterRoot = BLAKE3(
@@ -104,7 +104,7 @@ graph TD
 
 ## 3. Master Tree Mechanics
 
-The Master Server (centralized Akeyless-backed service) maintains:
+The Master Server (centralized secrets-manager-backed service) maintains:
 
 ```rust
 pub struct GlobalStateRoot {
@@ -125,7 +125,7 @@ pub struct ClusterRootEntry {
     pub cluster_id: String,
     /// BLAKE3 Merkle root of all composed_roots on this cluster.
     pub cluster_root: Blake3Hash,
-    /// DFC-signed root (using the cluster's AkeylessDfcSigner or MockDfcSigner).
+    /// Fragment-signed root (using the cluster's RemoteFragmentSigner or MockFragmentSigner).
     pub signed_root: SignedRoot,
     /// Number of nodes reporting attestations.
     pub node_count: u32,
@@ -156,7 +156,7 @@ When any cluster reports a new root:
 1. Update `cluster_roots[cluster_id]` with the new `ClusterRootEntry`
 2. Recompute: `root_hash = BLAKE3(sorted cluster_root hashes)` -- using the same
    `Blake3Algorithm` with domain separation as `src/merkle.rs`
-3. Sign with Master DFC key (`AkeylessDfcSigner` backed by the master Akeyless DFC
+3. Sign with Master Fragment key (`RemoteFragmentSigner` backed by the master remote Fragment
    classic key)
 4. Append to GlobalStateRoot chain (append-only, same linkage pattern as `HeartbeatChain`)
 
@@ -316,7 +316,7 @@ GET  /api/v1/global/clusters/{id}/state
 
 POST /api/v1/global/clusters/{id}/report
      -> Cluster reports its latest ClusterRoot (called by local tameshi)
-     -> Body: ClusterRootEntry (signed by cluster's DFC key)
+     -> Body: ClusterRootEntry (signed by cluster's Fragment key)
      -> Triggers: GlobalStateRoot recomputation
 
 GET  /api/v1/global/history?from=...&to=...
@@ -344,8 +344,8 @@ The GlobalStateRoot builds on existing primitives without modifying them:
 | `Blake3Hash` | `tameshi/src/hash.rs` | All hashing at every level of the hierarchy |
 | `domain_separated_leaf()` | `tameshi/src/merkle.rs` | Leaf domain separation (`0x00` prefix) for cluster-level and global-level trees |
 | `Blake3Algorithm` | `tameshi/src/merkle.rs` | Internal node domain separation (`0x01` prefix) via `concat_and_hash()` |
-| `SignedRoot` | `tameshi/src/signing.rs` | Cluster root signing (per-cluster DFC key) and global root signing (master DFC key) |
-| `MerkleRootSigner` trait | `tameshi/src/signing.rs` | `AkeylessDfcSigner` for production, `MockDfcSigner` for testing |
+| `SignedRoot` | `tameshi/src/signing.rs` | Cluster root signing (per-cluster Fragment key) and global root signing (master Fragment key) |
+| `MerkleRootSigner` trait | `tameshi/src/signing.rs` | `RemoteFragmentSigner` for production, `MockFragmentSigner` for testing |
 | `HeartbeatChain` pattern | `tameshi/src/heartbeat.rs` | Append-only chain for GlobalStateRoot history (same `previous_hash` linkage) |
 | `ConsistencyProof` | `tameshi/src/heartbeat.rs` | Remote verification of GlobalStateRoot chain segments |
 | `CertificationArtifact` | `tameshi/src/certification_artifact.rs` | The leaf-level data: each artifact's `composed_root` feeds into the cluster tree |
@@ -365,7 +365,7 @@ Local tameshi instance (per cluster)
     +-- All composed_roots sorted, hashed into ClusterRoot
     |       using Blake3Algorithm with RFC 9162 domain separation
     |
-    +-- ClusterRoot signed by cluster's AkeylessDfcSigner
+    +-- ClusterRoot signed by cluster's RemoteFragmentSigner
     |
     +-- CertificationReplicator pushes ClusterRootEntry
             to Master Server via POST /api/v1/global/clusters/{id}/report
@@ -375,7 +375,7 @@ Master Server
     |
     +-- Updates cluster_roots BTreeMap
     +-- Recomputes GlobalStateRoot (BLAKE3 of sorted cluster roots)
-    +-- Signs with master AkeylessDfcSigner
+    +-- Signs with master RemoteFragmentSigner
     +-- Appends to GlobalStateRoot chain (HeartbeatChain pattern)
     +-- Updates reverse_index for O(1) hash lookups
 ```
@@ -438,8 +438,8 @@ pub struct ArtifactDelta {
 
 ```mermaid
 graph LR
-    subgraph "Akeyless Master Region"
-        MS[Master State Server<br/>GlobalStateRoot chain<br/>DFC Master Key]
+    subgraph "Secrets-manager Master Region"
+        MS[Master State Server<br/>GlobalStateRoot chain<br/>Fragment Master Key]
         S3[S3 Object Lock<br/>Immutable ledger archive]
         MS --> S3
     end
@@ -472,9 +472,9 @@ The Master Server runs as a stateless service backed by:
 - **S3 Object Lock** -- immutable append-only storage for the GlobalStateRoot chain.
   Each entry is written as a versioned object with legal hold, preventing deletion
   or modification. This satisfies CIRCIA 72-hour evidence preservation requirements.
-- **Akeyless DFC** -- the master signing key never exists in one piece. Threshold
-  signing is performed by the Akeyless gateway enclave. Key compromise requires
-  compromising the Akeyless infrastructure itself.
+- **remote Fragment** -- the master signing key never exists in one piece. Threshold
+  signing is performed by the secrets-manager gateway enclave. Key compromise requires
+  compromising the secrets-manager infrastructure itself.
 - **Multi-region replication** -- S3 cross-region replication ensures the ledger
   survives region-level failures. The Master Server can be restarted in any region
   by replaying the S3 ledger.
@@ -504,9 +504,9 @@ reliable delivery without duplicating artifacts.
 
 | Attack | Mitigation |
 |--------|------------|
-| **Cluster root forgery** | Every ClusterRoot is DFC-signed. The Master Server verifies signatures via `FederationVerifier` before accepting reports. Unknown or untrusted clusters receive `RemoteVerifyResult::UnknownCluster`. |
+| **Cluster root forgery** | Every ClusterRoot is Fragment-signed. The Master Server verifies signatures via `FederationVerifier` before accepting reports. Unknown or untrusted clusters receive `RemoteVerifyResult::UnknownCluster`. |
 | **Global root tampering** | GlobalStateRoot chain uses append-only BLAKE3 linkage. S3 Object Lock prevents deletion. ConsistencyProof enables any auditor to verify chain integrity. |
-| **Reverse index poisoning** | Reverse index is derived exclusively from verified ClusterRootEntries. An attacker would need to compromise a cluster's DFC key to inject false artifacts. |
+| **Reverse index poisoning** | Reverse index is derived exclusively from verified ClusterRootEntries. An attacker would need to compromise a cluster's Fragment key to inject false artifacts. |
 | **Replay attack** | Each ClusterRootReport includes `last_ack_sequence`. The Master Server rejects reports with sequence numbers older than the last acknowledged report. |
 | **Split-brain** | BTreeMap ordering of cluster roots ensures deterministic GlobalStateRoot computation. Two Master Server instances processing the same cluster reports produce identical roots. |
 | **Stale cluster masking** | `ClusterStatus` transitions from Active to Stale to Offline based on missed intervals. Offline clusters are flagged in blast radius reports as "status unknown -- last report N hours ago." |
@@ -517,11 +517,11 @@ reliable delivery without duplicating artifacts.
 Untrusted:  Internet, edge networks, factory LANs
             |
             v
-Authenticated (mTLS + DFC signature):
+Authenticated (mTLS + Fragment signature):
             Cluster -> Master Server communication
             |
             v
-Trusted:    Master Server + Akeyless DFC enclave
+Trusted:    Master Server + remote Fragment enclave
             S3 Object Lock ledger (immutable)
 ```
 

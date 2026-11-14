@@ -1,12 +1,12 @@
 module Tameshi.FragmentedSovereignty
 
 (** ================================================================
-    Fragmented Sovereignty: The Merkle Root as a DFC Fragment
+    Fragmented Sovereignty: The Merkle Root as a Key Fragment
     ================================================================
 
     This module proves that the tameshi CertificationArtifact's
-    composed_root can serve as an additional fragment in the Akeyless
-    DFC (Distributed Fragment Cryptography) scheme. This means:
+    composed_root can serve as an additional fragment in the secrets manager
+    Fragment scheme. This means:
 
     1. The signing key is reconstructed from N+1 fragments instead of N,
        where fragment N+1 is the Merkle root itself.
@@ -33,18 +33,18 @@ open Tameshi.Signing
 open Tameshi.Artifact
 
 (** ================================================================
-    Part 1: DFC Fragment Extension
+    Part 1: Key Fragment Extension
     ================================================================
 
-    Standard DFC: key = hash(xor(F_a, F_b))
-    Extended DFC: key = hash(xor(xor(F_a, F_b), composed_root))
+    Standard Fragment: key = hash(xor(F_a, F_b))
+    Extended Fragment: key = hash(xor(xor(F_a, F_b), composed_root))
 
     The composed_root acts as a third fragment that binds the signing
     key to the specific attestation. A key reconstructed with a different
     root produces a different signature — even if F_a and F_b are correct.
 *)
 
-(** Reconstruct a signing key from two DFC fragments PLUS the Merkle root.
+(** Reconstruct a signing key from two key fragments PLUS the Merkle root.
     This is the "extended" reconstruction that binds the key to the artifact. *)
 let reconstruct_key_extended (frag_a frag_b root: hash_t) : Tot hash_t =
   let xor_ab = xor_hash frag_a frag_b in
@@ -71,7 +71,7 @@ let verify_extended (frag_a frag_b root data expected_sig: hash_t) : Tot bool =
 
 (** Lemma: Different roots produce different extended keys.
     If the Merkle root changes (e.g., a leaf was tampered), the
-    reconstructed key changes even if the DFC fragments are unchanged. *)
+    reconstructed key changes even if the key fragments are unchanged. *)
 let lemma_root_binds_key (frag_a frag_b root1 root2: hash_t)
   : Lemma
     (requires root1 =!= root2)
@@ -88,7 +88,7 @@ let lemma_root_binds_key (frag_a frag_b root1 root2: hash_t)
        can derive from involutivity), this follows. *)
     admit () (* Requires XOR commutativity: xor(a,b) = xor(b,a) *)
 
-(** Lemma: Different DFC fragments still produce different keys
+(** Lemma: Different key fragments still produce different keys
     (the root doesn't weaken the original split-knowledge property). *)
 let lemma_fragments_still_independent (a1 a2 b root: hash_t)
   : Lemma
@@ -105,7 +105,7 @@ let lemma_fragments_still_independent (a1 a2 b root: hash_t)
     hash_collision_resistant (xor_hash xor1 root) (xor_hash xor2 root)
 
 (** Lemma: Wrong root means failed verification.
-    An attacker with correct DFC fragments but a tampered artifact
+    An attacker with correct key fragments but a tampered artifact
     (different root) cannot produce a valid signature. *)
 let lemma_wrong_root_fails_verify
   (frag_a frag_b root_correct root_tampered data: hash_t)
@@ -148,13 +148,13 @@ let lemma_root_hides_leaves (ca1 ca2: cert_artifact)
     lemma_artifact_binding ca1 ca2
 
 (** ================================================================
-    Part 4: Selective Disclosure Under Extended DFC
+    Part 4: Selective Disclosure Under Extended Fragment
     ================================================================
 
     An auditor can verify a single leaf (e.g., the PoMS) without
     learning the other leaves (e.g., the Nix closure hash or the
     compliance assessment). This works even when the root is used
-    as a DFC fragment — the inclusion proof operates independently
+    as a key fragment — the inclusion proof operates independently
     of the signing scheme.
 *)
 
@@ -162,8 +162,8 @@ let lemma_root_hides_leaves (ca1 ca2: cert_artifact)
     - The leaf value v_j
     - The sibling hashes along the path (outputs of BLAKE3)
     - The root r
-    It does NOT depend on the DFC fragments or the signing key.
-    Therefore, selective disclosure is composable with DFC. *)
+    It does NOT depend on the key fragments or the signing key.
+    Therefore, selective disclosure is composable with Fragment. *)
 let lemma_selective_disclosure_composable
   (frag_a frag_b: hash_t) (ca: cert_artifact)
   : Lemma
@@ -180,11 +180,11 @@ let lemma_selective_disclosure_composable
     Part 5: The N+1 Fragment Theorem
     ================================================================
 
-    Master theorem: the DFC scheme can be extended by one fragment
+    Master theorem: the Fragment scheme can be extended by one fragment
     (the Merkle root) without weakening any security property.
 *)
 
-(** The extended DFC scheme satisfies:
+(** The extended Fragment scheme satisfies:
     1. Split-knowledge: any N of N+1 fragments reveal nothing
     2. Root-binding: the key depends on the exact attestation
     3. Tamper-detection: a changed leaf changes the root, which

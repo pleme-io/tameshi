@@ -17,7 +17,7 @@ architectural requirements that MUST be addressed before enterprise deployment.
 
 ### The Problem
 
-Tameshi proves the Code (Nix derivation), the Secrets (Akeyless policy), and the
+Tameshi proves the Code (Nix derivation), the Secrets (Secrets-manager policy), and the
 Runtime (kanshi eBPF). But most applications read configuration from ConfigMaps,
 Secrets, environment variables, or PersistentVolumes.
 
@@ -98,7 +98,7 @@ provides configuration integrity. The Helm rendered hash is defense-in-depth.
 | Configuration Source | Hashed By | Leaf Node |
 |---------------------|-----------|-----------|
 | ConfigMap `data:` | Helm rendered / Nix closure | `helm-rendered` or `nix` |
-| Secret references (names, not values) | Helm rendered / Akeyless collector | `helm-rendered` + `akeyless` |
+| Secret references (names, not values) | Helm rendered / secrets-manager collector | `helm-rendered` + `secrets_manager` |
 | Environment variables | Helm rendered / Nix closure | `helm-rendered` or `nix` |
 | Volume mounts | Helm rendered / Nix closure | `helm-rendered` or `nix` |
 | Resource limits / requests | Helm rendered / Nix closure | `helm-rendered` or `nix` |
@@ -287,7 +287,7 @@ Root
 │   └── linux/arm64: blake3:bbb...
 ├── helm-rendered (architecture-independent)
 ├── kubernetes (architecture-independent)
-├── akeyless (architecture-independent)
+├── secrets_manager (architecture-independent)
 └── configuration (architecture-independent)
 ```
 
@@ -327,7 +327,7 @@ integrity before receiving Tameshi Merkle keys:
 
 1. **TPM 2.0 Remote Attestation:**
    - Node's TPM generates a quote (signed PCR values)
-   - Quote is sent to an attestation server (Akeyless or dedicated)
+   - Quote is sent to an attestation server (The secrets manager or dedicated)
    - Server verifies the quote against known-good PCR values
    - Only after verification does the node receive the Merkle root keys
 
@@ -430,8 +430,8 @@ Master Root
 ├── tofu (OpenTofu state — canonical JSON)
 ├── fluxcd (source commit hash)
 ├── argocd (git revision hash)
-├── akeyless (secret policy paths — not values)
-├── akeyless-target (target configuration — 30 types)
+├── secrets_manager (secret policy paths — not values)
+├── secrets-target (target configuration — 30 types)
 ├── kindling (identity report)
 └── tatara (cluster allocation state)
      +
@@ -443,7 +443,7 @@ Secure Root (BLAKE3(untested || compliance))
 **What is proven by this tree:**
 1. The code is exactly what was built (nix, oci)
 2. The configuration is exactly what was tested (helm-rendered, kubernetes)
-3. The secrets policy is untampered (akeyless, akeyless-target)
+3. The secrets policy is untampered (secrets_manager, secrets-target)
 4. The infrastructure state matches intent (tofu, fluxcd, argocd)
 5. The compliance tests passed (kensa hash)
 6. The runtime matches the attestation (kanshi eBPF)
@@ -464,8 +464,8 @@ Secure Root (BLAKE3(untested || compliance))
 | SC (System/Comms Protection) | SC-34, SC-51 | Self-attestation, TPM |
 | SA (System Acquisition) | SA-10, SA-11 | Nix derivation, kensa compliance |
 | AU (Audit) | AU-2, AU-3, AU-10 | Heartbeat chain, CIRCIA evidence |
-| AC (Access Control) | AC-3, AC-6 | Akeyless policy-path hashing |
-| IA (Identification/Auth) | IA-7 | DFC signing, Ed25519 attestation |
+| AC (Access Control) | AC-3, AC-6 | Secrets-manager policy-path hashing |
+| IA (Identification/Auth) | IA-7 | Fragment signing, Ed25519 attestation |
 
 ---
 

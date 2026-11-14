@@ -9,7 +9,7 @@ spec:
     - oci
     - helm
     - kubernetes
-    - akeyless
+    - secrets_manager
   expectedSignature: "blake3:0000000000000000000000000000000000000000000000000000000000000000"
   targetResources:
     - group: apps

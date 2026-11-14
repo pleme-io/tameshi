@@ -1,6 +1,6 @@
-//! Akeyless secret management compliance dimension.
+//! Secrets-manager secret management compliance dimension.
 //!
-//! Provides attestation types for Akeyless secret management integration,
+//! Provides attestation types for secrets-manager secret management integration,
 //! recording which secrets were accessed, how authentication was performed,
 //! and computing a deterministic compliance hash from these records.
 //!
@@ -11,25 +11,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::hash::Blake3Hash;
 
-/// Attestation for Akeyless secret management integration.
+/// Attestation for secrets-manager secret management integration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AkeylessSecretAttestation {
-    /// Akeyless Gateway URL.
+pub struct SecretAttestation {
+    /// Secrets-manager Gateway URL.
     pub gateway_url: String,
     /// Authentication method used.
-    pub auth_method: AkeylessAuthMethod,
+    pub auth_method: SecretAuthMethod,
     /// Secrets accessed during the attestation window.
-    pub secrets_accessed: Vec<AkeylessSecretAccess>,
+    pub secrets_accessed: Vec<SecretAccess>,
     /// Hash of the gateway's TLS certificate.
     pub gateway_certificate_hash: Blake3Hash,
     /// Hash of the authentication session.
     pub session_hash: Blake3Hash,
 }
 
-/// Akeyless authentication methods.
+/// Secrets-manager authentication methods.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum AkeylessAuthMethod {
+pub enum SecretAuthMethod {
     /// API key authentication.
     ApiKey,
     /// AWS IAM authentication.
@@ -50,7 +50,7 @@ pub enum AkeylessAuthMethod {
     Universal,
 }
 
-impl std::fmt::Display for AkeylessAuthMethod {
+impl std::fmt::Display for SecretAuthMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ApiKey => write!(f, "api_key"),
@@ -68,11 +68,11 @@ impl std::fmt::Display for AkeylessAuthMethod {
 
 /// Record of a secret access event.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AkeylessSecretAccess {
-    /// Secret path in Akeyless.
+pub struct SecretAccess {
+    /// Secret path in the secrets manager.
     pub path: String,
     /// Type of secret.
-    pub secret_type: AkeylessSecretType,
+    pub secret_type: SecretKind,
     /// Hash of the secret value (NOT the value itself).
     pub value_hash: Blake3Hash,
     /// When the secret was accessed.
@@ -82,10 +82,10 @@ pub struct AkeylessSecretAccess {
     pub version: Option<u64>,
 }
 
-/// Types of Akeyless secrets.
+/// Types of secrets-manager secrets.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum AkeylessSecretType {
+pub enum SecretKind {
     /// Static secret.
     Static,
     /// Dynamic AWS IAM secret.
@@ -108,7 +108,7 @@ pub enum AkeylessSecretType {
     PkiCertificate,
 }
 
-impl std::fmt::Display for AkeylessSecretType {
+impl std::fmt::Display for SecretKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Static => write!(f, "static"),
@@ -125,12 +125,12 @@ impl std::fmt::Display for AkeylessSecretType {
     }
 }
 
-/// Compute a deterministic compliance hash for the Akeyless attestation.
+/// Compute a deterministic compliance hash for the secrets-manager attestation.
 ///
 /// The hash covers the gateway URL, auth method, certificate hash, session hash,
 /// and each secret access record (path, type, value hash).
 #[must_use]
-pub fn compute_akeyless_hash(attestation: &AkeylessSecretAttestation) -> Blake3Hash {
+pub fn compute_secret_hash(attestation: &SecretAttestation) -> Blake3Hash {
     let mut data = Vec::new();
     data.extend_from_slice(attestation.gateway_url.as_bytes());
     data.extend_from_slice(attestation.auth_method.to_string().as_bytes());
@@ -148,13 +148,13 @@ pub fn compute_akeyless_hash(attestation: &AkeylessSecretAttestation) -> Blake3H
 mod tests {
     use super::*;
 
-    fn sample_attestation() -> AkeylessSecretAttestation {
-        AkeylessSecretAttestation {
-            gateway_url: "https://gw.akeyless.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::K8s,
-            secrets_accessed: vec![AkeylessSecretAccess {
+    fn sample_attestation() -> SecretAttestation {
+        SecretAttestation {
+            gateway_url: "https://gw.secrets.example.com".to_string(),
+            auth_method: SecretAuthMethod::K8s,
+            secrets_accessed: vec![SecretAccess {
                 path: "/production/db/password".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"secret-value"),
                 accessed_at: chrono::Utc::now(),
                 version: Some(1),
@@ -165,34 +165,34 @@ mod tests {
     }
 
     #[test]
-    fn akeyless_hash_deterministic() {
+    fn secrets_manager_hash_deterministic() {
         let attestation = sample_attestation();
-        let h1 = compute_akeyless_hash(&attestation);
-        let h2 = compute_akeyless_hash(&attestation);
+        let h1 = compute_secret_hash(&attestation);
+        let h2 = compute_secret_hash(&attestation);
         assert_eq!(h1, h2);
     }
 
     #[test]
-    fn akeyless_hash_different_for_different_gateways() {
+    fn secrets_manager_hash_different_for_different_gateways() {
         let mut a1 = sample_attestation();
         let a2 = sample_attestation();
-        a1.gateway_url = "https://other-gw.akeyless.example.com".to_string();
-        assert_ne!(compute_akeyless_hash(&a1), compute_akeyless_hash(&a2));
+        a1.gateway_url = "https://other-gw.secrets.example.com".to_string();
+        assert_ne!(compute_secret_hash(&a1), compute_secret_hash(&a2));
     }
 
     #[test]
-    fn akeyless_hash_different_for_different_secrets() {
+    fn secrets_manager_hash_different_for_different_secrets() {
         let a1 = sample_attestation();
         let mut a2 = sample_attestation();
         a2.secrets_accessed[0].path = "/production/db/other".to_string();
-        assert_ne!(compute_akeyless_hash(&a1), compute_akeyless_hash(&a2));
+        assert_ne!(compute_secret_hash(&a1), compute_secret_hash(&a2));
     }
 
     #[test]
-    fn akeyless_serde_roundtrip() {
+    fn secrets_manager_serde_roundtrip() {
         let attestation = sample_attestation();
         let json = serde_json::to_string(&attestation).unwrap();
-        let deserialized: AkeylessSecretAttestation = serde_json::from_str(&json).unwrap();
+        let deserialized: SecretAttestation = serde_json::from_str(&json).unwrap();
         assert_eq!(attestation, deserialized);
     }
 }

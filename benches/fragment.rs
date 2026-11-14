@@ -4,7 +4,7 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use tameshi::fragment_extension::reconstruct_key_extended;
 use tameshi::hash::Blake3Hash;
 use tameshi::pedersen::{Opening, commit, verify_commitment};
-use tameshi::shamir_dfc::{reconstruct, split};
+use tameshi::shamir_fragment::{reconstruct, split};
 use tameshi::zk_bpf::{generate_proof, verify_proof};
 
 fn bench_shamir_split(c: &mut Criterion) {

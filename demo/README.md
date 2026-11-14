@@ -1,4 +1,4 @@
-# Tameshi Attestation Ecosystem — Akeyless Hackathon Demo
+# Tameshi Attestation Ecosystem — Hackathon Demo
 
 ## What is Tameshi?
 
@@ -6,7 +6,7 @@ Tameshi is a deterministic integrity attestation system for infrastructure.
 It creates cryptographic proof that your entire deployment pipeline — from source
 code to running containers — has not been tampered with.
 
-**Key insight:** By including Akeyless secret access in the attestation chain,
+**Key insight:** By including secrets-manager secret access in the attestation chain,
 we prove not just WHAT was deployed, but that the secrets powering it came from
 a verified, auditable source.
 
@@ -21,9 +21,9 @@ Image (OCI manifest hash)
     |
 Chart (Helm chart hash)
     |
-Secrets (Akeyless access hash) <-- NEW
+Secrets (Secrets-manager access hash) <-- NEW
     |
-Targets (Akeyless target attestation hash) <-- NEW
+Targets (Secrets-manager target attestation hash) <-- NEW
     |
 Deploy (K8s manifest hash)
     |
@@ -80,18 +80,18 @@ kensa hash
 # -> blake3:9b2e...
 ```
 
-### Step 4: Akeyless Secret Attestation
+### Step 4: Secrets-manager Secret Attestation
 
 ```bash
 # The attestation includes:
-# - Which Akeyless gateway was used
+# - Which secrets-manager gateway was used
 # - Authentication method (K8s auth, API key, etc.)
 # - BLAKE3 hash of each secret VALUE (not the value itself!)
 # - Gateway TLS certificate hash
 # - Session hash
 
 # This proves:
-# 1. Secrets came from YOUR Akeyless gateway
+# 1. Secrets came from YOUR secrets-manager gateway
 # 2. The correct secrets were accessed
 # 3. No secret substitution attack occurred
 ```
@@ -100,7 +100,7 @@ kensa hash
 
 ```bash
 # The target attestation covers:
-# - Each Akeyless target's name and type (database, AWS, K8s, etc.)
+# - Each secrets-manager target's name and type (database, AWS, K8s, etc.)
 # - BLAKE3 hash of the target configuration (connection details, parameters)
 # - BLAKE3 hash of the target credentials (NOT the credentials themselves)
 # - BLAKE3 hash of the backend endpoint URL/address
@@ -141,25 +141,25 @@ kubectl apply -f demo/attested-deployment.yaml
 ### Step 6: Tamper Detection
 
 ```bash
-# Modify one secret in Akeyless
+# Modify one secret in the secrets manager
 # Re-deploy the same manifest
-# Sekiban DENIES because the Akeyless hash changed
-# -> "signature mismatch: akeyless layer hash changed"
+# Sekiban DENIES because the secrets-manager hash changed
+# -> "signature mismatch: secrets_manager layer hash changed"
 ```
 
 ### Step 7: Merkle Proof Verification
 
 ```bash
-# Generate inclusion proof for the Akeyless layer
+# Generate inclusion proof for the secrets-manager layer
 # Proves the secret attestation is part of the master signature
 # Without revealing other layer hashes
 ```
 
-## Why Akeyless + Tameshi?
+## Why the secrets manager + Tameshi?
 
 | Without Tameshi | With Tameshi |
 |----------------|-------------|
-| Secrets accessed at deploy time -- no audit trail in the signature | Akeyless access hashed into master signature |
+| Secrets accessed at deploy time -- no audit trail in the signature | Secrets-manager access hashed into master signature |
 | Can't prove which gateway provided secrets | Gateway TLS cert hash in attestation |
 | Secret substitution attacks possible | Any change to secret values changes the master hash |
 | Target endpoints unverified at deploy time | Target configuration hashed into attestation chain |

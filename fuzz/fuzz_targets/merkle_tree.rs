@@ -20,8 +20,8 @@ fuzz_target!(|data: &[u8]| {
         LayerType::Tatara,
         LayerType::FluxCD,
         LayerType::ArgoCD,
-        LayerType::Akeyless,
-        LayerType::AkeylessTarget,
+        LayerType::SecretsManager,
+        LayerType::SecretTarget,
     ];
 
     let layers: Vec<LayerSignature> = (0..count)

@@ -54,7 +54,7 @@ pub struct DeploymentContext {
 
 - Same BLAKE3 hash chain as HeartbeatChain (each entry includes hash of previous)
 - Persisted to S3 with Object Lock (WORM -- Write Once Read Many)
-- Replicated to Akeyless Secure Audit Logs for independent verification
+- Replicated to secrets-manager Secure Audit Logs for independent verification
 - ConsistencyProof enables remote verification without full ledger download
 
 **Storage tiers**:
@@ -131,7 +131,7 @@ sequenceDiagram
 | 3 | Temporal indexing + blast radius query | Index builder, `BlastRadiusReport` type |
 | 4 | API endpoints in kensa/sekiban | REST handlers, OpenAPI spec update |
 | 5 | tameshi-watch integration (auto-query on new CVE) | CVE feed ingestion, auto-blast-radius |
-| 6 | Akeyless Secure Audit Log replication | Dual-write, independent verification path |
+| 6 | Secrets-manager Secure Audit Log replication | Dual-write, independent verification path |
 
 ---
 

@@ -2,11 +2,9 @@
 
 ## Executive Summary
 
-Tameshi transforms Akeyless from a "Secrets Management" platform into a **Cryptographically Verifiable Infrastructure** platform.
-
 Federal cybersecurity mandates — CIRCIA (Cyber Incident Reporting for Critical Infrastructure Act), OMB M-22-18 software attestation requirements, and NIST SSDF (Secure Software Development Framework) — are converging on a single demand: **mathematically provable supply chain integrity, not just signed attestation documents**.
 
-Tameshi delivers this by enforcing a BLAKE3 Merkle-tree hash chain from Nix builds through Akeyless secret provisioning to the Kubernetes admission webhook. The chain is not advisory. It is an admission gate. If the chain breaks, the deployment is rejected at the API level.
+Tameshi delivers this by enforcing a BLAKE3 Merkle-tree hash chain from Nix builds through secrets-manager secret provisioning to the Kubernetes admission webhook. The chain is not advisory. It is an admission gate. If the chain breaks, the deployment is rejected at the API level.
 
 This is not a compliance checkbox. It is a mathematical guarantee that the infrastructure state tested and approved by the security team is the exact state that runs in production.
 
@@ -28,7 +26,7 @@ The OMB M-22-18 memorandum requires software producers to attest conformance wit
 - Helm charts can be modified post-signing
 - Kustomize overlays can inject unauthorized manifests
 - FluxCD/ArgoCD source refs can be altered
-- Akeyless dynamic secrets can be provisioned by tampered logic
+- Secrets-manager dynamic secrets can be provisioned by tampered logic
 
 SLSA Level 3 attestations prove "this artifact was built by this pipeline." They do NOT prove "this is the artifact currently being deployed to this cluster."
 
@@ -47,7 +45,7 @@ Tameshi Merkle root ────────── Beyond SLSA L3 (deploy-time v
   ├── Helm chart provenance    The K8s admission webhook rejects invalid roots
   ├── K8s manifest set hash
   ├── FluxCD reconciliation
-  └── Akeyless secret state    Zero-knowledge proof of secret provisioning
+  └── secrets-manager secret state    Zero-knowledge proof of secret provisioning
 ```
 
 Federal software attestation becomes **mathematically verifiable** rather than a paper exercise. The attestation is not "we followed SSDF practices" — it is "the cryptographic hash of every infrastructure component matches the hash computed during the security audit."
@@ -90,7 +88,7 @@ These are the most time-consuming and error-prone phases of incident response. A
 
 ### How Tameshi Eliminates Drift as a Variable
 
-Tameshi provides an **immutable, BLAKE3-hashed baseline** of the deployment state and Akeyless secret usage at every deployment. During incident response:
+Tameshi provides an **immutable, BLAKE3-hashed baseline** of the deployment state and secrets-manager secret usage at every deployment. During incident response:
 
 ```
 Incident detected
@@ -109,7 +107,7 @@ Incident detected
   ├── Merkle proof: isolate exactly WHICH layer was affected
   │   └── O(log n) verification — seconds, not hours
   │
-  └── Akeyless attestation: verify secret provisioning integrity
+  └── secrets-manager attestation: verify secret provisioning integrity
       └── Salted hash proves secret state without revealing values
 ```
 
@@ -145,11 +143,11 @@ Tameshi and runtime security tools are complementary layers in a defense-in-dept
 
 ---
 
-## The Akeyless "Last Mile" Advantage
+## The Secret-Provisioning "Last Mile"
 
 ### The Problem: Dynamic Secret Provisioning
 
-Akeyless Dynamic Secrets are generated at runtime by provisioning logic that creates short-lived credentials (database users, AWS IAM roles, K8s tokens). The provisioning logic runs as part of the deployment pipeline.
+Secrets-manager Dynamic Secrets are generated at runtime by provisioning logic that creates short-lived credentials (database users, AWS IAM roles, K8s tokens). The provisioning logic runs as part of the deployment pipeline.
 
 If the provisioning logic is tampered with — a modified container image, a mutated Helm chart, an injected sidecar — the attacker gains the ability to:
 
@@ -170,23 +168,23 @@ OCI image (immutable manifest) ───────────┤
 Helm chart (provenance verified) ─────────┤
 K8s manifest set (hash verified) ─────────┤ BLAKE3 Merkle Root
 FluxCD state (GitOps reconciled) ─────────┤
-Akeyless target config (hash verified) ───┤
-Akeyless secret access (salted hash) ─────┘
+Secrets-manager target config (hash verified) ───┤
+Secrets-manager secret access (salted hash) ─────┘
                                            │
                                            ▼
                               sekiban admission webhook
                               ALLOW only if Merkle root matches
                                            │
                                            ▼
-                              Akeyless Dynamic Secret provisioning
+                              secrets-manager Dynamic Secret provisioning
                               (guaranteed untampered)
 ```
 
-The admission webhook verifies the entire stack **before** the provisioning pod starts. If any component has been modified — even a single byte in a base image layer — the pod is rejected and never reaches the Akeyless API.
+The admission webhook verifies the entire stack **before** the provisioning pod starts. If any component has been modified — even a single byte in a base image layer — the pod is rejected and never reaches the secrets-manager API.
 
 ### Zero-Knowledge Secret Attestation
 
-The Akeyless layer uses two-layer hashing. First, each secret value is salted and hashed at collection time (the raw value is consumed and never stored):
+The secrets-manager layer uses two-layer hashing. First, each secret value is salted and hashed at collection time (the raw value is consumed and never stored):
 
 ```
 per_secret_hash = BLAKE3(gateway_url + ":" + secret_path + ":" + secret_value)
@@ -211,26 +209,6 @@ Without revealing:
 - The secret value itself (one-way hash)
 - Any information useful for dictionary attacks (gateway+path salt defeats rainbow tables)
 
-For enterprise and federal customers, this means Akeyless can offer a unique guarantee: **the cryptographic proof that the exact secret provisioning logic approved by the security team is the exact logic that ran in production, with zero-knowledge attestation of the secrets it accessed**.
-
-No other secrets management platform provides this level of supply-chain integrity verification.
-
-### Competitive Positioning
-
-| Capability | Akeyless (standard) | Akeyless + Tameshi | HashiCorp Vault | CyberArk |
-|-----------|--------------------|--------------------|-----------------|----------|
-| Secret rotation | Yes | Yes | Yes | Yes |
-| Dynamic secrets | Yes | Yes | Yes | Limited |
-| Audit logging | Yes | Yes | Yes | Yes |
-| Build provenance (SLSA L3) | Via CI | Via CI | Via CI | Via CI |
-| **Deploy-time provenance (beyond SLSA L3)** | No | **Yes** | No | No |
-| **K8s admission gating** | No | **Yes** | No | No |
-| **Zero-knowledge secret attestation** | No | **Yes** | No | No |
-| **Supply chain injection prevention** | No | **Yes** | No | No |
-| **CIRCIA baseline evidence** | Partial | **Complete** | Partial | Partial |
-
-*Note: Competitive claims based on publicly documented product capabilities as of March 2026. Vendors may have unreleased or undocumented features not reflected here.*
-
 ---
 
 ## Summary: What Tameshi Proves and What It Does Not
@@ -253,5 +231,3 @@ No other secrets management platform provides this level of supply-chain integri
 ### The Net Position
 
 Tameshi sits at the mathematical ceiling of what software systems can guarantee about supply chain integrity. It does not over-promise. It delivers exactly what the cryptography proves, and clearly documents the boundary between attestation and verification.
-
-For federal compliance (CIRCIA, NIST SSDF, OMB M-22-18), this positions Akeyless as the only secrets management platform that can provide **mathematically verifiable deployment integrity** — not just audit logs, not just signed attestations, but cryptographic proof that the approved state is the running state.

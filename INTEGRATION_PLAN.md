@@ -577,7 +577,7 @@ pub mod service;
 ```
 
 **`/Users/luis.d/code/github/pleme-io/tameshi-global/src/config.rs`**
-- `GlobalConfig` -- struct: `listen_addr: String`, `s3_bucket: String`, `s3_region: String`, `master_dfc_key_name: String`, `cluster_heartbeat_interval_secs: u64`, `stale_threshold_intervals: u32`, `offline_threshold_intervals: u32`.
+- `GlobalConfig` -- struct: `listen_addr: String`, `s3_bucket: String`, `s3_region: String`, `master_fragment_key_name: String`, `cluster_heartbeat_interval_secs: u64`, `stale_threshold_intervals: u32`, `offline_threshold_intervals: u32`.
 
 **`/Users/luis.d/code/github/pleme-io/tameshi-global/src/service.rs`**
 - `GlobalService` -- struct: `chain: Arc<GlobalStateRootChain>`, `reverse_index: Arc<ReverseIndex>`, `signer: Arc<dyn MerkleRootSigner>`, `federation_verifier: FederationVerifier`, `config: GlobalConfig`.
@@ -641,7 +641,7 @@ api.rs tests (~25):
 
 #### Agent Prompt Template
 
-> You are implementing Sprint 6: tameshi-global, a new Rust binary. This is the master state server for the GlobalStateRoot system. It uses tameshi's `GlobalStateRootChain`, `ReverseIndex`, `FederationVerifier`, and `MerkleRootSigner` traits. Create a standard Rust project with `Cargo.toml`, `src/main.rs`, `src/lib.rs`, `src/config.rs`, `src/service.rs`, `src/api.rs`, `src/error.rs`. The API serves 8 endpoints documented in GLOBAL_STATE_ROOT.md section 5. Use axum for HTTP. `GlobalService` is the core -- it accepts cluster reports (verifying DFC signatures), maintains the GlobalStateRoot chain, serves blast radius queries via the reverse index, and fans out revocations. Include a Helm chart. Write ~60 tests.
+> You are implementing Sprint 6: tameshi-global, a new Rust binary. This is the master state server for the GlobalStateRoot system. It uses tameshi's `GlobalStateRootChain`, `ReverseIndex`, `FederationVerifier`, and `MerkleRootSigner` traits. Create a standard Rust project with `Cargo.toml`, `src/main.rs`, `src/lib.rs`, `src/config.rs`, `src/service.rs`, `src/api.rs`, `src/error.rs`. The API serves 8 endpoints documented in GLOBAL_STATE_ROOT.md section 5. Use axum for HTTP. `GlobalService` is the core -- it accepts cluster reports (verifying Fragment signatures), maintains the GlobalStateRoot chain, serves blast radius queries via the reverse index, and fans out revocations. Include a Helm chart. Write ~60 tests.
 
 ---
 
@@ -676,15 +676,15 @@ Types:
 - `TieredLedgerStore::demote()` -- moves entries past hot threshold to warm, past warm threshold to cold.
 - `TieredLedgerStore::tier_for(entry) -> StorageTier`.
 
-**`/Users/luis.d/code/github/pleme-io/tameshi/src/forensics/akeyless_audit.rs`**
+**`/Users/luis.d/code/github/pleme-io/tameshi/src/forensics/secrets_manager_audit.rs`**
 Types:
-- `AkeylessAuditEmitter` -- implements `HeartbeatEmitter` for dual-write to Akeyless Secure Audit Log.
-- `AkeylessAuditConfig` -- struct: `gateway_url: String`, `access_id: String`, `audit_log_path: String`.
-- On each ledger entry append, also writes to Akeyless audit log via REST API.
+- `SecretsManagerAuditEmitter` -- implements `HeartbeatEmitter` for dual-write to secrets-manager Secure Audit Log.
+- `SecretsManagerAuditConfig` -- struct: `gateway_url: String`, `access_id: String`, `audit_log_path: String`.
+- On each ledger entry append, also writes to secrets-manager audit log via REST API.
 
 #### Files to Modify
 
-- `/Users/luis.d/code/github/pleme-io/tameshi/src/forensics/mod.rs` -- add `pub mod storage;`, `pub mod tiering;`, `pub mod akeyless_audit;`.
+- `/Users/luis.d/code/github/pleme-io/tameshi/src/forensics/mod.rs` -- add `pub mod storage;`, `pub mod tiering;`, `pub mod secrets_manager_audit;`.
 
 #### Tests (~40)
 
@@ -715,7 +715,7 @@ tiering.rs tests (~15):
 - `test_tiered_store_transparent_promotion`
 - (4 more)
 
-akeyless_audit.rs tests (~10):
+secrets_manager_audit.rs tests (~10):
 - `test_audit_emitter_creation`
 - `test_audit_emitter_emit`
 - `test_audit_config_serde`
@@ -725,7 +725,7 @@ akeyless_audit.rs tests (~10):
 
 #### Agent Prompt Template
 
-> You are implementing Sprint 7: S3 Object Lock + Tiered Storage. Create `src/forensics/storage.rs`, `src/forensics/tiering.rs`, `src/forensics/akeyless_audit.rs` in tameshi. `S3LedgerStore` implements the `MerkleLedgerStore` trait using the `object_store` crate (already in Cargo.toml). Object keys are zero-padded sequence numbers for lexicographic ordering. `TieredLedgerStore` composes in-memory hot tier (72h), S3 Standard warm tier (90d), and S3 Glacier cold tier. `AkeylessAuditEmitter` implements `HeartbeatEmitter` for dual-write to Akeyless Secure Audit Log. Follow the `S3Emitter` pattern from `src/heartbeat.rs` (lines 798+). Write ~40 tests.
+> You are implementing Sprint 7: S3 Object Lock + Tiered Storage. Create `src/forensics/storage.rs`, `src/forensics/tiering.rs`, `src/forensics/secrets_manager_audit.rs` in tameshi. `S3LedgerStore` implements the `MerkleLedgerStore` trait using the `object_store` crate (already in Cargo.toml). Object keys are zero-padded sequence numbers for lexicographic ordering. `TieredLedgerStore` composes in-memory hot tier (72h), S3 Standard warm tier (90d), and S3 Glacier cold tier. `SecretsManagerAuditEmitter` implements `HeartbeatEmitter` for dual-write to secrets-manager Secure Audit Log. Follow the `S3Emitter` pattern from `src/heartbeat.rs` (lines 798+). Write ~40 tests.
 
 ---
 

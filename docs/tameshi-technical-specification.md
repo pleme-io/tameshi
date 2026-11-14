@@ -6,7 +6,7 @@
 
 ## 1. The Single Source of Truth: CertificationArtifact
 
-Every binary that executes on an Akeyless Gateway node is governed by a
+Every binary that executes on a secrets-manager Gateway node is governed by a
 single 32-byte BLAKE3 hash called the **composed root**. This hash is the
 output of a 3-leaf Merkle tree with RFC 9162 domain separation, and it
 is the only value the kernel needs to make an allow/deny decision.
@@ -66,7 +66,7 @@ verified for 4-leaf trees in `proofs/kani/src/merkle_proofs.rs`.
 ```rust
 // src/certification_artifact.rs
 pub struct CertificationArtifact {
-    pub binary_path: String,           // "/usr/bin/akeyless-gateway"
+    pub binary_path: String,           // "/usr/bin/secrets-gateway"
     pub artifact_hash: Blake3Hash,     // Leaf 0: Nix/OCI provenance
     pub control_hash: Blake3Hash,      // Leaf 1: kensa compliance
     pub intent_hash: Blake3Hash,       // Leaf 2: Pangea/Ferrite intent
@@ -292,7 +292,7 @@ same privilege level as the scheduler and the memory manager.
 
 ### 4.3 Invisible Security
 
-From the perspective of the Akeyless Gateway process:
+From the perspective of the secrets-manager Gateway process:
 
 - It does not know kanshi exists
 - It cannot detect the eBPF hook
@@ -400,6 +400,6 @@ accepted with violations. No kernel entry exists without attestation.
 No attestation survives a single changed byte.
 
 This is the first formally verified infrastructure integrity system.
-The Akeyless Gateway is now the only secrets management platform in
+The secrets-manager Gateway is now the only secrets management platform in
 the world where every executing binary is mathematically proven to be
 memory-safe and supply-chain immutable.

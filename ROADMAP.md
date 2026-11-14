@@ -34,7 +34,7 @@ Tameshi is not 20 features — it is **three layers of defense**:
 │                                                             │
 │   kensa → NIST/SOC2/PCI/FedRAMP assessments                │
 │   Heartbeat chain → append-only BLAKE3 audit trail          │
-│   DFC signing → threshold cryptographic proof               │
+│   Fragment signing → threshold cryptographic proof               │
 │   CIRCIA evidence → 72-hour reporting chain                 │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -311,20 +311,20 @@ This proves the infrastructure was verified 9,847 times over 48 hours and remain
 
 ## Phase 3: Distributed Trust & Enterprise Scaling (Week 13-24)
 
-### 3.1 Akeyless DFC Integration — Week 13-16
+### 3.1 remote Fragment Integration — Week 13-16
 
 **The Problem (Gemini's "Root of Trust" concern):** kensa signs the approved Merkle root with a private key. If that key is a file on a CI server, an attacker who compromises the server can sign malicious roots.
 
-**The Solution:** Integrate with Akeyless DFC (Distributed Fragments Cryptography). The signing key never exists in one piece.
+**The Solution:** Integrate with remote Fragment (fragmented-key cryptography). The signing key never exists in one piece.
 
-#### How DFC Works
+#### How Fragment Works
 
-Instead of a single private key, the key is split into fragments distributed across multiple Akeyless Gateway nodes. Signing requires a threshold of fragments to cooperate — no single node (or attacker) can reconstruct the full key.
+Instead of a single private key, the key is split into fragments distributed across multiple secrets-manager Gateway nodes. Signing requires a threshold of fragments to cooperate — no single node (or attacker) can reconstruct the full key.
 
 ```
 kensa signs Merkle root:
   1. Compute root hash locally
-  2. Send signing request to Akeyless DFC API
+  2. Send signing request to remote Fragment API
   3. Gateway nodes each contribute a partial signature
   4. Partial signatures combine into a full signature
   5. Full key never exists in memory on any single machine
@@ -336,7 +336,7 @@ kensa signs Merkle root:
 tameshi/src/signing.rs (new module)
   ├── trait MerkleRootSigner { async fn sign(&self, root: &Blake3Hash) -> SignedRoot }
   ├── LocalSigner — file-based key (development/testing)
-  ├── AkeylessDfcSigner — DFC-backed signing (production)
+  ├── RemoteFragmentSigner — Fragment-backed signing (production)
   └── SignedRoot { root: Blake3Hash, signature: Vec<u8>, signer_id: String }
 
 kensa/src/signing.rs
@@ -351,7 +351,7 @@ Developer commits code
   → CI computes layer hashes (tameshi collectors)
   → Merkle root composed (tameshi)
   → kensa runs compliance tests
-  → kensa signs approved root via Akeyless DFC
+  → kensa signs approved root via remote Fragment
      └── Key never exists in one piece
   → sekiban stores SignedRoot in CRD
   → K8s deployment carries root annotation
@@ -455,7 +455,7 @@ Nix derivations are reproducible by design, but some edge cases (timestamp-depen
 
 ### 4. Key Rotation During Active Deployments
 
-When the DFC signing key is rotated, in-flight deployments carry signatures from the old key. The heartbeat chain must record key rotation events so verifiers know which key was active at each point in time.
+When the Fragment signing key is rotated, in-flight deployments carry signatures from the old key. The heartbeat chain must record key rotation events so verifiers know which key was active at each point in time.
 
 ---
 
@@ -747,10 +747,10 @@ via eBPF, comparing against load-time hashes. Configurable sampling rate per nam
 
 ### Dynamic Secret Policy Drift Detection — Phase 5
 
-**The Problem:** Akeyless dynamic secret rotates values, but the access policy
+**The Problem:** secrets-manager dynamic secret rotates values, but the access policy
 (path + target + role) could drift.
 
-**The Fix:** Periodic re-attestation of Akeyless policy metadata. Heartbeat chain
+**The Fix:** Periodic re-attestation of secrets-manager policy metadata. Heartbeat chain
 records policy hash at each verification. Drift alert if policy hash changes
 between verifications.
 
@@ -771,18 +771,18 @@ launches a malicious process that claims to be `metrics-exporter`.
 **The Hole:** The attestation is `Hash(Binary)`, not `Hash(Binary + Context)`.
 A "good" binary used in the "wrong" place is still a vulnerability.
 
-**The Fix:** Bind the Merkle Root to the Akeyless Identity.
+**The Fix:** Bind the Merkle Root to the secrets-manager Identity.
 
 ```rust
 // The attestation must be:
-Hash(Binary + K8s_ServiceAccount + Akeyless_Role + Namespace)
+Hash(Binary + K8s_ServiceAccount + SecretsManager_Role + Namespace)
 // NOT just:
 Hash(Binary)
 ```
 
 **Implementation:**
 - `tameshi/src/signature.rs` — add `ContextualBinding` struct with
-  `service_account`, `namespace`, `akeyless_role` fields
+  `service_account`, `namespace`, `secrets_manager_role` fields
 - `sekiban/src/webhook/admission.rs` — verify the binary hash + context match
   the incoming pod's service account and namespace
 - `kanshi/src/verifier.rs` — BPF map keyed by `(inode, cgroup_id)` not just `inode`
@@ -918,7 +918,7 @@ whether it was present at Pod startup.
   ephemeral containers started after pod admission
 - If a process starts from an ephemeral container source (detected via cgroup path
   containing `/ephemeral/`), kanshi checks for a "Debug Attestation" signed by
-  a Senior SRE via Akeyless
+  a Senior SRE via the secrets manager
 - No signature → `SIGKILL` immediately + heartbeat entry + PagerDuty alert
 
 ```yaml
@@ -1060,8 +1060,8 @@ let monotonic_ns = unsafe { bpf_ktime_get_ns() };
 - Heartbeat chain entries include **both** wall clock AND monotonic timestamp
 - If wall clock goes backwards relative to monotonic clock → alert:
   `tameshi_clock_skew_detected{node="..."}`
-- Akeyless Trusted Time Service heartbeat: node periodically verifies its wall
-  clock against Akeyless, alerting on drift > 5 seconds
+- Secrets-manager Trusted Time Service heartbeat: node periodically verifies its wall
+  clock against the secrets manager, alerting on drift > 5 seconds
 
 **NIST Controls:** AU-8 (Time Stamps), SC-45 (System Time Synchronization)
 
@@ -1075,7 +1075,7 @@ working is gone. No report for CISA.
 
 - Tameshi does **not** rely on local file logs as the primary evidence store
 - The heartbeat chain is streamed in real-time to an external, append-only store:
-  - Primary: Akeyless Log Vault (signed protobuf messages)
+  - Primary: Secrets-manager Log Vault (signed protobuf messages)
   - Secondary: S3 bucket with object lock (WORM)
   - Tertiary: Local file (defense-in-depth only)
 - Every heartbeat entry contains its Merkle-proof link to the previous entry
@@ -1084,7 +1084,7 @@ working is gone. No report for CISA.
 
 **Implementation:**
 - `tameshi/src/heartbeat.rs` — `S3Emitter` implementation (already architectured)
-- `HttpEmitter` streams to Akeyless Log Vault in real-time
+- `HttpEmitter` streams to secrets-manager Log Vault in real-time
 - `FileEmitter` is defense-in-depth, not primary evidence
 - Chain verification: `verify_integrity()` detects any gap or tampering
 
@@ -1140,7 +1140,7 @@ the crypto stack. The remaining 1% (Bloom false positives) hit the full path.
 ## Phase 8b: Service Mesh & API Trust Hardening
 
 > These holes target the trust boundaries between Tameshi and its dependencies:
-> service meshes, host kernel pseudo-filesystems, and the Akeyless API itself.
+> service meshes, host kernel pseudo-filesystems, and the secrets-manager API itself.
 
 ### Sidecar Injection Race (Istio/Linkerd MITM) — Phase 8b
 
@@ -1200,36 +1200,36 @@ Even root-privileged containers cannot:
 
 **NIST Controls:** AC-6(9) (Auditing Use of Privileged Functions), SC-39 (Process Isolation)
 
-### Akeyless API Spoof (MITM Prevention) — Phase 8b
+### Secrets-manager API Spoof (MITM Prevention) — Phase 8b
 
-**The Problem:** When sekiban or kensa calls the Akeyless API for hash verification
-or DFC signing, a DNS poisoning or MITM attack could return a fake Merkle root
+**The Problem:** When sekiban or kensa calls the secrets-manager API for hash verification
+or Fragment signing, a DNS poisoning or MITM attack could return a fake Merkle root
 matching the attacker's binary.
 
 **The Fix:** Certificate Pinning + mTLS.
 
-1. **Certificate Pinning:** The Akeyless root CA hash is compiled into the
+1. **Certificate Pinning:** The secrets-manager root CA hash is compiled into the
    Tameshi Rust binary at build time (via Nix). No reliance on the system CA store.
 
 ```rust
-// tameshi/src/akeyless_client.rs — certificate pinning
-const AKEYLESS_CA_HASH: &str = "sha256:EXPECTED_CA_FINGERPRINT";
+// tameshi/src/secrets_client.rs — certificate pinning
+const SECRETS_CA_HASH: &str = "sha256:EXPECTED_CA_FINGERPRINT";
 
 fn build_client() -> reqwest::Client {
     reqwest::Client::builder()
         .tls_built_in_root_certs(false)  // Don't trust system CAs
-        .add_root_certificate(pinned_akeyless_ca())
+        .add_root_certificate(pinned_secrets_manager_ca())
         .build()
         .expect("failed to build pinned HTTP client")
 }
 ```
 
-2. **mTLS:** Every connection to Akeyless is mutually authenticated:
-   - Pod proves its identity to Akeyless (client certificate from K8s)
-   - Akeyless proves its identity to the Pod (pinned server certificate)
+2. **mTLS:** Every connection to the secrets manager is mutually authenticated:
+   - Pod proves its identity to the secrets manager (client certificate from K8s)
+   - Secrets-manager proves its identity to the Pod (pinned server certificate)
    - Neither side can be spoofed by a local network attacker
 
-3. **Nix Integration:** The Akeyless CA fingerprint is a Nix build input.
+3. **Nix Integration:** The secrets-manager CA fingerprint is a Nix build input.
    If the CA changes, the Nix derivation hash changes, the Merkle root changes,
    and all attestations must be re-signed. This makes CA rotation an audited,
    intentional operation.
@@ -1243,7 +1243,7 @@ SC-23 (Session Authenticity)
 
 > These are the "Unit 8200" tier holes — timing side-channels, identity confusion,
 > IPC poisoning, and eBPF verifier limits. Addressing these leverages the full
-> Akeyless architecture and product map.
+> Secrets-manager architecture and product map.
 
 ### Constant-Time Comparison (Timing Side-Channel) — Phase 9
 
@@ -1269,7 +1269,7 @@ impl PartialEq for Blake3Hash {
 - `subtle` crate: zero-overhead, no branching, immune to timing attacks
 - This is a **one-line fix** with ecosystem-wide impact
 
-**Akeyless Leverage:** Akeyless DFC signing inherently uses constant-time operations
+**Secrets-manager Leverage:** remote Fragment signing inherently uses constant-time operations
 in its threshold cryptography. By using `subtle` on our side, the entire chain
 from signing to verification is timing-safe.
 
@@ -1285,19 +1285,19 @@ proven binary (App-B), here is App-A's secret."
 **The Fix:** Cryptographic binding of scope — the Merkle leaf is:
 `Hash(Binary + K8s_Namespace + ServiceAccount_ID)`
 
-Akeyless MUST only release the secret if the **entire tuple** matches:
+Secrets-manager MUST only release the secret if the **entire tuple** matches:
 
 ```yaml
-# Akeyless Access Role binding (enforced by tameshi)
+# Secrets-manager Access Role binding (enforced by tameshi)
 access_role:
   binary_hash: "blake3:abc..."
   namespace: "production"
   service_account: "auth-service-sa"
-  # Akeyless will ONLY release secrets if ALL three match
+  # The secrets manager will ONLY release secrets if ALL three match
 ```
 
-**Akeyless Leverage:** This maps directly to Akeyless Access Roles + Sub-Claims.
-The Akeyless K8s auth method already binds to namespace + service account. Tameshi
+**Secrets-manager Leverage:** This maps directly to secrets-manager Access Roles + Sub-Claims.
+The secrets-manager K8s auth method already binds to namespace + service account. Tameshi
 adds the binary hash as an additional claim, creating a three-factor attestation:
 1. **What** is running (binary hash)
 2. **Where** it's running (namespace)
@@ -1305,7 +1305,7 @@ adds the binary hash as an additional claim, creating a three-factor attestation
 
 **Relationship to Phase 6 Identity Masquerade:** This is the implementation
 detail for the contextual binding architecture defined in Phase 6. Phase 6
-defines the concept; Phase 9 defines the Akeyless integration path.
+defines the concept; Phase 9 defines the secrets-manager integration path.
 
 **NIST Controls:** AC-3 (Access Enforcement), AC-6 (Least Privilege),
 IA-2 (Identification and Authentication)
@@ -1342,7 +1342,7 @@ int tameshi_ipc_check(struct kern_ipc_perm *ipcp, short flag) {
 **Result:** A "Cryptographic Air-Gap" inside the Linux kernel. Proven pods
 cannot be data-poisoned by unproven neighbors.
 
-**Akeyless Leverage:** Akeyless dynamic secrets for IPC channels — the shared
+**Secrets-manager Leverage:** secrets-manager dynamic secrets for IPC channels — the shared
 secret for inter-pod communication is only released if both pods pass attestation.
 
 **NIST Controls:** SC-39 (Process Isolation), SC-4 (Information in Shared System Resources)
@@ -1380,8 +1380,8 @@ every production eBPF project.
 - All policy logic in userspace kanshi daemon, pushed to maps
 - CI: verify BPF program loads on target kernel as part of test suite
 
-**Akeyless Leverage:** Akeyless Access Policies map cleanly to BPF map entries.
-The userspace daemon translates Akeyless role bindings into BPF map key/value
+**Secrets-manager Leverage:** secrets-manager Access Policies map cleanly to BPF map entries.
+The userspace daemon translates secrets-manager role bindings into BPF map key/value
 pairs, keeping the eBPF program minimal.
 
 ---
@@ -1436,7 +1436,7 @@ open it, and extract keys from the filesystem.
 
 **Implementation:**
 - TPM PCR[14] extended with kanshi eBPF program hash at boot
-- Akeyless releases fleet credentials ONLY after TPM remote attestation
+- The secrets manager releases fleet credentials ONLY after TPM remote attestation
 - Device won't decrypt mission parameters unless hardware integrity is verified
 - Physical tamper evidence: opening the chassis triggers TPM PCR change
 
@@ -1460,7 +1460,7 @@ Fleet Root
 
 - Each device carries its own Merkle tree + the region root hash
 - Offline devices verify against cached region root
-- When reconnected, sync against fleet root via Akeyless
+- When reconnected, sync against fleet root via the secrets manager
 
 ### Regulatory Hooks
 
@@ -1705,7 +1705,7 @@ POST /api/v1/standards/import
 abstraction). Persisted as JSON, loaded on startup, synced across cluster via
 sekiban federation CRD replication.
 
-**Security:** Check submission requires Akeyless authentication. Only roles with
+**Security:** Check submission requires secrets-manager authentication. Only roles with
 `tameshi:compliance:write` permission can submit checks. All submissions are
 recorded in the heartbeat chain for non-repudiation.
 
@@ -1729,14 +1729,14 @@ layers are pure projection — no business logic in route handlers.
 | 1-2 | 1.3 | Canonicalization layer (Strict/Logical modes) | DONE |
 | 2-3 | 1.4 | Version-pinned attestations (signature_history) | DONE |
 | 3 | 3.1 | Heartbeat chain (append-only BLAKE3 linked) | DONE |
-| 3 | 3.3 | DFC Signing + Break-Glass tokens | DONE |
+| 3 | 3.3 | Fragment Signing + Break-Glass tokens | DONE |
 | 3-4 | 1 | Production hardening (kensa metrics, error classification) | DONE |
 | 5-8 | 2.1 | kanshi scaffold (config, policy, verifier, health, metrics) | DONE |
 | 5-8 | 2.1 | kanshi Helm chart (DaemonSet, RBAC, ServiceMonitor) | DONE |
 | 9-12 | 2 | kanshi eBPF programs (Linux-only, aya-rs) | PENDING |
-| 13 | 3.1 | **P0: Wire DFC signing** (`sign_data_with_classic_key`) | PENDING |
+| 13 | 3.1 | **P0: Wire Fragment signing** (`sign_data_with_classic_key`) | PENDING |
 | 13 | 3.1 | **P0: K8s auth method** (JWT + sub-claims for binary hash) | PENDING |
-| 14 | 3.1 | **P1: mTLS + cert pinning** (Akeyless PKI → compiled CA) | PENDING |
+| 14 | 3.1 | **P1: mTLS + cert pinning** (Secrets-manager PKI → compiled CA) | PENDING |
 | 14 | 3.1 | **P1: Log forwarding** (heartbeat → S3/Splunk/Datadog) | PENDING |
 | 15-16 | 3.1 | **P2: HMAC server-side verify + heartbeat encryption** | PENDING |
 | 17-18 | 3.2 | CNI integration layer (Cilium) | PENDING |
@@ -1754,7 +1754,7 @@ layers are pure projection — no business logic in route handlers.
 | Future | 6 | eBPF map exhaustion (LRU), compliance TTL | RESEARCH |
 | Future | 7 | Webhook ordering, ephemeral containers, W^X, digest-only | RESEARCH |
 | Future | 8 | Symlink TOCTOU, NTP skew, log erasure, Bloom filter DoS | RESEARCH |
-| Future | 8b | Sidecar injection, procfs masking, Akeyless cert pinning | RESEARCH |
+| Future | 8b | Sidecar injection, procfs masking, secrets-manager cert pinning | RESEARCH |
 | Future | 9 | Constant-time comparison, confused deputy, IPC isolation | RESEARCH |
 | Future | 9 | eBPF verifier limits (map-driven architecture) | RESEARCH |
 | Future | 10 | Edge/IoT/Robotics: DDS attestation, TPM binding, NIST IR 8259 | RESEARCH |
@@ -1774,7 +1774,7 @@ layers are pure projection — no business logic in route handlers.
 
 > **IMPORTANT:** All tameshi ecosystem repos MUST be **private** repositories.
 > This includes: tameshi, sekiban, kensa, inshou, kanshi.
-> Consider using `akeyless-helmworks` (private) for Helm chart distribution.
+> Consider using `secrets-helmworks` (private) for Helm chart distribution.
 
 ## Kubernetes Integration Testing Strategy
 
@@ -1819,7 +1819,7 @@ status:
 {
   cluster = kind;           # K8s in Docker
   sentinel = kanshi;        # eBPF binary (Linux only)
-  secrets = akeyless-mock;  # Mock Akeyless gateway
+  secrets = secrets-mock;  # Mock secrets-manager gateway
   attestation = kensa-cli;  # Merkle root generation
 }
 ```

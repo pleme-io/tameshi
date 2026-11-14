@@ -11,7 +11,7 @@ use tameshi::gating::{GatingPolicy, evaluate_gate};
 use tameshi::hash::Blake3Hash;
 use tameshi::merkle::compose_merkle;
 use tameshi::signature::{LayerSignature, LayerType, MasterSignature};
-use tameshi::signing::{MerkleRootSigner, MockDfcSigner};
+use tameshi::signing::{MerkleRootSigner, MockFragmentSigner};
 
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
@@ -74,7 +74,7 @@ async fn positive_pipeline(artifact: tameshi::certification_artifact::Certificat
     );
 
     // Step 2: Sign the composed root
-    let signer = MockDfcSigner::for_testing();
+    let signer = MockFragmentSigner::for_testing();
     let signed = signer.sign(&artifact.composed_root).await.unwrap();
     assert!(signer.verify(&signed).await.unwrap());
 
@@ -205,7 +205,7 @@ async fn helm_rendered_artifact() {
 #[tokio::test]
 async fn pangea_synthesis_artifact() {
     let artifact = make_artifact(
-        "pangea/akeyless-resources",
+        "pangea/secrets-resources",
         b"terraform-json-synthesis",
         b"pangea-synthesis-controls",
         b"pangea-deterministic-output",
@@ -223,7 +223,7 @@ async fn rspec_result_artifact() {
         "summary": {"example_count": 2, "failure_count": 0}
     });
     let artifact = make_artifact(
-        "specs/akeyless_spec.rb",
+        "specs/secrets_manager_spec.rb",
         b"rspec-binary-hash",
         rspec_json.to_string().as_bytes(),
         b"rspec-pangea-intent",
@@ -241,7 +241,7 @@ async fn inspec_result_artifact() {
         "statistics": {"duration": 1.2}
     });
     let artifact = make_artifact(
-        "profiles/akeyless",
+        "profiles/secrets_manager",
         b"inspec-profile-hash",
         inspec_json.to_string().as_bytes(),
         b"inspec-pangea-intent",
@@ -274,7 +274,7 @@ async fn ci_build_artifact() {
 #[tokio::test]
 async fn iac_test_suite_artifact() {
     let suite_report = serde_json::json!({
-        "suite_name": "akeyless-integration",
+        "suite_name": "secrets-integration",
         "platform": "k3s",
         "phases": [
             {"phase": "Init", "success": true},
@@ -285,7 +285,7 @@ async fn iac_test_suite_artifact() {
         "all_passed": true
     });
     let artifact = make_artifact(
-        "iac-test/akeyless-suite",
+        "iac-test/secrets-suite",
         b"suite-binary-hash",
         suite_report.to_string().as_bytes(),
         b"iac-test-intent",
@@ -696,7 +696,7 @@ async fn multiple_artifacts_on_master_signature() {
     }
 
     // Sign each composed root
-    let signer = MockDfcSigner::for_testing();
+    let signer = MockFragmentSigner::for_testing();
     for artifact in &artifacts {
         let signed = signer.sign(&artifact.composed_root).await.unwrap();
         assert!(signer.verify(&signed).await.unwrap());

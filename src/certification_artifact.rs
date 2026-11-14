@@ -1186,7 +1186,7 @@ mod tests {
 
     #[tokio::test]
     async fn cross_pillar_compose_sign_verify_end_to_end() {
-        use crate::signing::{MerkleRootSigner, MockDfcSigner};
+        use crate::signing::{MerkleRootSigner, MockFragmentSigner};
 
         let (a, c, i) = sample_hashes();
         let art = compose_certification_artifact("/bin/app", a, c, i, "prod");
@@ -1194,8 +1194,8 @@ mod tests {
         // Step 1: artifact verifies
         assert!(verify_certification_artifact(&art));
 
-        // Step 2: sign the composed_root with MockDfcSigner
-        let signer = MockDfcSigner::for_testing();
+        // Step 2: sign the composed_root with MockFragmentSigner
+        let signer = MockFragmentSigner::for_testing();
         let signed_root = signer.sign(&art.composed_root).await.unwrap();
 
         // Step 3: verify the signature

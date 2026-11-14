@@ -3,7 +3,7 @@
 //! Proves: compose artifact -> write to MerkleLedger -> index ->
 //! query blast radius -> verify timeline -> check provenance
 //!
-//! Also includes chaos tests using FailableDfcSigner to validate error
+//! Also includes chaos tests using FailableFragmentSigner to validate error
 //! propagation and concurrent write safety.
 
 use std::sync::Arc;
@@ -21,7 +21,7 @@ use tameshi::forensics::types::DeploymentContext;
 use tameshi::global::compute_cluster_root;
 use tameshi::hash::Blake3Hash;
 use tameshi::signing::{
-    FailableDfcSigner, MerkleRootSigner, MockDfcSigner, SignedRoot, SigningAlgorithm,
+    FailableFragmentSigner, MerkleRootSigner, MockFragmentSigner, SignedRoot, SigningAlgorithm,
 };
 use tameshi::traits::FixedClock;
 
@@ -709,13 +709,13 @@ fn e2e_provenance_empty_for_unknown_node() {
 }
 
 // =============================================================================
-// Chaos: DFC timeout during attestation
+// Chaos: Fragment timeout during attestation
 // =============================================================================
 
 #[tokio::test]
-async fn chaos_dfc_timeout_during_attestation() {
-    // 1. Create FailableDfcSigner with timeout
-    let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+async fn chaos_fragment_timeout_during_attestation() {
+    // 1. Create FailableFragmentSigner with timeout
+    let signer = FailableFragmentSigner::new().with_timeout(std::time::Duration::from_secs(5));
 
     let art = make_artifact("timeout-victim");
 
@@ -748,8 +748,8 @@ async fn chaos_dfc_timeout_during_attestation() {
 
 #[tokio::test]
 async fn chaos_corrupted_signature_detected() {
-    // 1. Create FailableDfcSigner with corrupted signature
-    let signer = FailableDfcSigner::new().with_corrupted_signature();
+    // 1. Create FailableFragmentSigner with corrupted signature
+    let signer = FailableFragmentSigner::new().with_corrupted_signature();
 
     let art = make_artifact("corrupt-victim");
 
@@ -796,7 +796,7 @@ async fn chaos_corrupted_signature_detected() {
     assert!(report.chain_integrity);
 
     // Consumer can detect corrupted signature by re-verifying the signed_root
-    let clean_signer = MockDfcSigner::for_testing();
+    let clean_signer = MockFragmentSigner::for_testing();
     let entries = ledger.entries();
     let stored_signed = &entries[0].signed_root;
     let sig_valid = clean_signer.verify(stored_signed).await.unwrap();
@@ -883,7 +883,7 @@ fn chaos_concurrent_writes_maintain_integrity() {
 
 #[tokio::test]
 async fn chaos_auth_failure_no_ledger_corruption() {
-    let signer = FailableDfcSigner::new().with_auth_failure();
+    let signer = FailableFragmentSigner::new().with_auth_failure();
     let art = make_artifact("auth-fail");
 
     // Sign attempt fails
@@ -903,7 +903,7 @@ async fn chaos_auth_failure_no_ledger_corruption() {
 
 #[tokio::test]
 async fn chaos_rate_limited_prevents_signing() {
-    let signer = FailableDfcSigner::new().with_rate_limited();
+    let signer = FailableFragmentSigner::new().with_rate_limited();
     let art = make_artifact("rate-limited");
 
     let result = signer.sign(&art.composed_root).await;

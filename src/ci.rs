@@ -31,12 +31,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::akeyless_client::{AkeylessClient, AkeylessConfig, HttpAkeylessClient, TlsConfig};
+use crate::secrets_client::{SecretsManagerClient, SecretsManagerConfig, HttpSecretsManagerClient, TlsConfig};
 use crate::certification::{
     BuildAttestation, ChartAttestation, DependencyHash, ImageAttestation, SourceAttestation,
 };
-use crate::compliance::akeyless::{AkeylessAuthMethod, AkeylessSecretAttestation};
-use crate::compliance::akeyless_target::AkeylessTargetAttestation;
+use crate::compliance::secrets::{SecretAuthMethod, SecretAttestation};
+use crate::compliance::secret_target::SecretTargetAttestation;
 use crate::compliance::slsa::SlsaLevel;
 use crate::error::{Result, TameshiError};
 use crate::hash::Blake3Hash;
@@ -232,33 +232,33 @@ pub fn stage_output<T: Serialize>(
     }
 }
 
-/// Build an Akeyless secret attestation for CI pipelines.
+/// Build a secrets-manager secret attestation for CI pipelines.
 ///
-/// This convenience function wraps the `AkeylessClient` workflow:
+/// This convenience function wraps the `SecretsManagerClient` workflow:
 /// 1. Authenticate to the gateway
 /// 2. Hash each specified secret (values are NEVER stored)
 /// 3. Return an attestation suitable for inclusion in the Merkle tree
 ///
 /// # Example
 /// ```ignore
-/// let attestation = akeyless_attestation(
-///     "https://gw.akeyless.example.com",
-///     AkeylessAuthMethod::ApiKey,
+/// let attestation = secrets_manager_attestation(
+///     "https://gw.secrets.example.com",
+///     SecretAuthMethod::ApiKey,
 ///     Some("p-abc123"),
 ///     Some("my-secret-key"),
 ///     &["/prod/db-password", "/prod/api-key"],
 /// ).await?;
 /// ```
-pub async fn akeyless_attestation(
+pub async fn secrets_manager_attestation(
     gateway_url: &str,
-    auth_method: AkeylessAuthMethod,
+    auth_method: SecretAuthMethod,
     access_id: Option<&str>,
     access_key: Option<&str>,
     secret_paths: &[&str],
-) -> Result<AkeylessSecretAttestation> {
-    use crate::akeyless_client::AkeylessClient;
+) -> Result<SecretAttestation> {
+    use crate::secrets_client::SecretsManagerClient;
 
-    let config = AkeylessConfig {
+    let config = SecretsManagerConfig {
         gateway_url: gateway_url.to_string(),
         auth_method,
         access_id: access_id.map(String::from),
@@ -267,31 +267,31 @@ pub async fn akeyless_attestation(
         k8s_auth_config_name: None,
         tls: TlsConfig::default(),
     };
-    let client = HttpAkeylessClient::new(config, ReqwestHttpClient::new());
+    let client = HttpSecretsManagerClient::new(config, ReqwestHttpClient::new());
     let paths: Vec<String> = secret_paths.iter().map(|s| s.to_string()).collect();
     client
         .build_attestation(&paths)
         .await
         .map_err(|e| TameshiError::CollectorError {
-            layer: "akeyless".to_string(),
-            message: format!("Akeyless CI attestation: {e}"),
+            layer: "secrets_manager".to_string(),
+            message: format!("Secrets-manager CI attestation: {e}"),
         })
 }
 
-/// Build Akeyless target attestations for CI pipelines.
+/// Build secrets-manager target attestations for CI pipelines.
 ///
-/// This convenience function wraps the `AkeylessClient` workflow:
+/// This convenience function wraps the `SecretsManagerClient` workflow:
 /// 1. Authenticate to the gateway
 /// 2. Fetch target details and associated producer metadata
 /// 3. Return attestations suitable for inclusion in the Merkle tree
-pub async fn akeyless_target_attestation(
+pub async fn secret_target_attestation(
     gateway_url: &str,
-    auth_method: AkeylessAuthMethod,
+    auth_method: SecretAuthMethod,
     access_id: Option<&str>,
     access_key: Option<&str>,
     target_names: &[&str],
-) -> Result<Vec<AkeylessTargetAttestation>> {
-    let config = AkeylessConfig {
+) -> Result<Vec<SecretTargetAttestation>> {
+    let config = SecretsManagerConfig {
         gateway_url: gateway_url.to_string(),
         auth_method,
         access_id: access_id.map(String::from),
@@ -300,31 +300,31 @@ pub async fn akeyless_target_attestation(
         k8s_auth_config_name: None,
         tls: TlsConfig::default(),
     };
-    let client = HttpAkeylessClient::new(config, ReqwestHttpClient::new());
+    let client = HttpSecretsManagerClient::new(config, ReqwestHttpClient::new());
     let names: Vec<String> = target_names.iter().map(|s| s.to_string()).collect();
     client
         .build_target_attestation(&names)
         .await
         .map_err(|e| TameshiError::CollectorError {
-            layer: "akeyless_target".to_string(),
-            message: format!("Akeyless CI target attestation: {e}"),
+            layer: "secret_target".to_string(),
+            message: format!("Secrets-manager CI target attestation: {e}"),
         })
 }
 
-/// Build Akeyless target attestations using a custom HTTP client.
+/// Build secrets-manager target attestations using a custom HTTP client.
 ///
-/// Like [`akeyless_target_attestation`], but accepts any
+/// Like [`secret_target_attestation`], but accepts any
 /// [`HttpClient`](crate::traits::HttpClient) implementation, making it testable
 /// with [`MockHttpClient`](crate::traits::MockHttpClient).
-pub async fn akeyless_target_attestation_with_client<H: crate::traits::HttpClient>(
+pub async fn secret_target_attestation_with_client<H: crate::traits::HttpClient>(
     gateway_url: &str,
-    auth_method: AkeylessAuthMethod,
+    auth_method: SecretAuthMethod,
     access_id: Option<&str>,
     access_key: Option<&str>,
     target_names: &[&str],
     http_client: H,
-) -> Result<Vec<AkeylessTargetAttestation>> {
-    let config = AkeylessConfig {
+) -> Result<Vec<SecretTargetAttestation>> {
+    let config = SecretsManagerConfig {
         gateway_url: gateway_url.to_string(),
         auth_method,
         access_id: access_id.map(String::from),
@@ -333,32 +333,32 @@ pub async fn akeyless_target_attestation_with_client<H: crate::traits::HttpClien
         k8s_auth_config_name: None,
         tls: TlsConfig::default(),
     };
-    let client = HttpAkeylessClient::new(config, http_client);
+    let client = HttpSecretsManagerClient::new(config, http_client);
     let names: Vec<String> = target_names.iter().map(|s| s.to_string()).collect();
     client
         .build_target_attestation(&names)
         .await
         .map_err(|e| TameshiError::CollectorError {
-            layer: "akeyless_target".to_string(),
-            message: format!("Akeyless CI target attestation: {e}"),
+            layer: "secret_target".to_string(),
+            message: format!("Secrets-manager CI target attestation: {e}"),
         })
 }
 
-/// Build an Akeyless secret attestation using a custom HTTP client.
+/// Build a secrets-manager secret attestation using a custom HTTP client.
 ///
-/// Like [`akeyless_attestation`], but accepts any [`HttpClient`](crate::traits::HttpClient)
+/// Like [`secrets_manager_attestation`], but accepts any [`HttpClient`](crate::traits::HttpClient)
 /// implementation, making it testable with [`MockHttpClient`](crate::traits::MockHttpClient).
-pub async fn akeyless_attestation_with_client<H: crate::traits::HttpClient>(
+pub async fn secrets_manager_attestation_with_client<H: crate::traits::HttpClient>(
     gateway_url: &str,
-    auth_method: AkeylessAuthMethod,
+    auth_method: SecretAuthMethod,
     access_id: Option<&str>,
     access_key: Option<&str>,
     secret_paths: &[&str],
     http_client: H,
-) -> Result<AkeylessSecretAttestation> {
-    use crate::akeyless_client::AkeylessClient;
+) -> Result<SecretAttestation> {
+    use crate::secrets_client::SecretsManagerClient;
 
-    let config = AkeylessConfig {
+    let config = SecretsManagerConfig {
         gateway_url: gateway_url.to_string(),
         auth_method,
         access_id: access_id.map(String::from),
@@ -367,14 +367,14 @@ pub async fn akeyless_attestation_with_client<H: crate::traits::HttpClient>(
         k8s_auth_config_name: None,
         tls: TlsConfig::default(),
     };
-    let client = HttpAkeylessClient::new(config, http_client);
+    let client = HttpSecretsManagerClient::new(config, http_client);
     let paths: Vec<String> = secret_paths.iter().map(|s| s.to_string()).collect();
     client
         .build_attestation(&paths)
         .await
         .map_err(|e| TameshiError::CollectorError {
-            layer: "akeyless".to_string(),
-            message: format!("Akeyless CI attestation: {e}"),
+            layer: "secrets_manager".to_string(),
+            message: format!("Secrets-manager CI attestation: {e}"),
         })
 }
 
@@ -536,7 +536,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn akeyless_attestation_with_mock_client() {
+    async fn secrets_manager_attestation_with_mock_client() {
         use crate::traits::MockHttpClient;
 
         let http = MockHttpClient::new();
@@ -553,9 +553,9 @@ mod tests {
             &serde_json::json!({"/prod/db-password": "my-db-password"}),
         );
 
-        let att = akeyless_attestation_with_client(
+        let att = secrets_manager_attestation_with_client(
             "https://gw.test.com",
-            AkeylessAuthMethod::ApiKey,
+            SecretAuthMethod::ApiKey,
             Some("p-test-id"),
             Some("test-key"),
             &["/prod/db-password"],
@@ -565,7 +565,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(att.gateway_url, "https://gw.test.com");
-        assert_eq!(att.auth_method, AkeylessAuthMethod::ApiKey);
+        assert_eq!(att.auth_method, SecretAuthMethod::ApiKey);
         assert_eq!(att.secrets_accessed.len(), 1);
         assert_eq!(att.secrets_accessed[0].path, "/prod/db-password");
         // Value hash is now salted: BLAKE3(gateway_url:path:value)
@@ -576,15 +576,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn akeyless_attestation_with_mock_auth_failure() {
+    async fn secrets_manager_attestation_with_mock_auth_failure() {
         use crate::traits::MockHttpClient;
 
         let http = MockHttpClient::new();
         // No auth response registered -> will fail
 
-        let result = akeyless_attestation_with_client(
+        let result = secrets_manager_attestation_with_client(
             "https://gw.test.com",
-            AkeylessAuthMethod::ApiKey,
+            SecretAuthMethod::ApiKey,
             Some("p-test-id"),
             Some("test-key"),
             &["/prod/secret"],
@@ -594,7 +594,7 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Akeyless CI attestation"));
+        assert!(err.to_string().contains("Secrets-manager CI attestation"));
     }
 
     #[test]
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn akeyless_target_attestation_with_mock_client() {
+    async fn secret_target_attestation_with_mock_client() {
         use crate::traits::MockHttpClient;
 
         let http = MockHttpClient::new();
@@ -626,9 +626,9 @@ mod tests {
             }),
         );
 
-        let result = akeyless_target_attestation_with_client(
+        let result = secret_target_attestation_with_client(
             "https://gw.test.com",
-            AkeylessAuthMethod::ApiKey,
+            SecretAuthMethod::ApiKey,
             Some("p-test-id"),
             Some("test-key"),
             &["/targets/prod/db"],
@@ -642,15 +642,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn akeyless_target_attestation_auth_failure() {
+    async fn secret_target_attestation_auth_failure() {
         use crate::traits::MockHttpClient;
 
         let http = MockHttpClient::new();
         // No auth response registered -> will fail
 
-        let result = akeyless_target_attestation_with_client(
+        let result = secret_target_attestation_with_client(
             "https://gw.test.com",
-            AkeylessAuthMethod::ApiKey,
+            SecretAuthMethod::ApiKey,
             Some("p-test-id"),
             Some("test-key"),
             &["/targets/prod/db"],
@@ -660,6 +660,6 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Akeyless CI target attestation"));
+        assert!(err.to_string().contains("Secrets-manager CI target attestation"));
     }
 }

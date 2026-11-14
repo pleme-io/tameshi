@@ -543,7 +543,7 @@ mod tests {
             LayerType::Tatara,
             LayerType::FluxCD,
             LayerType::ArgoCD,
-            LayerType::Akeyless,
+            LayerType::SecretsManager,
         ];
 
         let layers: Vec<LayerSignature> = (0..128)
@@ -766,8 +766,8 @@ mod tests {
             LayerType::Tatara,
             LayerType::FluxCD,
             LayerType::ArgoCD,
-            LayerType::Akeyless,
-            LayerType::AkeylessTarget,
+            LayerType::SecretsManager,
+            LayerType::SecretTarget,
         ];
         let layers: Vec<LayerSignature> = layer_types
             .iter()

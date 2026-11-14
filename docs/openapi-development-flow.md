@@ -230,7 +230,7 @@ forge-gen generate --manifest forge-gen.toml
 | `certification-pipeline` | kensa | Product certification workflow |
 | `heartbeat` | tameshi | Heartbeat chain + consistency proofs |
 | `collectors` | tameshi | Layer hash collection |
-| `signing` | tameshi | Merkle root signing (LocalSigner, DFC, MockDfc) |
+| `signing` | tameshi | Merkle root signing (LocalSigner, Fragment, MockFragment) |
 | `compliance-query` | tameshi | Compliance state queries |
 | `cve` | kensa | CVE ingestion and revocation |
 | `dynamic-checks` | kensa | Dynamic compliance checks (Rhai scripting) |

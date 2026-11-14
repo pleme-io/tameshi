@@ -9,7 +9,7 @@
 //!   the load-bearing property for mutually-untrusting peers verifying each
 //!   other's attestations. (Before 2026-06-11 this was a symmetric BLAKE3 keyed
 //!   MAC; the `Ed25519Local` algorithm name is now truthful.)
-//! - [`AkeylessDfcSigner`] — calls Akeyless DFC signing API (gateway-custodied
+//! - [`RemoteFragmentSigner`] — calls remote Fragment signing API (gateway-custodied
 //!   classic-key signing, key never assembled in one piece)
 //!
 //! # Break-Glass Support
@@ -21,7 +21,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::akeyless_client::{AkeylessClientError, TlsConfig, build_tls_client};
+use crate::secrets_client::{SecretsManagerError, TlsConfig, build_tls_client};
 use crate::hash::Blake3Hash;
 
 /// Algorithm used to sign the Merkle root.
@@ -30,13 +30,13 @@ use crate::hash::Blake3Hash;
 pub enum SigningAlgorithm {
     /// Local Ed25519 key (development/testing).
     Ed25519Local,
-    /// Akeyless Distributed Fragment Cryptography (production).
-    AkeylessDfc {
-        /// The DFC key name in Akeyless.
+    /// Remote fragmented-key cryptography (production).
+    RemoteFragment {
+        /// The Fragment key name in the secrets manager.
         key_name: String,
     },
-    /// Mock DFC using split-knowledge fragment reconstruction.
-    MockDfc,
+    /// Mock Fragment using split-knowledge fragment reconstruction.
+    MockFragment,
     /// Emergency break-glass bypass.
     BreakGlass,
     /// FROST(Ed25519, SHA-512) threshold signing (RFC 9591): `min_signers` of
@@ -64,8 +64,8 @@ impl std::fmt::Display for SigningAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Ed25519Local => write!(f, "ed25519_local"),
-            Self::AkeylessDfc { key_name } => write!(f, "akeyless_dfc:{key_name}"),
-            Self::MockDfc => write!(f, "mock_dfc"),
+            Self::RemoteFragment { key_name } => write!(f, "remote_fragment:{key_name}"),
+            Self::MockFragment => write!(f, "mock_fragment"),
             Self::BreakGlass => write!(f, "break_glass"),
             Self::FrostEd25519 {
                 min_signers,
@@ -96,7 +96,7 @@ pub struct SignedRoot {
 ///
 /// Implementations provide different key management strategies:
 /// - `LocalSigner`: file-based Ed25519 (dev/test)
-/// - `AkeylessDfcSigner`: threshold signing via Akeyless API (production)
+/// - `RemoteFragmentSigner`: threshold signing via secrets-manager API (production)
 pub trait MerkleRootSigner: Send + Sync {
     /// Sign a Merkle root.
     fn sign(
@@ -219,19 +219,19 @@ impl MerkleRootSigner for LocalSigner {
     }
 }
 
-/// Akeyless DFC (Distributed Fragment Cryptography) signer.
+/// remote Fragment signer.
 ///
-/// Calls the Akeyless gateway REST API for threshold signing. The key
+/// Calls the secrets-manager gateway REST API for threshold signing. The key
 /// never exists in one piece -- fragments are distributed across
-/// Akeyless infrastructure.
-pub struct AkeylessDfcSigner {
-    /// The DFC key name.
+/// Secrets-manager infrastructure.
+pub struct RemoteFragmentSigner {
+    /// The Fragment key name.
     pub key_name: String,
     /// Signer identifier.
     pub signer_id: String,
-    /// HTTP client for Akeyless API calls.
+    /// HTTP client for secrets-manager API calls.
     client: reqwest::Client,
-    /// Akeyless gateway endpoint.
+    /// Secrets-manager gateway endpoint.
     pub endpoint: String,
     /// Access ID for API key authentication.
     pub access_id: String,
@@ -239,8 +239,8 @@ pub struct AkeylessDfcSigner {
     pub access_key: String,
 }
 
-impl AkeylessDfcSigner {
-    /// Create a new DFC signer (credentials must be provided via [`with_credentials`]).
+impl RemoteFragmentSigner {
+    /// Create a new Fragment signer (credentials must be provided via [`with_credentials`]).
     #[must_use]
     pub fn new(key_name: &str, signer_id: &str, endpoint: &str) -> Self {
         Self {
@@ -253,7 +253,7 @@ impl AkeylessDfcSigner {
         }
     }
 
-    /// Create a new DFC signer with Akeyless API key credentials.
+    /// Create a new Fragment signer with secrets-manager API key credentials.
     #[must_use]
     pub fn with_credentials(
         key_name: &str,
@@ -272,7 +272,7 @@ impl AkeylessDfcSigner {
         }
     }
 
-    /// Create a new DFC signer with Akeyless API key credentials and custom TLS configuration.
+    /// Create a new Fragment signer with secrets-manager API key credentials and custom TLS configuration.
     ///
     /// Uses [`build_tls_client`] to construct a [`reqwest::Client`] that respects
     /// pinned CAs, mTLS client certificates, and server-verification toggles.
@@ -283,7 +283,7 @@ impl AkeylessDfcSigner {
         access_id: &str,
         access_key: &str,
         tls: &TlsConfig,
-    ) -> Result<Self, AkeylessClientError> {
+    ) -> Result<Self, SecretsManagerError> {
         let client = build_tls_client(tls)?;
         Ok(Self {
             key_name: key_name.to_string(),
@@ -295,7 +295,7 @@ impl AkeylessDfcSigner {
         })
     }
 
-    /// Authenticate to Akeyless and return an access token.
+    /// Authenticate to the secrets manager and return an access token.
     async fn authenticate(&self) -> crate::error::Result<String> {
         let body = serde_json::json!({
             "access-id": self.access_id,
@@ -309,31 +309,31 @@ impl AkeylessDfcSigner {
             .send()
             .await
             .map_err(|e| {
-                crate::error::TameshiError::HashError(format!("DFC auth request failed: {e}"))
+                crate::error::TameshiError::HashError(format!("Fragment auth request failed: {e}"))
             })?;
         let result: serde_json::Value = resp.json().await.map_err(|e| {
-            crate::error::TameshiError::HashError(format!("DFC auth response parse failed: {e}"))
+            crate::error::TameshiError::HashError(format!("Fragment auth response parse failed: {e}"))
         })?;
         result["token"].as_str().map(String::from).ok_or_else(|| {
             crate::error::TameshiError::HashError(
-                "missing 'token' in DFC auth response".to_string(),
+                "missing 'token' in Fragment auth response".to_string(),
             )
         })
     }
 }
 
-/// Encode bytes as hex string (used for DFC API data field).
+/// Encode bytes as hex string (used for Fragment API data field).
 fn hex_encode(bytes: &[u8]) -> String {
     const_hex::encode(bytes)
 }
 
-/// Decode hex string to bytes (used for DFC API response parsing).
+/// Decode hex string to bytes (used for Fragment API response parsing).
 fn hex_decode(hex: &str) -> crate::error::Result<Vec<u8>> {
     const_hex::decode(hex)
         .map_err(|e| crate::error::TameshiError::HashError(format!("hex decode failed: {e}")))
 }
 
-impl MerkleRootSigner for AkeylessDfcSigner {
+impl MerkleRootSigner for RemoteFragmentSigner {
     async fn sign(&self, root: &Blake3Hash) -> crate::error::Result<SignedRoot> {
         let token = self.authenticate().await?;
         let data_hex = hex_encode(&root.0);
@@ -348,20 +348,20 @@ impl MerkleRootSigner for AkeylessDfcSigner {
             .json(&body)
             .send()
             .await
-            .map_err(|e| crate::error::TameshiError::HashError(format!("DFC sign failed: {e}")))?;
+            .map_err(|e| crate::error::TameshiError::HashError(format!("Fragment sign failed: {e}")))?;
         let result: serde_json::Value = resp.json().await.map_err(|e| {
-            crate::error::TameshiError::HashError(format!("DFC sign response parse failed: {e}"))
+            crate::error::TameshiError::HashError(format!("Fragment sign response parse failed: {e}"))
         })?;
         let sig_hex = result["result"].as_str().ok_or_else(|| {
             crate::error::TameshiError::HashError(
-                "missing 'result' in DFC sign response".to_string(),
+                "missing 'result' in Fragment sign response".to_string(),
             )
         })?;
         let signature = hex_decode(sig_hex)?;
         Ok(SignedRoot {
             root: root.clone(),
             signature,
-            algorithm: SigningAlgorithm::AkeylessDfc {
+            algorithm: SigningAlgorithm::RemoteFragment {
                 key_name: self.key_name.clone(),
             },
             signer_id: self.signer_id.clone(),
@@ -386,38 +386,38 @@ impl MerkleRootSigner for AkeylessDfcSigner {
             .send()
             .await
             .map_err(|e| {
-                crate::error::TameshiError::HashError(format!("DFC verify failed: {e}"))
+                crate::error::TameshiError::HashError(format!("Fragment verify failed: {e}"))
             })?;
         let result: serde_json::Value = resp.json().await.map_err(|e| {
-            crate::error::TameshiError::HashError(format!("DFC verify response parse failed: {e}"))
+            crate::error::TameshiError::HashError(format!("Fragment verify response parse failed: {e}"))
         })?;
         Ok(result["result"].as_bool().unwrap_or(false))
     }
 }
 
-/// Mock Akeyless DFC signer using split-knowledge fragment reconstruction.
+/// Mock remote Fragment signer using split-knowledge fragment reconstruction.
 ///
-/// Simulates Distributed Fragment Cryptography by requiring TWO fragments
+/// Simulates fragmented-key cryptography by requiring TWO fragments
 /// to reconstruct a signing key:
 /// - Fragment A: loaded from file `.tameshi_frag` (hex-encoded, 64 chars)
-/// - Fragment B: loaded from env var `AKEYLESS_MOCK_FRAG` (hex-encoded, 64 chars)
+/// - Fragment B: loaded from env var `SECRETS_MOCK_FRAG` (hex-encoded, 64 chars)
 ///
 /// Both fragments are XOR'd then BLAKE3-hashed to produce the signing key.
 /// This ensures neither fragment alone reveals the key.
 ///
 /// # Security
 ///
-/// This is a MOCK for development/CI. In production, use `AkeylessDfcSigner`
-/// which calls the real Akeyless gateway for threshold signing.
-pub struct MockDfcSigner {
+/// This is a MOCK for development/CI. In production, use `RemoteFragmentSigner`
+/// which calls the real secrets-manager gateway for threshold signing.
+pub struct MockFragmentSigner {
     signer_id: String,
     fragment_a: [u8; 32],
     fragment_b: [u8; 32],
 }
 
-impl std::fmt::Debug for MockDfcSigner {
+impl std::fmt::Debug for MockFragmentSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MockDfcSigner")
+        f.debug_struct("MockFragmentSigner")
             .field("signer_id", &self.signer_id)
             .field("fragment_a", &"[REDACTED]")
             .field("fragment_b", &"[REDACTED]")
@@ -425,7 +425,7 @@ impl std::fmt::Debug for MockDfcSigner {
     }
 }
 
-impl MockDfcSigner {
+impl MockFragmentSigner {
     /// Create from explicit fragments (for testing).
     #[must_use]
     pub fn from_fragments(a: [u8; 32], b: [u8; 32], signer_id: &str) -> Self {
@@ -439,20 +439,20 @@ impl MockDfcSigner {
     /// Create with deterministic test fragments.
     #[must_use]
     pub fn for_testing() -> Self {
-        Self::from_fragments([1u8; 32], [2u8; 32], "mock-dfc-test")
+        Self::from_fragments([1u8; 32], [2u8; 32], "mock-fragment-test")
     }
 
     /// Load fragments from file and environment.
     ///
     /// Fragment A: reads `.tameshi_frag` (64 hex chars) from current dir or home dir
-    /// Fragment B: reads `AKEYLESS_MOCK_FRAG` env var (64 hex chars)
+    /// Fragment B: reads `SECRETS_MOCK_FRAG` env var (64 hex chars)
     ///
     /// # Errors
     /// Returns error if either fragment source is missing or contains invalid hex.
     pub fn load(signer_id: &str) -> crate::error::Result<Self> {
-        let frag_b_hex = std::env::var("AKEYLESS_MOCK_FRAG").map_err(|_| {
+        let frag_b_hex = std::env::var("SECRETS_MOCK_FRAG").map_err(|_| {
             crate::error::TameshiError::ConfigError(
-                "AKEYLESS_MOCK_FRAG env var not set".to_string(),
+                "SECRETS_MOCK_FRAG env var not set".to_string(),
             )
         })?;
         let search_dirs = Self::default_search_dirs();
@@ -530,14 +530,14 @@ impl MockDfcSigner {
     }
 }
 
-impl MerkleRootSigner for MockDfcSigner {
+impl MerkleRootSigner for MockFragmentSigner {
     async fn sign(&self, root: &Blake3Hash) -> crate::error::Result<SignedRoot> {
         let key = self.reconstruct_key();
         let signature = blake3::keyed_hash(&key, &root.0).as_bytes().to_vec();
         Ok(SignedRoot {
             root: root.clone(),
             signature,
-            algorithm: SigningAlgorithm::MockDfc,
+            algorithm: SigningAlgorithm::MockFragment,
             signer_id: self.signer_id.clone(),
             signed_at: Utc::now(),
         })
@@ -649,7 +649,7 @@ impl BreakGlassToken {
     }
 }
 
-/// Failure modes for the [`FailableDfcSigner`].
+/// Failure modes for the [`FailableFragmentSigner`].
 ///
 /// Used to simulate various infrastructure failure scenarios during testing.
 #[derive(Clone, Debug)]
@@ -664,35 +664,35 @@ pub enum FailMode {
     RateLimited,
 }
 
-/// A DFC signer that can be configured to fail in specific ways.
+/// A Fragment signer that can be configured to fail in specific ways.
 ///
-/// Wraps a [`MockDfcSigner`] and injects deterministic failures for negative
+/// Wraps a [`MockFragmentSigner`] and injects deterministic failures for negative
 /// testing. When no `fail_mode` is set, it delegates to the inner signer.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use tameshi::signing::{FailableDfcSigner, FailMode, MerkleRootSigner};
+/// use tameshi::signing::{FailableFragmentSigner, FailMode, MerkleRootSigner};
 /// use tameshi::hash::Blake3Hash;
 ///
 /// # tokio_test::block_on(async {
-/// let signer = FailableDfcSigner::new().with_auth_failure();
+/// let signer = FailableFragmentSigner::new().with_auth_failure();
 /// let root = Blake3Hash::digest(b"test");
 /// let result = signer.sign(&root).await;
 /// assert!(result.is_err());
 /// # });
 /// ```
-pub struct FailableDfcSigner {
-    inner: MockDfcSigner,
+pub struct FailableFragmentSigner {
+    inner: MockFragmentSigner,
     fail_mode: Option<FailMode>,
 }
 
-impl FailableDfcSigner {
+impl FailableFragmentSigner {
     /// Create a new failable signer with no failure mode (passes through to inner).
     #[must_use]
     pub fn new() -> Self {
         Self {
-            inner: MockDfcSigner::for_testing(),
+            inner: MockFragmentSigner::for_testing(),
             fail_mode: None,
         }
     }
@@ -726,24 +726,24 @@ impl FailableDfcSigner {
     }
 }
 
-impl Default for FailableDfcSigner {
+impl Default for FailableFragmentSigner {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MerkleRootSigner for FailableDfcSigner {
+impl MerkleRootSigner for FailableFragmentSigner {
     async fn sign(&self, root: &Blake3Hash) -> crate::error::Result<SignedRoot> {
         match &self.fail_mode {
             Some(FailMode::Timeout(d)) => Err(crate::error::TameshiError::HashError(format!(
-                "DFC sign timed out after {}ms",
+                "Fragment sign timed out after {}ms",
                 d.as_millis()
             ))),
             Some(FailMode::AuthFailure) => Err(crate::error::TameshiError::HashError(
-                "DFC authentication failed: invalid credentials".to_string(),
+                "Fragment authentication failed: invalid credentials".to_string(),
             )),
             Some(FailMode::RateLimited) => Err(crate::error::TameshiError::HashError(
-                "DFC rate limited: too many requests".to_string(),
+                "Fragment rate limited: too many requests".to_string(),
             )),
             Some(FailMode::CorruptedSignature) => {
                 // Sign successfully but corrupt the signature bytes.
@@ -761,14 +761,14 @@ impl MerkleRootSigner for FailableDfcSigner {
     async fn verify(&self, signed: &SignedRoot) -> crate::error::Result<bool> {
         match &self.fail_mode {
             Some(FailMode::Timeout(d)) => Err(crate::error::TameshiError::HashError(format!(
-                "DFC verify timed out after {}ms",
+                "Fragment verify timed out after {}ms",
                 d.as_millis()
             ))),
             Some(FailMode::AuthFailure) => Err(crate::error::TameshiError::HashError(
-                "DFC authentication failed: invalid credentials".to_string(),
+                "Fragment authentication failed: invalid credentials".to_string(),
             )),
             Some(FailMode::RateLimited) => Err(crate::error::TameshiError::HashError(
-                "DFC rate limited: too many requests".to_string(),
+                "Fragment rate limited: too many requests".to_string(),
             )),
             // CorruptedSignature: delegate to inner (which will reject the corrupted sig).
             Some(FailMode::CorruptedSignature) | None => self.inner.verify(signed).await,
@@ -808,11 +808,11 @@ mod tests {
     fn signing_algorithm_display() {
         assert_eq!(SigningAlgorithm::Ed25519Local.to_string(), "ed25519_local");
         assert_eq!(
-            SigningAlgorithm::AkeylessDfc {
+            SigningAlgorithm::RemoteFragment {
                 key_name: "my-key".to_string()
             }
             .to_string(),
-            "akeyless_dfc:my-key"
+            "remote_fragment:my-key"
         );
         assert_eq!(SigningAlgorithm::BreakGlass.to_string(), "break_glass");
     }
@@ -821,8 +821,8 @@ mod tests {
     fn signing_algorithm_serde_roundtrip() {
         let algos = vec![
             SigningAlgorithm::Ed25519Local,
-            SigningAlgorithm::AkeylessDfc {
-                key_name: "dfc-key-1".to_string(),
+            SigningAlgorithm::RemoteFragment {
+                key_name: "fragment-key-1".to_string(),
             },
             SigningAlgorithm::BreakGlass,
         ];
@@ -959,7 +959,7 @@ mod tests {
         let wrong_algo = SignedRoot {
             root,
             signature: vec![0u8; 64],
-            algorithm: SigningAlgorithm::MockDfc,
+            algorithm: SigningAlgorithm::MockFragment,
             signer_id: "s".into(),
             signed_at: Utc::now(),
         };
@@ -982,46 +982,46 @@ mod tests {
     }
 
     // =========================================================================
-    // AkeylessDfcSigner tests
+    // RemoteFragmentSigner tests
     // =========================================================================
 
     #[test]
-    fn dfc_signer_requires_credentials() {
-        let signer = AkeylessDfcSigner::new(
-            "test-dfc-key",
+    fn fragment_signer_requires_credentials() {
+        let signer = RemoteFragmentSigner::new(
+            "test-fragment-key",
             "ci-pipeline",
-            "https://akeyless.example.com",
+            "https://secrets.example.com",
         );
         // Default constructor leaves credentials empty.
         assert!(signer.access_id.is_empty());
         assert!(signer.access_key.is_empty());
-        assert_eq!(signer.key_name, "test-dfc-key");
+        assert_eq!(signer.key_name, "test-fragment-key");
         assert_eq!(signer.signer_id, "ci-pipeline");
-        assert_eq!(signer.endpoint, "https://akeyless.example.com");
+        assert_eq!(signer.endpoint, "https://secrets.example.com");
     }
 
     #[test]
-    fn dfc_signer_with_credentials() {
-        let signer = AkeylessDfcSigner::with_credentials(
-            "prod-dfc-key",
+    fn fragment_signer_with_credentials() {
+        let signer = RemoteFragmentSigner::with_credentials(
+            "prod-fragment-key",
             "ci-pipeline",
-            "https://gw.akeyless.example.com",
+            "https://gw.secrets.example.com",
             "p-abc123",
             "my-secret-key",
         );
         assert_eq!(signer.access_id, "p-abc123");
         assert_eq!(signer.access_key, "my-secret-key");
-        assert_eq!(signer.key_name, "prod-dfc-key");
+        assert_eq!(signer.key_name, "prod-fragment-key");
         assert_eq!(signer.signer_id, "ci-pipeline");
-        assert_eq!(signer.endpoint, "https://gw.akeyless.example.com");
+        assert_eq!(signer.endpoint, "https://gw.secrets.example.com");
     }
 
     #[test]
-    fn dfc_signer_algorithm_display() {
-        let algo = SigningAlgorithm::AkeylessDfc {
-            key_name: "my-dfc-key".to_string(),
+    fn fragment_signer_algorithm_display() {
+        let algo = SigningAlgorithm::RemoteFragment {
+            key_name: "my-fragment-key".to_string(),
         };
-        assert_eq!(algo.to_string(), "akeyless_dfc:my-dfc-key");
+        assert_eq!(algo.to_string(), "remote_fragment:my-fragment-key");
     }
 
     #[test]
@@ -1047,7 +1047,7 @@ mod tests {
         let signer = LocalSigner::for_testing();
         let token = BreakGlassToken::create_signed(
             "oncall@pleme.io",
-            "Akeyless API outage",
+            "Secrets-manager API outage",
             vec!["namespace:production".to_string()],
             4,
             &signer,
@@ -1190,16 +1190,16 @@ mod tests {
     }
 
     // =========================================================================
-    // AkeylessDfcSigner::with_tls tests
+    // RemoteFragmentSigner::with_tls tests
     // =========================================================================
 
     #[test]
-    fn dfc_signer_with_tls_default() {
+    fn fragment_signer_with_tls_default() {
         let tls = TlsConfig::default();
-        let signer = AkeylessDfcSigner::with_tls(
-            "prod-dfc-key",
+        let signer = RemoteFragmentSigner::with_tls(
+            "prod-fragment-key",
             "ci-pipeline",
-            "https://gw.akeyless.example.com",
+            "https://gw.secrets.example.com",
             "p-abc123",
             "my-secret-key",
             &tls,
@@ -1209,20 +1209,20 @@ mod tests {
             "with_tls with default TlsConfig should succeed"
         );
         let signer = signer.unwrap();
-        assert_eq!(signer.key_name, "prod-dfc-key");
+        assert_eq!(signer.key_name, "prod-fragment-key");
         assert_eq!(signer.signer_id, "ci-pipeline");
-        assert_eq!(signer.endpoint, "https://gw.akeyless.example.com");
+        assert_eq!(signer.endpoint, "https://gw.secrets.example.com");
         assert_eq!(signer.access_id, "p-abc123");
         assert_eq!(signer.access_key, "my-secret-key");
     }
 
     #[test]
-    fn dfc_signer_with_tls_verify_disabled() {
+    fn fragment_signer_with_tls_verify_disabled() {
         let tls = TlsConfig {
             verify_server: false,
             ..TlsConfig::default()
         };
-        let signer = AkeylessDfcSigner::with_tls(
+        let signer = RemoteFragmentSigner::with_tls(
             "key",
             "signer",
             "https://gw.example.com",
@@ -1234,12 +1234,12 @@ mod tests {
     }
 
     #[test]
-    fn dfc_signer_with_tls_bad_ca_path() {
+    fn fragment_signer_with_tls_bad_ca_path() {
         let tls = TlsConfig {
             pinned_ca_path: Some("/nonexistent/ca.pem".to_string()),
             ..TlsConfig::default()
         };
-        let result = AkeylessDfcSigner::with_tls(
+        let result = RemoteFragmentSigner::with_tls(
             "key",
             "signer",
             "https://gw.example.com",
@@ -1251,36 +1251,36 @@ mod tests {
     }
 
     // =========================================================================
-    // MockDfcSigner tests
+    // MockFragmentSigner tests
     // =========================================================================
 
     #[test]
-    fn mock_dfc_from_fragments_creation() {
+    fn mock_fragment_from_fragments_creation() {
         let a = [10u8; 32];
         let b = [20u8; 32];
-        let signer = MockDfcSigner::from_fragments(a, b, "test-id");
+        let signer = MockFragmentSigner::from_fragments(a, b, "test-id");
         assert_eq!(signer.signer_id, "test-id");
         assert_eq!(signer.fragment_a, a);
         assert_eq!(signer.fragment_b, b);
     }
 
     #[test]
-    fn mock_dfc_for_testing_creation() {
-        let signer = MockDfcSigner::for_testing();
-        assert_eq!(signer.signer_id, "mock-dfc-test");
+    fn mock_fragment_for_testing_creation() {
+        let signer = MockFragmentSigner::for_testing();
+        assert_eq!(signer.signer_id, "mock-fragment-test");
         assert_eq!(signer.fragment_a, [1u8; 32]);
         assert_eq!(signer.fragment_b, [2u8; 32]);
     }
 
     #[tokio::test]
-    async fn mock_dfc_sign_verify_roundtrip() {
-        let signer = MockDfcSigner::for_testing();
-        let root = Blake3Hash::digest(b"mock-dfc-test-root");
+    async fn mock_fragment_sign_verify_roundtrip() {
+        let signer = MockFragmentSigner::for_testing();
+        let root = Blake3Hash::digest(b"mock-fragment-test-root");
         let signed = signer.sign(&root).await.unwrap();
 
         assert_eq!(signed.root, root);
-        assert_eq!(signed.signer_id, "mock-dfc-test");
-        assert!(matches!(signed.algorithm, SigningAlgorithm::MockDfc));
+        assert_eq!(signed.signer_id, "mock-fragment-test");
+        assert!(matches!(signed.algorithm, SigningAlgorithm::MockFragment));
         assert!(!signed.signature.is_empty());
 
         let verified = signer.verify(&signed).await.unwrap();
@@ -1288,8 +1288,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_dfc_different_roots_different_signatures() {
-        let signer = MockDfcSigner::for_testing();
+    async fn mock_fragment_different_roots_different_signatures() {
+        let signer = MockFragmentSigner::for_testing();
         let root1 = Blake3Hash::digest(b"root-a");
         let root2 = Blake3Hash::digest(b"root-b");
 
@@ -1300,8 +1300,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_dfc_deterministic_same_root_same_signature() {
-        let signer = MockDfcSigner::for_testing();
+    async fn mock_fragment_deterministic_same_root_same_signature() {
+        let signer = MockFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"deterministic-mock");
 
         let signed1 = signer.sign(&root).await.unwrap();
@@ -1311,30 +1311,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_dfc_wrong_fragment_a_verify_fails() {
-        let signer = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "s1");
+    async fn mock_fragment_wrong_fragment_a_verify_fails() {
+        let signer = MockFragmentSigner::from_fragments([1u8; 32], [2u8; 32], "s1");
         let root = Blake3Hash::digest(b"test");
         let signed = signer.sign(&root).await.unwrap();
 
-        let wrong_signer = MockDfcSigner::from_fragments([99u8; 32], [2u8; 32], "s2");
+        let wrong_signer = MockFragmentSigner::from_fragments([99u8; 32], [2u8; 32], "s2");
         let verified = wrong_signer.verify(&signed).await.unwrap();
         assert!(!verified, "Wrong fragment A should reject");
     }
 
     #[tokio::test]
-    async fn mock_dfc_wrong_fragment_b_verify_fails() {
-        let signer = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "s1");
+    async fn mock_fragment_wrong_fragment_b_verify_fails() {
+        let signer = MockFragmentSigner::from_fragments([1u8; 32], [2u8; 32], "s1");
         let root = Blake3Hash::digest(b"test");
         let signed = signer.sign(&root).await.unwrap();
 
-        let wrong_signer = MockDfcSigner::from_fragments([1u8; 32], [99u8; 32], "s2");
+        let wrong_signer = MockFragmentSigner::from_fragments([1u8; 32], [99u8; 32], "s2");
         let verified = wrong_signer.verify(&signed).await.unwrap();
         assert!(!verified, "Wrong fragment B should reject");
     }
 
     #[tokio::test]
-    async fn mock_dfc_tampered_root_verify_fails() {
-        let signer = MockDfcSigner::for_testing();
+    async fn mock_fragment_tampered_root_verify_fails() {
+        let signer = MockFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"original-root");
         let mut signed = signer.sign(&root).await.unwrap();
 
@@ -1345,9 +1345,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_dfc_signed_root_serde_roundtrip() {
-        let signer = MockDfcSigner::for_testing();
-        let root = Blake3Hash::digest(b"serde-mock-dfc");
+    async fn mock_fragment_signed_root_serde_roundtrip() {
+        let signer = MockFragmentSigner::for_testing();
+        let root = Blake3Hash::digest(b"serde-mock-fragment");
         let signed = signer.sign(&root).await.unwrap();
 
         let json = serde_json::to_string(&signed).unwrap();
@@ -1356,20 +1356,20 @@ mod tests {
     }
 
     #[test]
-    fn mock_dfc_algorithm_display() {
-        assert_eq!(SigningAlgorithm::MockDfc.to_string(), "mock_dfc");
+    fn mock_fragment_algorithm_display() {
+        assert_eq!(SigningAlgorithm::MockFragment.to_string(), "mock_fragment");
     }
 
     #[test]
-    fn mock_dfc_algorithm_serde_roundtrip() {
-        let algo = SigningAlgorithm::MockDfc;
+    fn mock_fragment_algorithm_serde_roundtrip() {
+        let algo = SigningAlgorithm::MockFragment;
         let json = serde_json::to_string(&algo).unwrap();
         let deserialized: SigningAlgorithm = serde_json::from_str(&json).unwrap();
         assert_eq!(algo, deserialized);
     }
 
     #[test]
-    fn mock_dfc_load_from_success() {
+    fn mock_fragment_load_from_success() {
         let dir = tempfile::tempdir().unwrap();
         let frag_file = dir.path().join(".tameshi_frag");
         let hex_a = const_hex::encode([0xAAu8; 32]);
@@ -1378,20 +1378,20 @@ mod tests {
         let hex_b = const_hex::encode([0xBBu8; 32]);
         let search_dirs = vec![dir.path().to_path_buf()];
 
-        let signer = MockDfcSigner::load_from(&search_dirs, &hex_b, "test-load").unwrap();
+        let signer = MockFragmentSigner::load_from(&search_dirs, &hex_b, "test-load").unwrap();
         assert_eq!(signer.signer_id, "test-load");
         assert_eq!(signer.fragment_a, [0xAAu8; 32]);
         assert_eq!(signer.fragment_b, [0xBBu8; 32]);
     }
 
     #[test]
-    fn mock_dfc_load_from_missing_file_returns_error() {
+    fn mock_fragment_load_from_missing_file_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         // No .tameshi_frag written -- empty dir
         let search_dirs = vec![dir.path().to_path_buf()];
 
         let hex_b = const_hex::encode([0xBBu8; 32]);
-        let result = MockDfcSigner::load_from(&search_dirs, &hex_b, "test-missing");
+        let result = MockFragmentSigner::load_from(&search_dirs, &hex_b, "test-missing");
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1402,8 +1402,8 @@ mod tests {
     }
 
     #[test]
-    fn mock_dfc_load_missing_env_returns_error() {
-        // Test that load() fails when AKEYLESS_MOCK_FRAG is not set.
+    fn mock_fragment_load_missing_env_returns_error() {
+        // Test that load() fails when SECRETS_MOCK_FRAG is not set.
         // We use load_from with an empty env value scenario:
         // the real `load()` reads from env; here we test the error path directly.
         let dir = tempfile::tempdir().unwrap();
@@ -1415,13 +1415,13 @@ mod tests {
         // but the real test is that load() itself checks env var presence.
         // Test the error message from the ConfigError path.
         let err = crate::error::TameshiError::ConfigError(
-            "AKEYLESS_MOCK_FRAG env var not set".to_string(),
+            "SECRETS_MOCK_FRAG env var not set".to_string(),
         );
-        assert!(err.to_string().contains("AKEYLESS_MOCK_FRAG"));
+        assert!(err.to_string().contains("SECRETS_MOCK_FRAG"));
     }
 
     #[test]
-    fn mock_dfc_load_from_invalid_hex_in_file_returns_error() {
+    fn mock_fragment_load_from_invalid_hex_in_file_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let frag_file = dir.path().join(".tameshi_frag");
         std::fs::write(&frag_file, "not-valid-hex-at-all!!!").unwrap();
@@ -1429,7 +1429,7 @@ mod tests {
         let hex_b = const_hex::encode([0xBBu8; 32]);
         let search_dirs = vec![dir.path().to_path_buf()];
 
-        let result = MockDfcSigner::load_from(&search_dirs, &hex_b, "test-bad-hex");
+        let result = MockFragmentSigner::load_from(&search_dirs, &hex_b, "test-bad-hex");
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1440,28 +1440,28 @@ mod tests {
     }
 
     #[test]
-    fn mock_dfc_key_reconstruction_deterministic() {
-        let signer = MockDfcSigner::for_testing();
+    fn mock_fragment_key_reconstruction_deterministic() {
+        let signer = MockFragmentSigner::for_testing();
         let key1 = signer.reconstruct_key();
         let key2 = signer.reconstruct_key();
         assert_eq!(key1, key2);
     }
 
     #[test]
-    fn mock_dfc_key_reconstruction_differs_with_different_fragments() {
-        let s1 = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "a");
-        let s2 = MockDfcSigner::from_fragments([3u8; 32], [4u8; 32], "b");
+    fn mock_fragment_key_reconstruction_differs_with_different_fragments() {
+        let s1 = MockFragmentSigner::from_fragments([1u8; 32], [2u8; 32], "a");
+        let s2 = MockFragmentSigner::from_fragments([3u8; 32], [4u8; 32], "b");
         assert_ne!(s1.reconstruct_key(), s2.reconstruct_key());
     }
 
     #[test]
-    fn mock_dfc_xor_is_commutative_same_key() {
+    fn mock_fragment_xor_is_commutative_same_key() {
         // XOR is commutative: a XOR b == b XOR a
         // So (a,b) and (b,a) produce the same key.
         let a = [1u8; 32];
         let b = [2u8; 32];
-        let s1 = MockDfcSigner::from_fragments(a, b, "ab");
-        let s2 = MockDfcSigner::from_fragments(b, a, "ba");
+        let s1 = MockFragmentSigner::from_fragments(a, b, "ab");
+        let s2 = MockFragmentSigner::from_fragments(b, a, "ba");
         assert_eq!(
             s1.reconstruct_key(),
             s2.reconstruct_key(),
@@ -1470,35 +1470,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_dfc_interop_local_signer_cannot_verify() {
-        let mock = MockDfcSigner::for_testing();
+    async fn mock_fragment_interop_local_signer_cannot_verify() {
+        let mock = MockFragmentSigner::for_testing();
         let local = LocalSigner::for_testing();
         let root = Blake3Hash::digest(b"interop-test");
 
         let signed_by_mock = mock.sign(&root).await.unwrap();
 
-        // LocalSigner should not be able to verify a MockDfc signature
+        // LocalSigner should not be able to verify a MockFragment signature
         let verified = local.verify(&signed_by_mock).await.unwrap();
         assert!(
             !verified,
-            "LocalSigner should not verify MockDfc signatures"
+            "LocalSigner should not verify MockFragment signatures"
         );
     }
 
     #[test]
-    fn mock_dfc_backward_compat_existing_algorithms_deserialize() {
-        // Ensure adding MockDfc doesn't break existing variant deserialization
+    fn mock_fragment_backward_compat_existing_algorithms_deserialize() {
+        // Ensure adding MockFragment doesn't break existing variant deserialization
         let ed25519_json = r#""ed25519_local""#;
-        let dfc_json = r#"{"akeyless_dfc":{"key_name":"k1"}}"#;
+        let fragment_json = r#"{"remote_fragment":{"key_name":"k1"}}"#;
         let bg_json = r#""break_glass""#;
 
         let ed: SigningAlgorithm = serde_json::from_str(ed25519_json).unwrap();
         assert_eq!(ed, SigningAlgorithm::Ed25519Local);
 
-        let dfc: SigningAlgorithm = serde_json::from_str(dfc_json).unwrap();
+        let fragment: SigningAlgorithm = serde_json::from_str(fragment_json).unwrap();
         assert_eq!(
-            dfc,
-            SigningAlgorithm::AkeylessDfc {
+            fragment,
+            SigningAlgorithm::RemoteFragment {
                 key_name: "k1".to_string()
             }
         );
@@ -1508,16 +1508,16 @@ mod tests {
     }
 
     #[test]
-    fn mock_dfc_variant_in_match_expressions() {
-        let algo = SigningAlgorithm::MockDfc;
+    fn mock_fragment_variant_in_match_expressions() {
+        let algo = SigningAlgorithm::MockFragment;
         let label = match algo {
             SigningAlgorithm::Ed25519Local => "ed25519",
-            SigningAlgorithm::AkeylessDfc { .. } => "dfc",
-            SigningAlgorithm::MockDfc => "mock_dfc",
+            SigningAlgorithm::RemoteFragment { .. } => "fragment",
+            SigningAlgorithm::MockFragment => "mock_fragment",
             SigningAlgorithm::BreakGlass => "break_glass",
             SigningAlgorithm::FrostEd25519 { .. } => "frost_ed25519",
         };
-        assert_eq!(label, "mock_dfc");
+        assert_eq!(label, "mock_fragment");
     }
 
     #[test]
@@ -1538,14 +1538,14 @@ mod tests {
         assert_eq!(algo.to_string(), "frost_ed25519:3-of-5");
         assert!(algo.is_ed25519());
         assert!(SigningAlgorithm::Ed25519Local.is_ed25519());
-        assert!(!SigningAlgorithm::MockDfc.is_ed25519());
+        assert!(!SigningAlgorithm::MockFragment.is_ed25519());
         assert!(!SigningAlgorithm::BreakGlass.is_ed25519());
     }
 
     #[tokio::test]
-    async fn mock_dfc_for_testing_consistent_across_calls() {
-        let signer1 = MockDfcSigner::for_testing();
-        let signer2 = MockDfcSigner::for_testing();
+    async fn mock_fragment_for_testing_consistent_across_calls() {
+        let signer1 = MockFragmentSigner::for_testing();
+        let signer2 = MockFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"consistency-check");
 
         let sig1 = signer1.sign(&root).await.unwrap();
@@ -1558,14 +1558,14 @@ mod tests {
     }
 
     // =========================================================================
-    // Deep testing: MockDfcSigner gaps
+    // Deep testing: MockFragmentSigner gaps
     // =========================================================================
 
     // ---- Fragment security: Debug does NOT leak fragment bytes ----
 
     #[test]
-    fn mock_dfc_debug_redacts_fragments() {
-        let signer = MockDfcSigner::from_fragments([0xAA; 32], [0xBB; 32], "secret-signer");
+    fn mock_fragment_debug_redacts_fragments() {
+        let signer = MockFragmentSigner::from_fragments([0xAA; 32], [0xBB; 32], "secret-signer");
         let debug_output = format!("{signer:?}");
         // Fragments must not appear in debug output
         assert!(
@@ -1590,16 +1590,16 @@ mod tests {
     // ---- All-zero fragments ----
 
     #[tokio::test]
-    async fn mock_dfc_all_zero_fragments_sign_verify() {
-        let signer = MockDfcSigner::from_fragments([0u8; 32], [0u8; 32], "zero-frags");
+    async fn mock_fragment_all_zero_fragments_sign_verify() {
+        let signer = MockFragmentSigner::from_fragments([0u8; 32], [0u8; 32], "zero-frags");
         let root = Blake3Hash::digest(b"test-data");
         let signed = signer.sign(&root).await.unwrap();
         assert!(signer.verify(&signed).await.unwrap());
     }
 
     #[test]
-    fn mock_dfc_all_zero_fragments_key_not_zero() {
-        let signer = MockDfcSigner::from_fragments([0u8; 32], [0u8; 32], "zero");
+    fn mock_fragment_all_zero_fragments_key_not_zero() {
+        let signer = MockFragmentSigner::from_fragments([0u8; 32], [0u8; 32], "zero");
         let key = signer.reconstruct_key();
         // XOR of zeros is zeros, but BLAKE3(zeros) is not zero
         assert_ne!(key, [0u8; 32], "BLAKE3 of all-zero XOR should not be zero");
@@ -1608,9 +1608,9 @@ mod tests {
     // ---- Same fragments ----
 
     #[test]
-    fn mock_dfc_same_fragments_xor_to_zero() {
+    fn mock_fragment_same_fragments_xor_to_zero() {
         let a = [42u8; 32];
-        let signer = MockDfcSigner::from_fragments(a, a, "same");
+        let signer = MockFragmentSigner::from_fragments(a, a, "same");
         let key = signer.reconstruct_key();
         // a XOR a = 0, so key = BLAKE3([0; 32])
         let expected = *blake3::hash(&[0u8; 32]).as_bytes();
@@ -1623,8 +1623,8 @@ mod tests {
     // ---- Large payload signing (1MB) ----
 
     #[tokio::test]
-    async fn mock_dfc_sign_large_payload() {
-        let signer = MockDfcSigner::for_testing();
+    async fn mock_fragment_sign_large_payload() {
+        let signer = MockFragmentSigner::for_testing();
         // Sign a hash derived from 1MB of data
         let large_data = vec![0xFFu8; 1_000_000];
         let root = Blake3Hash::digest(&large_data);
@@ -1640,8 +1640,8 @@ mod tests {
     // ---- Signature uniqueness: 1000 different roots ----
 
     #[tokio::test]
-    async fn mock_dfc_1000_unique_signatures() {
-        let signer = MockDfcSigner::for_testing();
+    async fn mock_fragment_1000_unique_signatures() {
+        let signer = MockFragmentSigner::for_testing();
         let mut sigs = std::collections::HashSet::new();
         for i in 0..1000 {
             let root = Blake3Hash::digest(format!("root-{i}").as_bytes());
@@ -1658,8 +1658,8 @@ mod tests {
     // ---- Determinism (clock independence): same root always same signature ----
 
     #[tokio::test]
-    async fn mock_dfc_clock_independence() {
-        let signer = MockDfcSigner::for_testing();
+    async fn mock_fragment_clock_independence() {
+        let signer = MockFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"clock-test");
 
         let signed1 = signer.sign(&root).await.unwrap();
@@ -1676,10 +1676,10 @@ mod tests {
     // ---- Concurrent signing: multiple threads ----
 
     #[tokio::test]
-    async fn mock_dfc_concurrent_signing() {
+    async fn mock_fragment_concurrent_signing() {
         use std::sync::Arc;
 
-        let signer = Arc::new(MockDfcSigner::for_testing());
+        let signer = Arc::new(MockFragmentSigner::for_testing());
         let mut handles = vec![];
         for t in 0..8 {
             let s = signer.clone();
@@ -1705,7 +1705,7 @@ mod tests {
     // ---- Cross-pillar: sign a CertificationArtifact's composed_root ----
 
     #[tokio::test]
-    async fn mock_dfc_sign_certification_artifact_root() {
+    async fn mock_fragment_sign_certification_artifact_root() {
         use crate::certification_artifact::{
             compose_certification_artifact, verify_certification_artifact,
         };
@@ -1719,7 +1719,7 @@ mod tests {
         );
         assert!(verify_certification_artifact(&art));
 
-        let signer = MockDfcSigner::for_testing();
+        let signer = MockFragmentSigner::for_testing();
         let signed = signer.sign(&art.composed_root).await.unwrap();
         assert!(signer.verify(&signed).await.unwrap());
         assert_eq!(signed.root, art.composed_root);
@@ -1728,8 +1728,8 @@ mod tests {
     // ---- Tampered signature bytes ----
 
     #[tokio::test]
-    async fn mock_dfc_tampered_signature_bytes_fails() {
-        let signer = MockDfcSigner::for_testing();
+    async fn mock_fragment_tampered_signature_bytes_fails() {
+        let signer = MockFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"tamper-sig-test");
         let mut signed = signer.sign(&root).await.unwrap();
 
@@ -1744,31 +1744,31 @@ mod tests {
     // ---- Swapped fragments produce different keys ----
 
     #[test]
-    fn mock_dfc_fragment_order_irrelevant_xor_commutative() {
+    fn mock_fragment_fragment_order_irrelevant_xor_commutative() {
         // XOR is commutative, so swapping fragments does NOT change the key
-        let s1 = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "a");
-        let s2 = MockDfcSigner::from_fragments([2u8; 32], [1u8; 32], "b");
+        let s1 = MockFragmentSigner::from_fragments([1u8; 32], [2u8; 32], "a");
+        let s2 = MockFragmentSigner::from_fragments([2u8; 32], [1u8; 32], "b");
         assert_eq!(s1.reconstruct_key(), s2.reconstruct_key());
     }
 
     // ---- Fragment B as invalid hex ----
 
     #[test]
-    fn mock_dfc_load_from_invalid_hex_in_env_returns_error() {
+    fn mock_fragment_load_from_invalid_hex_in_env_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let frag_file = dir.path().join(".tameshi_frag");
         let hex_a = const_hex::encode([0xAAu8; 32]);
         std::fs::write(&frag_file, &hex_a).unwrap();
 
         let search_dirs = vec![dir.path().to_path_buf()];
-        let result = MockDfcSigner::load_from(&search_dirs, "not-valid-hex!!!", "test-bad-env");
+        let result = MockFragmentSigner::load_from(&search_dirs, "not-valid-hex!!!", "test-bad-env");
         assert!(result.is_err());
     }
 
     // ---- Fragment with wrong length ----
 
     #[test]
-    fn mock_dfc_load_from_short_hex_returns_error() {
+    fn mock_fragment_load_from_short_hex_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let frag_file = dir.path().join(".tameshi_frag");
         // Only 16 bytes (32 hex chars) instead of 32 bytes (64 hex chars)
@@ -1777,7 +1777,7 @@ mod tests {
 
         let hex_b = const_hex::encode([0xBBu8; 32]);
         let search_dirs = vec![dir.path().to_path_buf()];
-        let result = MockDfcSigner::load_from(&search_dirs, &hex_b, "test-short");
+        let result = MockFragmentSigner::load_from(&search_dirs, &hex_b, "test-short");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -1789,7 +1789,7 @@ mod tests {
     // ---- Multiple search dirs: second dir has the file ----
 
     #[test]
-    fn mock_dfc_load_from_second_search_dir() {
+    fn mock_fragment_load_from_second_search_dir() {
         let dir1 = tempfile::tempdir().unwrap();
         let dir2 = tempfile::tempdir().unwrap();
         // File only in dir2
@@ -1799,7 +1799,7 @@ mod tests {
         let hex_b = const_hex::encode([0xEEu8; 32]);
         let search_dirs = vec![dir1.path().to_path_buf(), dir2.path().to_path_buf()];
 
-        let signer = MockDfcSigner::load_from(&search_dirs, &hex_b, "second-dir").unwrap();
+        let signer = MockFragmentSigner::load_from(&search_dirs, &hex_b, "second-dir").unwrap();
         assert_eq!(signer.fragment_a, [0xDDu8; 32]);
         assert_eq!(signer.fragment_b, [0xEEu8; 32]);
     }
@@ -1807,16 +1807,16 @@ mod tests {
     // ---- Empty search dirs ----
 
     #[test]
-    fn mock_dfc_load_from_empty_search_dirs_returns_error() {
+    fn mock_fragment_load_from_empty_search_dirs_returns_error() {
         let hex_b = const_hex::encode([0xBBu8; 32]);
-        let result = MockDfcSigner::load_from(&[], &hex_b, "empty-dirs");
+        let result = MockFragmentSigner::load_from(&[], &hex_b, "empty-dirs");
         assert!(result.is_err());
     }
 
     // ---- Whitespace trimming in fragment file ----
 
     #[test]
-    fn mock_dfc_load_from_whitespace_trimmed() {
+    fn mock_fragment_load_from_whitespace_trimmed() {
         let dir = tempfile::tempdir().unwrap();
         let frag_file = dir.path().join(".tameshi_frag");
         let hex_a = const_hex::encode([0xCCu8; 32]);
@@ -1826,7 +1826,7 @@ mod tests {
         let hex_b = const_hex::encode([0xDDu8; 32]);
         let search_dirs = vec![dir.path().to_path_buf()];
 
-        let signer = MockDfcSigner::load_from(&search_dirs, &hex_b, "ws-trim").unwrap();
+        let signer = MockFragmentSigner::load_from(&search_dirs, &hex_b, "ws-trim").unwrap();
         assert_eq!(signer.fragment_a, [0xCCu8; 32]);
     }
 
@@ -1914,13 +1914,13 @@ mod tests {
 
     #[tokio::test]
     async fn signed_root_fields_populated_correctly() {
-        let signer = MockDfcSigner::from_fragments([5u8; 32], [10u8; 32], "field-check");
+        let signer = MockFragmentSigner::from_fragments([5u8; 32], [10u8; 32], "field-check");
         let root = Blake3Hash::digest(b"field-test");
         let signed = signer.sign(&root).await.unwrap();
 
         assert_eq!(signed.root, root);
         assert_eq!(signed.signer_id, "field-check");
-        assert!(matches!(signed.algorithm, SigningAlgorithm::MockDfc));
+        assert!(matches!(signed.algorithm, SigningAlgorithm::MockFragment));
         assert_eq!(signed.signature.len(), 32);
         // signed_at should be recent (within a few seconds)
         let elapsed = chrono::Utc::now() - signed.signed_at;
@@ -1928,12 +1928,12 @@ mod tests {
     }
 
     // =========================================================================
-    // FailableDfcSigner -- Negative Mock Tests (Directive 4)
+    // FailableFragmentSigner -- Negative Mock Tests (Directive 4)
     // =========================================================================
 
     #[tokio::test]
-    async fn failable_dfc_timeout_returns_error() {
-        let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+    async fn failable_fragment_timeout_returns_error() {
+        let signer = FailableFragmentSigner::new().with_timeout(std::time::Duration::from_secs(5));
         let root = Blake3Hash::digest(b"timeout-test");
         let result = signer.sign(&root).await;
         assert!(result.is_err());
@@ -1945,8 +1945,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failable_dfc_corrupted_signature_fails_verify() {
-        let signer = FailableDfcSigner::new().with_corrupted_signature();
+    async fn failable_fragment_corrupted_signature_fails_verify() {
+        let signer = FailableFragmentSigner::new().with_corrupted_signature();
         let root = Blake3Hash::digest(b"corrupt-test");
 
         // Sign succeeds (returns a SignedRoot with corrupted bytes).
@@ -1954,7 +1954,7 @@ mod tests {
         assert_eq!(signed.root, root, "Root should still match");
 
         // Verify against a clean signer should fail.
-        let clean = MockDfcSigner::for_testing();
+        let clean = MockFragmentSigner::for_testing();
         let verified = clean.verify(&signed).await.unwrap();
         assert!(!verified, "Corrupted signature should fail verification");
 
@@ -1968,8 +1968,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failable_dfc_auth_failure_returns_error() {
-        let signer = FailableDfcSigner::new().with_auth_failure();
+    async fn failable_fragment_auth_failure_returns_error() {
+        let signer = FailableFragmentSigner::new().with_auth_failure();
         let root = Blake3Hash::digest(b"auth-fail-test");
         let result = signer.sign(&root).await;
         assert!(result.is_err());
@@ -1981,8 +1981,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failable_dfc_rate_limited_returns_error() {
-        let signer = FailableDfcSigner::new().with_rate_limited();
+    async fn failable_fragment_rate_limited_returns_error() {
+        let signer = FailableFragmentSigner::new().with_rate_limited();
         let root = Blake3Hash::digest(b"rate-limit-test");
 
         let sign_result = signer.sign(&root).await;
@@ -1994,16 +1994,16 @@ mod tests {
         );
 
         // Verify also fails with rate limit.
-        let dummy_signed = MockDfcSigner::for_testing().sign(&root).await.unwrap();
+        let dummy_signed = MockFragmentSigner::for_testing().sign(&root).await.unwrap();
         let verify_result = signer.verify(&dummy_signed).await;
         assert!(verify_result.is_err());
     }
 
     #[tokio::test]
-    async fn failable_dfc_timeout_does_not_block_indefinitely() {
+    async fn failable_fragment_timeout_does_not_block_indefinitely() {
         use std::time::Instant;
 
-        let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+        let signer = FailableFragmentSigner::new().with_timeout(std::time::Duration::from_secs(5));
         let root = Blake3Hash::digest(b"no-block-test");
 
         let start = Instant::now();
@@ -2021,9 +2021,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failable_dfc_auth_failure_on_verify() {
-        let signer = FailableDfcSigner::new().with_auth_failure();
-        let clean = MockDfcSigner::for_testing();
+    async fn failable_fragment_auth_failure_on_verify() {
+        let signer = FailableFragmentSigner::new().with_auth_failure();
+        let clean = MockFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"verify-auth-fail");
         let signed = clean.sign(&root).await.unwrap();
 
@@ -2033,8 +2033,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failable_dfc_no_fail_mode_passes_through() {
-        let signer = FailableDfcSigner::new();
+    async fn failable_fragment_no_fail_mode_passes_through() {
+        let signer = FailableFragmentSigner::new();
         let root = Blake3Hash::digest(b"passthrough-test");
         let signed = signer.sign(&root).await.unwrap();
         let verified = signer.verify(&signed).await.unwrap();
@@ -2042,8 +2042,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failable_dfc_default_passes_through() {
-        let signer = FailableDfcSigner::default();
+    async fn failable_fragment_default_passes_through() {
+        let signer = FailableFragmentSigner::default();
         let root = Blake3Hash::digest(b"default-test");
         let signed = signer.sign(&root).await.unwrap();
         let verified = signer.verify(&signed).await.unwrap();
@@ -2070,18 +2070,18 @@ mod tests {
         assert!(debug_str4.contains("RateLimited"));
     }
 
-    /// Full chain integration: DFC timeout should cause downstream gate DENY.
+    /// Full chain integration: Fragment timeout should cause downstream gate DENY.
     #[tokio::test]
-    async fn gate_denies_on_dfc_timeout() {
+    async fn gate_denies_on_fragment_timeout() {
         use crate::gating::{GatingPolicy, evaluate_gate};
         use crate::signature::MasterSignature;
 
-        let signer = FailableDfcSigner::new().with_timeout(std::time::Duration::from_secs(5));
+        let signer = FailableFragmentSigner::new().with_timeout(std::time::Duration::from_secs(5));
         let root = Blake3Hash::digest(b"gate-timeout-root");
 
         // Attempt to sign fails, so we cannot produce a valid MasterSignature.
         let result = signer.sign(&root).await;
-        assert!(result.is_err(), "DFC timeout should prevent signing");
+        assert!(result.is_err(), "Fragment timeout should prevent signing");
 
         // Without a valid signature, any gate policy evaluation should deny.
         // Construct a MasterSignature with a mismatched hash to simulate
@@ -2104,17 +2104,17 @@ mod tests {
     /// Full chain integration: Corrupted signature should cause gate DENY.
     #[tokio::test]
     async fn gate_denies_on_corrupted_signature() {
-        let signer = FailableDfcSigner::new().with_corrupted_signature();
+        let signer = FailableFragmentSigner::new().with_corrupted_signature();
         let root = Blake3Hash::digest(b"gate-corrupt-root");
 
         let signed = signer.sign(&root).await.unwrap();
 
         // The signed root has corrupted bytes, so verification fails.
-        let clean = MockDfcSigner::for_testing();
+        let clean = MockFragmentSigner::for_testing();
         let verified = clean.verify(&signed).await.unwrap();
         assert!(
             !verified,
-            "Corrupted signature should fail DFC verification"
+            "Corrupted signature should fail Fragment verification"
         );
 
         // In a real pipeline, the gate would reject because the signed root

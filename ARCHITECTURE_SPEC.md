@@ -5,7 +5,7 @@
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-14 | Initial architecture |
-| 2.0 | 2026-03-20 | Added canonicalization, LSM hooks, DFC signing, proof heartbeat, version-pinned attestations |
+| 2.0 | 2026-03-20 | Added canonicalization, LSM hooks, Fragment signing, proof heartbeat, version-pinned attestations |
 
 ---
 
@@ -15,7 +15,7 @@
                     ┌──────────────────────────────────────────────┐
                     │            Attestation Pipeline              │
                     │                                              │
-                    │  Nix → OCI → Helm → K8s → Flux → Akeyless  │
+                    │  Nix → OCI → Helm → K8s → Flux → the secrets manager  │
                     │     ↓      ↓      ↓     ↓      ↓      ↓    │
                     │  ┌─────────────────────────────────────────┐ │
                     │  │     tameshi (BLAKE3 Merkle Tree)        │ │
@@ -35,7 +35,7 @@
                     │                     │                        │
                     │     Secure Sig = BLAKE3(Untested || Compl)   │
                     │                     │                        │
-                    │     DFC Sign via Akeyless (Phase 3)         │
+                    │     Fragment Sign via the secrets manager (Phase 3)         │
                     └─────────────────────┬────────────────────────┘
                                           │
                     ┌─────────────────────┼────────────────────────┐
@@ -123,7 +123,7 @@ let value_hash = Blake3Hash::digest(
 
 **Security property:** Even identical secret values produce different hashes across different gateways and paths. An attacker with access to the attestation log cannot reverse or rainbow-table the hash.
 
-#### 1.5 Signing (Phase 3: DFC)
+#### 1.5 Signing (Phase 3: Fragment)
 
 ```rust
 pub trait MerkleRootSigner: Send + Sync {
@@ -145,17 +145,17 @@ pub struct SignedRoot {
 pub enum SigningAlgorithm {
     /// Ed25519 with local key (development)
     Ed25519Local,
-    /// Akeyless DFC-backed signing (production)
+    /// remote Fragment-backed signing (production)
     /// Key never exists in one piece.
-    AkeylessDfc { key_name: String },
+    RemoteFragment { key_name: String },
 }
 ```
 
-**DFC flow:**
+**Fragment flow:**
 
 1. kensa computes the compliance-approved Merkle root
-2. kensa calls `AkeylessDfcSigner::sign(root)`
-3. Signer sends signing request to Akeyless Gateway
+2. kensa calls `RemoteFragmentSigner::sign(root)`
+3. Signer sends signing request to secrets-manager Gateway
 4. Gateway coordinates fragment holders (threshold signing)
 5. Partial signatures combine into full Ed25519/ECDSA signature
 6. Full key never exists in memory on any single machine
@@ -250,11 +250,11 @@ kensa runs compliance tests → AssessmentResult
   → compose with untested → Secure Signature
   → sign via MerkleRootSigner trait
     ├── LocalSigner (dev/test)
-    └── AkeylessDfcSigner (production)
+    └── RemoteFragmentSigner (production)
   → push SignedRoot to sekiban via API
 ```
 
-The signing key for production is NEVER a file. It's an Akeyless DFC key that requires threshold cooperation of multiple gateway fragments.
+The signing key for production is NEVER a file. It's a remote Fragment key that requires threshold cooperation of multiple gateway fragments.
 
 ---
 
@@ -421,7 +421,7 @@ pub trait HeartbeatEmitter: Send + Sync {
 | Injected K8s manifest | K8s collector + sekiban canonical_json | Changeset hash mismatch → DENY |
 | Compromised CI pipeline | Two-phase composition | Both infra + compliance must be fresh |
 | Secret rainbow table | Salted hashing | `BLAKE3(gateway:path:value)` |
-| Stolen signing key | DFC signing (Phase 3) | Key never exists in one piece |
+| Stolen signing key | Fragment signing (Phase 3) | Key never exists in one piece |
 | Binary swap at runtime | kanshi LSM hook (Phase 2) | Kernel lock prevents TOCTOU |
 | Whitespace/comment injection | Canonicalizer (Strict mode) | Byte-for-byte = any change detected |
 | Replay old valid signature | `max_signature_age_secs` | Stale signatures rejected |
@@ -453,10 +453,10 @@ canonicalization:
     strip_comments: true
 
 signing:
-  algorithm: ed25519_local  # ed25519_local | akeyless_dfc
-  # For DFC:
-  akeyless:
-    gateway_url: "https://gw.akeyless.prod"
+  algorithm: ed25519_local  # ed25519_local | remote_fragment
+  # For Fragment:
+  secrets_manager:
+    gateway_url: "https://gw.secrets.prod"
     key_name: "/signing/tameshi-root"
     auth_method: k8s
 

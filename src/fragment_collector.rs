@@ -1,11 +1,11 @@
 //! Fragment Collector — threshold-based attestation authorization.
 //!
 //! Requires K-of-N fragment providers to submit their shares before
-//! a binary can be attested. Models the DFC principle: no single
+//! a binary can be attested. Models the Fragment principle: no single
 //! entity can authorize a binary alone.
 
 use crate::hash::Blake3Hash;
-use crate::shamir_dfc::{Share, reconstruct};
+use crate::shamir_fragment::{Share, reconstruct};
 use std::sync::Mutex;
 
 /// Trait for fragment providers (Build Server, Cloud, Local HSM, etc.).
@@ -16,14 +16,14 @@ pub trait FragmentProvider: Send + Sync {
     fn provide_fragment(&self, binary_hash: &Blake3Hash) -> Option<Share>;
 }
 
-/// Mock DFC cloud provider — provides fragment only if intent token is valid.
-pub struct MockDfcCloud {
+/// Mock Fragment cloud provider — provides fragment only if intent token is valid.
+pub struct MockFragmentCloud {
     pub id: String,
     pub fragment: Share,
     pub required_intent_token: String,
 }
 
-impl MockDfcCloud {
+impl MockFragmentCloud {
     pub fn new(id: &str, fragment: Share, intent_token: &str) -> Self {
         Self {
             id: id.to_string(),
@@ -46,7 +46,7 @@ impl MockDfcCloud {
     }
 }
 
-impl FragmentProvider for MockDfcCloud {
+impl FragmentProvider for MockFragmentCloud {
     fn id(&self) -> &str {
         &self.id
     }
@@ -214,7 +214,7 @@ impl FragmentCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shamir_dfc::split;
+    use crate::shamir_fragment::split;
 
     /// Helper: split a known root into shares for testing.
     fn test_shares(root: &[u8; 32], k: u8, n: u8) -> Vec<Share> {
@@ -228,7 +228,7 @@ mod tests {
         let providers: Vec<Box<dyn FragmentProvider>> = vec![
             Box::new(MockBuildServer::new("build", shares[0].clone())),
             Box::new(MockLocalHsm::new("hsm", shares[1].clone())),
-            Box::new(MockDfcCloud::new("cloud", shares[2].clone(), "token")),
+            Box::new(MockFragmentCloud::new("cloud", shares[2].clone(), "token")),
         ];
         let collector = FragmentCollector::new(providers, 2);
         let binary_hash = Blake3Hash::digest(b"test-binary");
@@ -341,7 +341,7 @@ mod tests {
         let providers: Vec<Box<dyn FragmentProvider>> = vec![
             Box::new(MockBuildServer::new("build", shares[0].clone())),
             Box::new(MockLocalHsm::new("hsm", shares[1].clone())),
-            Box::new(MockDfcCloud::new("cloud", shares[2].clone(), "tok")),
+            Box::new(MockFragmentCloud::new("cloud", shares[2].clone(), "tok")),
         ];
         let collector = FragmentCollector::new(providers, 2);
         let binary_hash = Blake3Hash::digest(b"test-binary");
@@ -355,7 +355,7 @@ mod tests {
     fn intent_token_required() {
         let root = [0x11; 32];
         let shares = test_shares(&root, 2, 3);
-        let cloud = MockDfcCloud::new("cloud", shares[0].clone(), "correct-token");
+        let cloud = MockFragmentCloud::new("cloud", shares[0].clone(), "correct-token");
         let binary_hash = Blake3Hash::digest(b"test-binary");
 
         // Wrong token — fragment denied.
@@ -375,7 +375,7 @@ mod tests {
         // With threshold 3-of-3, ALL three must cooperate.
         let root = [0x22; 32];
         let shares = test_shares(&root, 3, 3);
-        let _cloud = MockDfcCloud::new("cloud", shares[2].clone(), "intent");
+        let _cloud = MockFragmentCloud::new("cloud", shares[2].clone(), "intent");
 
         // Scenario: cloud refuses (wrong intent token via provide_with_intent).
         // Build + HSM have their fragments but threshold=3 requires all 3.
@@ -396,7 +396,7 @@ mod tests {
         let providers_all: Vec<Box<dyn FragmentProvider>> = vec![
             Box::new(MockBuildServer::new("build", shares[0].clone())),
             Box::new(MockLocalHsm::new("hsm", shares[1].clone())),
-            Box::new(MockDfcCloud::new("cloud", shares[2].clone(), "intent")),
+            Box::new(MockFragmentCloud::new("cloud", shares[2].clone(), "intent")),
         ];
         let collector_all = FragmentCollector::new(providers_all, 3);
         let result_all = collector_all.collect_and_reconstruct(&binary_hash);

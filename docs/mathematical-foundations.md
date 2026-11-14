@@ -483,7 +483,7 @@ Infrastructure systems consist of multiple layers — Nix closures, OCI images, 
 
   ```
   T = { Nix, Oci, Helm, Tofu, Kubernetes, Kindling, Tatara,
-        FluxCD, ArgoCD, Akeyless, AkeylessTarget,
+        FluxCD, ArgoCD, SecretsManager, SecretTarget,
         PangeaSynthesis, RSpecResult, InSpecResult }
   ```
 
@@ -648,7 +648,7 @@ e_i = (seq_i, ts_i, ca_i, sr_i, dc_i, eh_i, ph_i)
 | `seq_i` | `N` | Monotonically increasing sequence number |
 | `ts_i` | ISO 8601 | Timestamp with nanosecond precision |
 | `ca_i` | `CertificationArtifact` | The attestation being recorded |
-| `sr_i` | `SignedRoot` | DFC threshold signature over the artifact |
+| `sr_i` | `SignedRoot` | Fragment threshold signature over the artifact |
 | `dc_i` | `DeploymentContext` | Where this artifact was deployed |
 | `eh_i` | `B_256` | Entry hash (computed — see below) |
 | `ph_i` | `B_256` | Previous hash (links to prior entry) |
@@ -732,7 +732,7 @@ The `verify_integrity()` algorithm checks, for each `i in [n]`:
 
 **Mitigation for Case 3.** The head hash `eh_{n-1}` must be *externally anchored*: published to a transparency log, compared across clusters via the `GlobalStateClient`, or persisted to S3 via the `S3Emitter`. With external anchoring, modification of the last entry is detectable because the externally-stored `eh_{n-1}` no longer matches.
 
-**Case 4 — Cascade rewrite (`j` through `n-1`).** The adversary modifies `e_j` and rewrites all subsequent entries to maintain internal consistency. This requires producing valid `SignedRoot` values (`sr_i`) for each rewritten entry. Since `SignedRoot` is produced by the DFC threshold signer (Section 10), the adversary would need the signing key — which is computationally infeasible to obtain. Without valid signatures, the rewritten entries contain the original `sr_i` values, which no longer correspond to the modified `ca_i` fields, and this inconsistency is detectable by any verifier that checks the signature. **QED**
+**Case 4 — Cascade rewrite (`j` through `n-1`).** The adversary modifies `e_j` and rewrites all subsequent entries to maintain internal consistency. This requires producing valid `SignedRoot` values (`sr_i`) for each rewritten entry. Since `SignedRoot` is produced by the Fragment threshold signer (Section 10), the adversary would need the signing key — which is computationally infeasible to obtain. Without valid signatures, the rewritten entries contain the original `sr_i` values, which no longer correspond to the modified `ca_i` fields, and this inconsistency is detectable by any verifier that checks the signature. **QED**
 
 **Corollary 7.1.1 (Append-Only).** Deletion of entry `e_j` (where `j < n-1`) is detectable: the chain breaks at `e_{j+1}` because `ph_{j+1} = eh_j` but `eh_j` is missing. Additionally, the sequence gap `seq_{j+1} - seq_{j-1} > 1` is detectable.
 
@@ -877,9 +877,9 @@ CA.intent_hash   = pangea_synthesis_hash        // Infrastructure intent
 
 ## 10. Threshold Signing and Split-Knowledge Security
 
-The cryptographic hashes established in Sections 3-9 prove *what* was attested. Signatures prove *who* attested it. Tameshi supports three signing modes with increasing security guarantees: local development signing, split-knowledge mock signing, and production distributed fragment cryptography.
+The cryptographic hashes established in Sections 3-9 prove *what* was attested. Signatures prove *who* attested it. Tameshi supports three signing modes with increasing security guarantees: local development signing, split-knowledge mock signing, and production fragmented-key cryptography.
 
-### 10.1 The MockDfcSigner Construction
+### 10.1 The MockFragmentSigner Construction
 
 **Definition 10.1 (XOR Split-Knowledge Signer).** Given two 256-bit fragments `F_a, F_b in B_256`:
 
@@ -933,11 +933,11 @@ Conclusion: An adversary who knows only `F_a` has zero information about `key` �
 
 **Security model:** Compromising either storage medium alone (the filesystem for `F_a`, or the environment for `F_b`) reveals zero information about the signing key. Both fragments must be obtained simultaneously.
 
-### 10.3 Production DFC (Akeyless)
+### 10.3 Production Fragment (The secrets manager)
 
-In production, the `AkeylessDfcSigner` provides stronger guarantees than split-knowledge XOR:
+In production, the `RemoteFragmentSigner` provides stronger guarantees than split-knowledge XOR:
 
-**Definition 10.2 (Distributed Fragment Cryptography).** The signing key `K` is split into `t` fragments `K_1, ..., K_t` held by distinct infrastructure nodes within the Akeyless gateway. The following properties hold:
+**Definition 10.2.** The signing key `K` is split into `t` fragments `K_1, ..., K_t` held by distinct infrastructure nodes within the secrets-manager gateway. The following properties hold:
 
 1. **Threshold security.** Any `t-1` fragments reveal zero information about `K`.
 2. **Key never assembled.** The signing operation occurs inside the gateway; the key is never reconstructed in any single memory space.
@@ -991,13 +991,13 @@ Since finding BLAKE3 collisions requires `~2^128` operations, no efficient adver
 
 **Theorem 11.2 (Ledger Forgery Reduction).** An adversary who modifies a forensic ledger entry without detection can either:
 1. Find a second preimage in `H`, or
-2. Forge a DFC threshold signature.
+2. Forge a Fragment threshold signature.
 
 *Proof.* By Theorem 7.1, undetected modification of entry `e_j` requires one of:
 
 - **Modifying `e_j` alone:** Requires `recomputed_eh_j = eh_j` despite changed input. This is a second preimage in `H`, requiring `~2^128` operations by (P2).
 
-- **Cascade rewrite from `e_j` to `e_{n-1}`:** Requires valid `SignedRoot` values for each rewritten entry. The `SignedRoot` is a BLAKE3 keyed MAC (or DFC threshold signature) that the adversary cannot produce without the signing key. Obtaining the key requires `~2^256` operations (preimage on key derivation) or breaking the DFC threshold scheme.
+- **Cascade rewrite from `e_j` to `e_{n-1}`:** Requires valid `SignedRoot` values for each rewritten entry. The `SignedRoot` is a BLAKE3 keyed MAC (or Fragment threshold signature) that the adversary cannot produce without the signing key. Obtaining the key requires `~2^256` operations (preimage on key derivation) or breaking the Fragment threshold scheme.
 
 In both cases, the adversary must solve a problem known to be computationally infeasible. **QED**
 
@@ -1007,9 +1007,9 @@ In both cases, the adversary must solve a problem known to be computationally in
 |--------|--------------------|-----------------------|
 | Forge composed root | `~2^128` | BLAKE3 collision resistance |
 | Find preimage of any hash | `~2^256` | BLAKE3 preimage resistance |
-| Forge MockDfc signature | `~2^256` | Both fragments unknown (Thm 10.1) |
-| Forge production DFC signature | `~2^128+` | Akeyless DFC threshold security |
-| Tamper with ledger entry | `min(2^128, DFC)` | Whichever is weaker (Thm 11.2) |
+| Forge MockFragment signature | `~2^256` | Both fragments unknown (Thm 10.1) |
+| Forge production Fragment signature | `~2^128+` | remote Fragment threshold security |
+| Tamper with ledger entry | `min(2^128, Fragment)` | Whichever is weaker (Thm 11.2) |
 | Present internal node as leaf | `~2^128` | Domain separation (Thm 3.2) |
 | Forge consistency proof | `~2^128` | BLAKE3 collision resistance |
 | Modify any artifact in global fleet | `~2^128` | Hierarchical composition (Thm 6.2) |
@@ -1227,7 +1227,7 @@ applied to infrastructure attestation instead of TLS certificates.
         |        |
         |        +--- (Thm 6.2) Hierarchical Tamper --> Single-hash fleet check
         |
-        +--- (Thm 10.1) Split-Knowledge Security -----> DFC threshold signing
+        +--- (Thm 10.1) Split-Knowledge Security -----> Fragment threshold signing
         |
         +--- (Thm 11.1) Security Reduction -----------> Everything reduces to BLAKE3
 ```
@@ -1283,7 +1283,7 @@ applied to infrastructure attestation instead of TLS certificates.
 | 8.1 | Consistency Proof | 8.1 |
 | 9.1 | Two-Phase Master Signature | 9.1 |
 | 10.1 | XOR Split-Knowledge Signer | 10.1 |
-| 10.2 | Distributed Fragment Cryptography | 10.3 |
+| 10.2 | Fragmented-Key Cryptography | 10.3 |
 
 ## Appendix C: Theorem Index
 
@@ -1303,7 +1303,7 @@ applied to infrastructure attestation instead of TLS certificates.
 | 9.1 | Two-phase binding: secure hash commits to infrastructure AND compliance | 9.3 |
 | 10.1 | Split-knowledge: one fragment reveals zero information about key | 10.2 |
 | 11.1 | Security reduction: attestation forgery implies BLAKE3 collision | 11.1 |
-| 11.2 | Ledger forgery: undetected modification implies BLAKE3 break or DFC forgery | 11.2 |
+| 11.2 | Ledger forgery: undetected modification implies BLAKE3 break or Fragment forgery | 11.2 |
 
 ## Appendix D: Corollary Index
 

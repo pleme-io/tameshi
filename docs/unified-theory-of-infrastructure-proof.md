@@ -66,13 +66,13 @@ The composed root is signed by a `MerkleRootSigner`. Three implementations exist
 | Signer | Key Management | Use Case |
 |--------|---------------|----------|
 | `LocalSigner` | 32-byte seed on disk, BLAKE3 keyed MAC | Development, testing |
-| `AkeylessDfcSigner` | Akeyless DFC API, key never assembled | Production |
-| `MockDfcSigner` | XOR of two 32-byte fragments, key = BLAKE3(A XOR B) | CI/CD, integration tests |
+| `RemoteFragmentSigner` | remote Fragment API, key never assembled | Production |
+| `MockFragmentSigner` | XOR of two 32-byte fragments, key = BLAKE3(A XOR B) | CI/CD, integration tests |
 
-**MockDfcSigner split-knowledge property:**
+**MockFragmentSigner split-knowledge property:**
 ```
 fragment_a: [u8; 32]  -- stored in .tameshi_frag file
-fragment_b: [u8; 32]  -- stored in AKEYLESS_MOCK_FRAG env var
+fragment_b: [u8; 32]  -- stored in SECRETS_MOCK_FRAG env var
 
 Key reconstruction: BLAKE3(fragment_a XOR fragment_b)
 
@@ -83,8 +83,8 @@ Neither fragment alone reveals the key:
   - BLAKE3 post-processing ensures the reconstructed key is uniformly distributed
 ```
 
-**AkeylessDfcSigner threshold property:**
-The real DFC key is split across Akeyless infrastructure fragments. The signing operation occurs inside the Akeyless gateway. The key is never assembled outside the gateway's secure enclave. This is verified by API response structure (the gateway returns a signature, not a key).
+**RemoteFragmentSigner threshold property:**
+The real Fragment key is split across secrets-manager infrastructure fragments. The signing operation occurs inside the secrets-manager gateway. The key is never assembled outside the gateway's secure enclave. This is verified by API response structure (the gateway returns a signature, not a key).
 
 **BreakGlassToken emergency bypass:**
 When the attestation system itself is unavailable, a `BreakGlassToken` allows deployment to proceed. Every break-glass activation is:
@@ -99,15 +99,15 @@ When the attestation system itself is unavailable, a `BreakGlassToken` allows de
 | LocalSigner sign/verify roundtrip | 5 | `signing.rs` |
 | LocalSigner deterministic signatures | 3 | `signing.rs` |
 | LocalSigner wrong-key rejection | 2 | `signing.rs` |
-| AkeylessDfcSigner API integration | 4 | `signing.rs` |
-| AkeylessDfcSigner mTLS wiring | 2 | `signing.rs` |
-| MockDfcSigner sign/verify roundtrip | 5 | `signing.rs` |
-| MockDfcSigner split-knowledge (wrong fragment rejects) | 4 | `signing.rs` |
-| MockDfcSigner deterministic signing | 3 | `signing.rs` |
-| MockDfcSigner fragment loading from file/env | 6 | `signing.rs` |
-| MockDfcSigner fragment swapping produces different keys | 2 | `signing.rs` |
-| MockDfcSigner Debug output redacts fragments | 1 | `signing.rs` |
-| MockDfcSigner concurrent signing (Arc) | 1 | `signing.rs` |
+| RemoteFragmentSigner API integration | 4 | `signing.rs` |
+| RemoteFragmentSigner mTLS wiring | 2 | `signing.rs` |
+| MockFragmentSigner sign/verify roundtrip | 5 | `signing.rs` |
+| MockFragmentSigner split-knowledge (wrong fragment rejects) | 4 | `signing.rs` |
+| MockFragmentSigner deterministic signing | 3 | `signing.rs` |
+| MockFragmentSigner fragment loading from file/env | 6 | `signing.rs` |
+| MockFragmentSigner fragment swapping produces different keys | 2 | `signing.rs` |
+| MockFragmentSigner Debug output redacts fragments | 1 | `signing.rs` |
+| MockFragmentSigner concurrent signing (Arc) | 1 | `signing.rs` |
 | BreakGlassToken creation and signing | 3 | `signing.rs` |
 | BreakGlassToken tamper detection | 3 | `signing.rs` |
 | BreakGlassToken serde roundtrip | 2 | `signing.rs` |
@@ -294,13 +294,13 @@ Every security-relevant property is tested. The following table enumerates every
 | Helm rendered chart hashing | 8 | `collectors/helm.rs` | MockCommandRunner + MockFileSystem |
 | Kubernetes manifest hashing | 5 | `collectors/kubernetes.rs` | MockCommandRunner |
 | Tofu state hashing | 4 | `collectors/tofu.rs` | MockCommandRunner |
-| Akeyless secret hashing (values never stored) | 6 | `collectors/akeyless.rs` | MockAkeylessClient |
-| Akeyless target attestation (30 target types) | 12 | `compliance/akeyless_target.rs` | All variant enumeration |
+| Secrets-manager secret hashing (values never stored) | 6 | `collectors/secrets_manager.rs` | MockSecretsManagerClient |
+| Secrets-manager target attestation (30 target types) | 12 | `compliance/secret_target.rs` | All variant enumeration |
 | Pangea synthesis hashing | 6 | `collectors/pangea.rs` | JSON construction + hash |
 | RSpec result hashing | 5 | `collectors/rspec.rs` | JSON fixture hashing |
 | InSpec result hashing | 5 | `collectors/inspec_result.rs` | JSON fixture hashing |
 | FluxCD/ArgoCD collectors | 6 | `collectors/fluxcd.rs`, `argocd.rs` | MockCommandRunner |
-| AkeylessClient trait + mTLS | 8 | `akeyless_client.rs` | Mock HTTP responses |
+| SecretsManagerClient trait + mTLS | 8 | `secrets_client.rs` | Mock HTTP responses |
 | Config loading (figment layers) | 4 | `config.rs` | YAML + env override |
 | Canonicalization (JSON, YAML, raw) | 6 | `canonicalize.rs` | Deterministic output |
 | Error types | 4 | `error.rs` | All variant construction |
@@ -345,13 +345,13 @@ Every security-relevant property is tested. The following table enumerates every
 - **Implementation:** `Blake3Algorithm::concat_and_hash()` in `src/merkle.rs` injects the `0x01` prefix; `domain_separated_leaf()` injects the `0x00` prefix before leaves enter the tree
 - **Test evidence:** 4 tests verify domain separation prefix injection and that leaf/internal hashes occupy disjoint domains
 
-### 4.3 Split-Knowledge DFC (MockDfcSigner)
+### 4.3 Split-Knowledge Fragment (MockFragmentSigner)
 
-- **Fragment storage:** Fragment A in file (`.tameshi_frag`), Fragment B in environment variable (`AKEYLESS_MOCK_FRAG`)
+- **Fragment storage:** Fragment A in file (`.tameshi_frag`), Fragment B in environment variable (`SECRETS_MOCK_FRAG`)
 - **Key reconstruction:** `key = BLAKE3(fragment_a XOR fragment_b)`
 - **Information-theoretic property:** XOR of two independent 256-bit values is a one-time pad. Given only one fragment, the key has maximum entropy (256 bits of uncertainty).
 - **Post-processing:** BLAKE3 hashing after XOR ensures the key is uniformly distributed even if one fragment has low entropy
-- **Debug safety:** `MockDfcSigner::Debug` implementation prints `[REDACTED]` for both fragments
+- **Debug safety:** `MockFragmentSigner::Debug` implementation prints `[REDACTED]` for both fragments
 - **Test evidence:** 4 tests verify that changing either fragment alone produces a different key, and that signatures from one signer cannot be verified by a signer with different fragments
 
 ### 4.4 Merkle Proofs
@@ -379,13 +379,13 @@ Every security-relevant property is tested. The following table enumerates every
 | **Supply chain injection** (modified dependency in build) | Nix closure hash changes if any dependency changes; Merkle root invalidated | inshou (pre-rebuild) | 366 inshou tests |
 | **Binary tampering** (modified binary on disk post-deploy) | BLAKE3 hash of binary does not match BPF allow map | kanshi (execve LSM hook) | 130 kanshi tests |
 | **Compliance forgery** (fake compliance report) | Compliance hash is BLAKE3 of actual assessment; changing the hash changes the CertificationArtifact root | kensa (assessment pipeline) | 377 kensa tests |
-| **Secret exposure** (Akeyless secrets leaked in attestation) | `LiveAkeylessCollector` hashes secret VALUES but never stores them; only hashes appear in signatures | tameshi collector design | 6 Akeyless collector tests |
+| **Secret exposure** (Secrets-manager secrets leaked in attestation) | `LiveSecretsManagerCollector` hashes secret VALUES but never stores them; only hashes appear in signatures | tameshi collector design | 6 secrets-manager collector tests |
 | **Infrastructure drift** (config changed without re-attestation) | HeartbeatChain provides continuous verification record; gaps are detectable by missing sequence numbers | heartbeat chain | 65 heartbeat tests |
 | **Admission bypass** (deploy without webhook) | Kubernetes `ValidatingAdmissionWebhook` with `failurePolicy: Fail` -- K8s itself enforces the call | sekiban (webhook) | 315 sekiban tests |
 | **Break-glass abuse** (emergency bypass used maliciously) | Every break-glass event is cryptographically signed and recorded in HeartbeatChain with `HeartbeatEvent::BreakGlass` | signing + heartbeat | 10 BreakGlassToken tests |
 | **Signature replay** (reuse old valid signature for new binary) | Signature includes timestamp; `GatingPolicy.max_signature_age_secs` rejects stale signatures (default: 1 hour) | gating engine | 4 signature age tests |
 | **Merkle tree manipulation** (present internal node as leaf) | RFC 9162 domain separation with distinct byte prefixes (0x00 leaf, 0x01 internal) | merkle construction | 4 domain separation tests |
-| **DFC key theft** (steal signing key) | Production: key never assembled (Akeyless DFC). Mock: split-knowledge requires both fragments | signing architecture | 55 signing tests |
+| **Fragment key theft** (steal signing key) | Production: key never assembled (remote Fragment). Mock: split-knowledge requires both fragments | signing architecture | 55 signing tests |
 | **Audit trail tampering** (delete/modify heartbeat entries) | BLAKE3 hash chain: any modification breaks linkage at next entry; ConsistencyProof enables remote verification | heartbeat chain | 12 chain integrity tests |
 | **Namespace escape** (execute in wrong namespace to avoid policy) | Per-namespace `EnforcementPolicy` in BPF `tameshi_policy_map`; cgroup ID identifies container namespace | kanshi policy engine | 8 policy tests |
 | **dlopen/JIT injection** (load malicious shared library) | `mmap_file` LSM hook verifies hash at `mmap()` time, not just `execve()` | kanshi eBPF | BPF program design |
@@ -488,7 +488,7 @@ kensa produces OSCAL (Open Security Controls Assessment Language) output:
 |-----------|-------------|-----------------|
 | Level 1 | Build process documented | Nix flake captures entire build graph |
 | Level 2 | Hosted build service + signed provenance | Nix builds on CI + SignedRoot |
-| Level 3 | Hardened build platform + non-falsifiable provenance | Nix hermetic builds + DFC threshold signing |
+| Level 3 | Hardened build platform + non-falsifiable provenance | Nix hermetic builds + Fragment threshold signing |
 | Level 4 | Two-person review + hermetic builds | tameshi does not enforce review policy (organizational control) |
 
 ---
@@ -535,7 +535,7 @@ kensa produces OSCAL (Open Security Controls Assessment Language) output:
                    +---------------------+
                    | MerkleRootSigner    |
                    | 55t sign/verify     |
-                   | (DFC threshold)     |
+                   | (Fragment threshold)     |
                    +----------+----------+
                               |
                               v
@@ -709,44 +709,44 @@ This section enumerates every property that the test suite proves by execution. 
 
 ### 9.3 Category 3: Threshold Signing (tameshi -- 70 signing tests)
 
-#### Proven: MockDfcSigner split-knowledge signing is correct
+#### Proven: MockFragmentSigner split-knowledge signing is correct
 
 **Tests:**
-- `mock_dfc_sign_verify_roundtrip` -- sign root, verify passes
-- `mock_dfc_deterministic_same_root_same_signature` -- same root + same fragments = same signature
-- `mock_dfc_different_roots_different_signatures` -- different roots produce different signatures
-- `mock_dfc_key_reconstruction_deterministic` -- `BLAKE3(fragment_a XOR fragment_b)` is deterministic
-- `mock_dfc_key_reconstruction_differs_with_different_fragments` -- different fragments produce different keys
-- `mock_dfc_xor_is_commutative_same_key` -- `A XOR B == B XOR A` (XOR commutativity)
-- `mock_dfc_fragment_order_irrelevant_xor_commutative` -- same property, different test structure
-- `mock_dfc_same_fragments_xor_to_zero` -- `A XOR A == 0` (identity)
-- `mock_dfc_all_zero_fragments_key_not_zero` -- `BLAKE3(0..0) != 0..0` (BLAKE3 post-processing)
-- `mock_dfc_all_zero_fragments_sign_verify` -- zero fragments still produce valid signature
-- `mock_dfc_1000_unique_signatures` -- 1000 different roots produce 1000 distinct signatures
+- `mock_fragment_sign_verify_roundtrip` -- sign root, verify passes
+- `mock_fragment_deterministic_same_root_same_signature` -- same root + same fragments = same signature
+- `mock_fragment_different_roots_different_signatures` -- different roots produce different signatures
+- `mock_fragment_key_reconstruction_deterministic` -- `BLAKE3(fragment_a XOR fragment_b)` is deterministic
+- `mock_fragment_key_reconstruction_differs_with_different_fragments` -- different fragments produce different keys
+- `mock_fragment_xor_is_commutative_same_key` -- `A XOR B == B XOR A` (XOR commutativity)
+- `mock_fragment_fragment_order_irrelevant_xor_commutative` -- same property, different test structure
+- `mock_fragment_same_fragments_xor_to_zero` -- `A XOR A == 0` (identity)
+- `mock_fragment_all_zero_fragments_key_not_zero` -- `BLAKE3(0..0) != 0..0` (BLAKE3 post-processing)
+- `mock_fragment_all_zero_fragments_sign_verify` -- zero fragments still produce valid signature
+- `mock_fragment_1000_unique_signatures` -- 1000 different roots produce 1000 distinct signatures
 
 **Proven: Both fragments required to reconstruct key**
-- `mock_dfc_wrong_fragment_a_verify_fails` -- change fragment_a, verification fails
-- `mock_dfc_wrong_fragment_b_verify_fails` -- change fragment_b, verification fails
-- `mock_dfc_tampered_root_verify_fails` -- tamper with signed root, verification fails
-- `mock_dfc_tampered_signature_bytes_fails` -- corrupt signature bytes, verification fails
-- `mock_dfc_interop_local_signer_cannot_verify` -- LocalSigner cannot verify MockDfcSigner signatures (and vice versa)
+- `mock_fragment_wrong_fragment_a_verify_fails` -- change fragment_a, verification fails
+- `mock_fragment_wrong_fragment_b_verify_fails` -- change fragment_b, verification fails
+- `mock_fragment_tampered_root_verify_fails` -- tamper with signed root, verification fails
+- `mock_fragment_tampered_signature_bytes_fails` -- corrupt signature bytes, verification fails
+- `mock_fragment_interop_local_signer_cannot_verify` -- LocalSigner cannot verify MockFragmentSigner signatures (and vice versa)
 
 **Proven: Fragment loading from file/env**
-- `mock_dfc_load_from_success` -- loads fragment_a from file, fragment_b from env var
-- `mock_dfc_load_from_second_search_dir` -- searches multiple directories
-- `mock_dfc_load_from_whitespace_trimmed` -- trims whitespace from hex
-- `mock_dfc_load_from_missing_file_returns_error` -- missing file is an error
-- `mock_dfc_load_missing_env_returns_error` -- missing env var is an error
-- `mock_dfc_load_from_invalid_hex_in_file_returns_error` -- invalid hex in file
-- `mock_dfc_load_from_invalid_hex_in_env_returns_error` -- invalid hex in env
-- `mock_dfc_load_from_short_hex_returns_error` -- too-short hex string
-- `mock_dfc_load_from_empty_search_dirs_returns_error` -- empty search path list
+- `mock_fragment_load_from_success` -- loads fragment_a from file, fragment_b from env var
+- `mock_fragment_load_from_second_search_dir` -- searches multiple directories
+- `mock_fragment_load_from_whitespace_trimmed` -- trims whitespace from hex
+- `mock_fragment_load_from_missing_file_returns_error` -- missing file is an error
+- `mock_fragment_load_missing_env_returns_error` -- missing env var is an error
+- `mock_fragment_load_from_invalid_hex_in_file_returns_error` -- invalid hex in file
+- `mock_fragment_load_from_invalid_hex_in_env_returns_error` -- invalid hex in env
+- `mock_fragment_load_from_short_hex_returns_error` -- too-short hex string
+- `mock_fragment_load_from_empty_search_dirs_returns_error` -- empty search path list
 
 **Security tests:**
-- `mock_dfc_debug_redacts_fragments` -- `Debug` output contains `[REDACTED]`, never raw fragment bytes
-- `mock_dfc_concurrent_signing` -- `Arc<MockDfcSigner>` is `Send + Sync`, concurrent signing produces consistent results
-- `mock_dfc_clock_independence` -- signing result does not depend on wall clock time
-- `mock_dfc_sign_certification_artifact_root` -- composed_root from CertificationArtifact signs correctly
+- `mock_fragment_debug_redacts_fragments` -- `Debug` output contains `[REDACTED]`, never raw fragment bytes
+- `mock_fragment_concurrent_signing` -- `Arc<MockFragmentSigner>` is `Send + Sync`, concurrent signing produces consistent results
+- `mock_fragment_clock_independence` -- signing result does not depend on wall clock time
+- `mock_fragment_sign_certification_artifact_root` -- composed_root from CertificationArtifact signs correctly
 
 **LocalSigner tests (8 tests):**
 - `local_signer_sign_verify` -- BLAKE3 keyed MAC roundtrip
@@ -771,7 +771,7 @@ This section enumerates every property that the test suite proves by execution. 
 - `break_glass_wrong_token_type` -- wrong algorithm variant rejected
 - `break_glass_token_serde_roundtrip` -- JSON roundtrip
 
-**Why this constitutes proof:** The signing tests verify the `MerkleRootSigner` trait contract for three implementations. For `MockDfcSigner`, the split-knowledge property is verified by showing that changing either fragment independently causes verification failure. This follows from information-theoretic security: XOR of two independent 256-bit values is a one-time pad, meaning knowledge of one fragment reveals zero information about the key. The BLAKE3 post-processing ensures uniform key distribution even if one fragment has low entropy.
+**Why this constitutes proof:** The signing tests verify the `MerkleRootSigner` trait contract for three implementations. For `MockFragmentSigner`, the split-knowledge property is verified by showing that changing either fragment independently causes verification failure. This follows from information-theoretic security: XOR of two independent 256-bit values is a one-time pad, meaning knowledge of one fragment reveals zero information about the key. The BLAKE3 post-processing ensures uniform key distribution even if one fragment has low entropy.
 
 ---
 
@@ -863,7 +863,7 @@ This section enumerates every property that the test suite proves by execution. 
 - `rspec_hash_differs_from_inspec_hash` -- RSpec output vs InSpec output
 - `two_pangea_synths_different_resources_differ` -- different Pangea resources
 
-**Why this constitutes proof:** Each positive test executes the full pipeline: `compose_certification_artifact -> verify_certification_artifact -> MockDfcSigner::sign -> MockDfcSigner::verify -> evaluate_gate`. The gate policy has `require_certification_artifacts: true`, so a failed artifact verification causes gate DENY. Each negative test flips exactly one byte via `bytes[0] ^= 0xFF` and verifies the entire chain breaks. This covers all three Merkle leaves (artifact, control, intent) across 8 artifact types.
+**Why this constitutes proof:** Each positive test executes the full pipeline: `compose_certification_artifact -> verify_certification_artifact -> MockFragmentSigner::sign -> MockFragmentSigner::verify -> evaluate_gate`. The gate policy has `require_certification_artifacts: true`, so a failed artifact verification causes gate DENY. Each negative test flips exactly one byte via `bytes[0] ^= 0xFF` and verifies the entire chain breaks. This covers all three Merkle leaves (artifact, control, intent) across 8 artifact types.
 
 ---
 
@@ -1193,7 +1193,7 @@ The following properties are NOT established by the test suite. Listing them exp
 
 2. **eBPF kernel-space code works correctly.** kanshi's 135 tests verify the user-space controller logic: CRD watching, BPF map population, event processing, and metrics collection. The actual eBPF programs (`bprm_check_security`, `file_open`, `mmap_file`, `file_mprotect`, `inode_permission`) that run inside the Linux kernel are NOT tested by the suite. They exist as design specifications. Real kernel-space eBPF verification requires a Linux kernel with BTF support and the LSM BPF hook enabled.
 
-3. **Real Akeyless DFC signing works.** `MockDfcSigner` simulates split-knowledge XOR-based signing with 70 tests. The `AkeylessDfcSigner` has 4 tests covering API endpoint construction and TLS configuration, but these do NOT execute against a real Akeyless gateway. Production DFC signing requires the Akeyless gateway, which splits the key across infrastructure fragments and never assembles it in one place.
+3. **Real remote Fragment signing works.** `MockFragmentSigner` simulates split-knowledge XOR-based signing with 70 tests. The `RemoteFragmentSigner` has 4 tests covering API endpoint construction and TLS configuration, but these do NOT execute against a real secrets-manager gateway. Production Fragment signing requires the secrets-manager gateway, which splits the key across infrastructure fragments and never assembles it in one place.
 
 4. **Production K8s deployment is reliable.** sekiban's 417 tests verify webhook admission logic, CRD reconciliation, and Helm chart templating using mocked K8s API calls. No test deploys to a real Kubernetes cluster. The Helm chart passes `helm lint` and `helm template` but has not been validated in a live environment by the test suite.
 
@@ -1203,9 +1203,9 @@ The following properties are NOT established by the test suite. Listing them exp
 
 7. **Runtime behavioral safety.** kanshi verifies binary integrity at `execve()` time by comparing the binary's BLAKE3 hash against the BPF allow map. This prevents execution of modified binaries. It does NOT prevent a verified binary from performing malicious actions after passing the hash check. Runtime behavioral monitoring requires complementary tools (Falco, Tetragon).
 
-8. **Network-dependent operations work under real conditions.** The `S3Emitter` for heartbeat chain persistence, the Akeyless API client, and the sekiban webhook server are tested with mocked I/O. Network failures, TLS negotiation issues, DNS resolution problems, and latency are not exercised.
+8. **Network-dependent operations work under real conditions.** The `S3Emitter` for heartbeat chain persistence, the secrets-manager API client, and the sekiban webhook server are tested with mocked I/O. Network failures, TLS negotiation issues, DNS resolution problems, and latency are not exercised.
 
-9. **Thread safety under contention.** `HeartbeatChain` uses `RwLock` and `MockDfcSigner` uses `Arc` for thread safety. The tests verify basic concurrent access (e.g., `mock_dfc_concurrent_signing`, `concurrent_composition_thread_safety`) but do not stress-test under high contention or detect deadlocks.
+9. **Thread safety under contention.** `HeartbeatChain` uses `RwLock` and `MockFragmentSigner` uses `Arc` for thread safety. The tests verify basic concurrent access (e.g., `mock_fragment_concurrent_signing`, `concurrent_composition_thread_safety`) but do not stress-test under high contention or detect deadlocks.
 
 ---
 
@@ -1214,10 +1214,10 @@ The following properties are NOT established by the test suite. Listing them exp
 All 3,288 tests were executed twice on 2026-03-21 and produced identical results. The test suite is fully deterministic:
 
 - **No wall-clock dependencies.** Every time-dependent test uses `FixedClock` injection. The `append_with_clock_uses_fixed_timestamp` and `append_with_clock_deterministic_same_clock_same_hash` tests prove this explicitly.
-- **No network calls.** All HTTP, S3, and Kubernetes API calls use mock implementations (`MockHttpClient`, `MockCommandRunner`, `MockAkeylessGateway`).
+- **No network calls.** All HTTP, S3, and Kubernetes API calls use mock implementations (`MockHttpClient`, `MockCommandRunner`, `MockSecretsGateway`).
 - **No filesystem side effects.** File-dependent tests use `tempfile` for isolation. The `MemStore<T>` trait implementation provides in-memory persistence for storage tests.
 - **No random seeds without determinism.** proptest uses a fixed seed by default. The `proptest-regressions` file records any seed that caused a failure, ensuring regressions are permanently caught.
-- **No flaky tests.** Zero tests were skipped, quarantined, or marked `#[ignore]` in the passing set. The 6 ignored tests in tameshi are compile-only doc-tests for code that requires runtime dependencies (Akeyless gateway, config files).
+- **No flaky tests.** Zero tests were skipped, quarantined, or marked `#[ignore]` in the passing set. The 6 ignored tests in tameshi are compile-only doc-tests for code that requires runtime dependencies (Secrets-manager gateway, config files).
 
 To reproduce: run `cargo test` in each of the 9 repositories. The expected output is zero failures, zero flaky tests, and the exact counts listed in the table above.
 

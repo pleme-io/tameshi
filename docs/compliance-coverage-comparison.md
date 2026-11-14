@@ -11,7 +11,7 @@ cloud security platforms. We count controls from four distinct sources:
    type produces structural compliance controls (existence, type, required fields)
 3. **Auto-generated from TOML resource specs via compliance-forge** -- each TOML
    resource spec produces structural compliance controls
-4. **Custom InSpec profiles** -- hand-written profiles (inspec-akeyless)
+4. **Custom InSpec profiles** -- hand-written profiles (inspec-secrets)
 
 ### Counting rules
 
@@ -140,7 +140,7 @@ Pangea resource counts (from CLAUDE.md, verified against repository):
 
 | Provider | Resource Types |
 |----------|---------------|
-| pangea-akeyless | 122 |
+| pangea-secrets | 122 |
 | pangea-aws | 448 |
 | pangea-azure | 27 |
 | pangea-cloudflare | 202 |
@@ -165,7 +165,7 @@ We use the conservative number: **~3,500**.
 
 ### Auto-Generated from TOML Resource Specs
 
-TOML resource specifications in `akeyless-terraform-resources` (119 specs),
+TOML resource specifications in `secrets-terraform-resources` (119 specs),
 `datadog-terraform-resources` (10 specs), and `splunk-terraform-resources`
 (4 specs) total 133 specs.
 
@@ -179,7 +179,7 @@ We round to: **~530**.
 
 | Profile | Controls |
 |---------|----------|
-| inspec-akeyless | 62 |
+| inspec-secrets | 62 |
 | pangea-architectures (RSpec synthesis) | 118 |
 | **Total** | **180** |
 
@@ -193,7 +193,7 @@ We round to: **~530**.
 | GCP CIS profiles (2 profiles) | ~140 | Medium |
 | Pangea auto-generated (874 resource types) | ~3,500 | High (resource count verified, multiplier estimated) |
 | TOML spec auto-generated (133 specs) | ~530 | High (spec count verified, multiplier estimated) |
-| Custom profiles (inspec-akeyless + pangea-architectures) | 180 | Exact |
+| Custom profiles (inspec-secrets + pangea-architectures) | 180 | Exact |
 | **Total** | **~13,640** | |
 
 Rounding with uncertainty margins: **~14,000 controls** (conservative) to
@@ -327,7 +327,7 @@ Plus ~14 additional CIS profiles.
 
 | Profile | Controls | URL |
 |---------|----------|-----|
-| inspec-akeyless | 62 | https://github.com/pleme-io/inspec-akeyless |
+| inspec-secrets | 62 | https://github.com/pleme-io/inspec-secrets |
 | pangea-architectures (RSpec) | 118 | https://github.com/pleme-io/pangea-architectures |
 
 ---

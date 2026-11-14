@@ -1,6 +1,6 @@
-//! Mock Akeyless gateway for deterministic, offline testing.
+//! Mock secrets-manager gateway for deterministic, offline testing.
 //!
-//! Starts an in-process axum HTTP server that mimics the Akeyless REST API.
+//! Starts an in-process axum HTTP server that mimics the secrets-manager REST API.
 //! Responses are deterministic and configurable for test scenarios.
 //!
 //! # Supported Endpoints
@@ -20,18 +20,18 @@
 //!
 //! ```rust,no_run
 //! # async fn example() {
-//! use tameshi::testing::akeyless_mock::MockAkeylessGateway;
+//! use tameshi::testing::secrets_mock::MockSecretsGateway;
 //!
-//! let mock = MockAkeylessGateway::builder()
+//! let mock = MockSecretsGateway::builder()
 //!     .with_secret("/production/db/password", "mock-password-123")
 //!     .with_secret("/production/api/key", "mock-api-key")
 //!     .with_target("db-target", "mysql", "db.example.com:3306")
-//!     .with_signing_key("test-dfc-key")
+//!     .with_signing_key("test-fragment-key")
 //!     .build()
 //!     .await;
 //!
 //! let url = mock.url(); // e.g., "http://127.0.0.1:PORT"
-//! // Use url in AkeylessConfig for testing
+//! // Use url in SecretsManagerConfig for testing
 //! # }
 //! ```
 
@@ -62,7 +62,7 @@ struct MockState {
     secrets: HashMap<String, String>,
     /// Map of target name -> (target_type, endpoint).
     targets: HashMap<String, TargetEntry>,
-    /// Signing keys registered for DFC operations.
+    /// Signing keys registered for Fragment operations.
     signing_keys: Vec<String>,
     /// HMAC key seed (deterministic).
     hmac_seed: [u8; 32],
@@ -79,11 +79,11 @@ struct TargetEntry {
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Builder for [`MockAkeylessGateway`].
+/// Builder for [`MockSecretsGateway`].
 ///
 /// Configure mock responses before starting the server.
 #[derive(Debug, Clone)]
-pub struct MockAkeylessGatewayBuilder {
+pub struct MockSecretsGatewayBuilder {
     token: String,
     secrets: HashMap<String, String>,
     targets: HashMap<String, TargetEntry>,
@@ -91,10 +91,10 @@ pub struct MockAkeylessGatewayBuilder {
     hmac_seed: [u8; 32],
 }
 
-impl Default for MockAkeylessGatewayBuilder {
+impl Default for MockSecretsGatewayBuilder {
     fn default() -> Self {
         Self {
-            token: "mock-akeyless-token-00000000".to_string(),
+            token: "mock-secrets-token-00000000".to_string(),
             secrets: HashMap::new(),
             targets: HashMap::new(),
             signing_keys: Vec::new(),
@@ -103,7 +103,7 @@ impl Default for MockAkeylessGatewayBuilder {
     }
 }
 
-impl MockAkeylessGatewayBuilder {
+impl MockSecretsGatewayBuilder {
     /// Register a secret at the given path with the given value.
     #[must_use]
     pub fn with_secret(mut self, path: &str, value: &str) -> Self {
@@ -124,7 +124,7 @@ impl MockAkeylessGatewayBuilder {
         self
     }
 
-    /// Register a signing key name for DFC operations.
+    /// Register a signing key name for Fragment operations.
     #[must_use]
     pub fn with_signing_key(mut self, key_name: &str) -> Self {
         self.signing_keys.push(key_name.to_string());
@@ -148,7 +148,7 @@ impl MockAkeylessGatewayBuilder {
     /// Build and start the mock server.
     ///
     /// Binds to `127.0.0.1:0` for an OS-assigned ephemeral port.
-    pub async fn build(self) -> MockAkeylessGateway {
+    pub async fn build(self) -> MockSecretsGateway {
         let state = Arc::new(Mutex::new(MockState {
             token: self.token,
             secrets: self.secrets,
@@ -181,7 +181,7 @@ impl MockAkeylessGatewayBuilder {
                 .expect("mock server failed");
         });
 
-        MockAkeylessGateway {
+        MockSecretsGateway {
             url,
             _handle: handle,
             state,
@@ -190,44 +190,44 @@ impl MockAkeylessGatewayBuilder {
 }
 
 // ---------------------------------------------------------------------------
-// MockAkeylessGateway
+// MockSecretsGateway
 // ---------------------------------------------------------------------------
 
-/// Mock Akeyless gateway for testing.
+/// Mock secrets-manager gateway for testing.
 ///
-/// Starts an in-process HTTP server that mimics the Akeyless API.
+/// Starts an in-process HTTP server that mimics the secrets-manager API.
 /// Responses are deterministic and configurable for test scenarios.
 ///
 /// # Example
 ///
 /// ```rust,no_run
 /// # async fn example() {
-/// use tameshi::testing::akeyless_mock::MockAkeylessGateway;
+/// use tameshi::testing::secrets_mock::MockSecretsGateway;
 ///
-/// let mock = MockAkeylessGateway::builder()
+/// let mock = MockSecretsGateway::builder()
 ///     .with_secret("/production/db/password", "mock-password-123")
 ///     .with_secret("/production/api/key", "mock-api-key")
 ///     .with_target("db-target", "mysql", "db.example.com:3306")
-///     .with_signing_key("test-dfc-key")
+///     .with_signing_key("test-fragment-key")
 ///     .build()
 ///     .await;
 ///
 /// let url = mock.url(); // e.g., "http://127.0.0.1:PORT"
-/// // Use url in AkeylessConfig for testing
+/// // Use url in SecretsManagerConfig for testing
 /// # }
 /// ```
-pub struct MockAkeylessGateway {
+pub struct MockSecretsGateway {
     url: String,
     #[allow(dead_code)]
     _handle: tokio::task::JoinHandle<()>,
     state: Arc<Mutex<MockState>>,
 }
 
-impl MockAkeylessGateway {
+impl MockSecretsGateway {
     /// Create a new builder.
     #[must_use]
-    pub fn builder() -> MockAkeylessGatewayBuilder {
-        MockAkeylessGatewayBuilder::default()
+    pub fn builder() -> MockSecretsGatewayBuilder {
+        MockSecretsGatewayBuilder::default()
     }
 
     /// The base URL of the mock server (e.g., `http://127.0.0.1:12345`).
@@ -519,7 +519,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_auth_returns_token() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_token("test-token-42")
             .build()
             .await;
@@ -543,7 +543,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_get_secret_value() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_secret("/prod/db/password", "s3cret!")
             .build()
             .await;
@@ -566,7 +566,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_get_secret_value_not_found() {
-        let mock = MockAkeylessGateway::builder().build().await;
+        let mock = MockSecretsGateway::builder().build().await;
 
         let resp = http_client()
             .post(format!("{}/get-secret-value", mock.url()))
@@ -583,8 +583,8 @@ mod tests {
 
     #[tokio::test]
     async fn mock_sign_and_verify() {
-        let mock = MockAkeylessGateway::builder()
-            .with_signing_key("test-dfc-key")
+        let mock = MockSecretsGateway::builder()
+            .with_signing_key("test-fragment-key")
             .build()
             .await;
 
@@ -595,7 +595,7 @@ mod tests {
         let sign_resp: Value = http_client()
             .post(format!("{}/sign-data-with-classic-key", mock.url()))
             .json(&json!({
-                "key-name": "test-dfc-key",
+                "key-name": "test-fragment-key",
                 "data": data_hex,
                 "token": "mock-token",
             }))
@@ -613,7 +613,7 @@ mod tests {
         let verify_resp: Value = http_client()
             .post(format!("{}/verify-data-with-classic-key", mock.url()))
             .json(&json!({
-                "key-name": "test-dfc-key",
+                "key-name": "test-fragment-key",
                 "data": data_hex,
                 "signature": sig_hex,
                 "token": "mock-token",
@@ -632,7 +632,7 @@ mod tests {
         let verify_bad: Value = http_client()
             .post(format!("{}/verify-data-with-classic-key", mock.url()))
             .json(&json!({
-                "key-name": "test-dfc-key",
+                "key-name": "test-fragment-key",
                 "data": tampered_hex,
                 "signature": sig_hex,
                 "token": "mock-token",
@@ -649,7 +649,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_sign_deterministic() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_signing_key("det-key")
             .build()
             .await;
@@ -681,7 +681,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_list_items() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_secret("/prod/db/password", "pw1")
             .with_secret("/prod/api/key", "key1")
             .with_secret("/staging/db/password", "pw2")
@@ -710,7 +710,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_describe_item() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_secret("/prod/secret", "val")
             .build()
             .await;
@@ -731,7 +731,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_describe_item_not_found() {
-        let mock = MockAkeylessGateway::builder().build().await;
+        let mock = MockSecretsGateway::builder().build().await;
 
         let resp = http_client()
             .post(format!("{}/describe-item", mock.url()))
@@ -745,7 +745,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_get_target_details() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_target("db-target", "mysql", "db.example.com:3306")
             .build()
             .await;
@@ -768,7 +768,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_get_target_details_not_found() {
-        let mock = MockAkeylessGateway::builder().build().await;
+        let mock = MockSecretsGateway::builder().build().await;
 
         let resp = http_client()
             .post(format!("{}/get-target-details", mock.url()))
@@ -782,7 +782,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_hmac() {
-        let mock = MockAkeylessGateway::builder().build().await;
+        let mock = MockSecretsGateway::builder().build().await;
 
         let data_hex = const_hex::encode(b"some data to hmac");
 
@@ -823,7 +823,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_unknown_endpoint_returns_404() {
-        let mock = MockAkeylessGateway::builder().build().await;
+        let mock = MockSecretsGateway::builder().build().await;
 
         let resp = http_client()
             .post(format!("{}/totally-unknown", mock.url()))
@@ -839,7 +839,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_builder_with_multiple_secrets() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_secret("/a", "val-a")
             .with_secret("/b", "val-b")
             .with_secret("/c", "val-c")
@@ -864,7 +864,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_dynamic_add_secret() {
-        let mock = MockAkeylessGateway::builder().build().await;
+        let mock = MockSecretsGateway::builder().build().await;
 
         assert_eq!(mock.secret_count().await, 0);
 
@@ -887,7 +887,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_dynamic_add_target() {
-        let mock = MockAkeylessGateway::builder().build().await;
+        let mock = MockSecretsGateway::builder().build().await;
 
         assert_eq!(mock.target_count().await, 0);
 
@@ -911,7 +911,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_sign_unknown_key_returns_error() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_signing_key("only-this-key")
             .build()
             .await;
@@ -932,7 +932,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_get_secret_with_name_field() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_secret("/alt/path", "alt-value")
             .build()
             .await;
@@ -952,7 +952,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_list_items_all() {
-        let mock = MockAkeylessGateway::builder()
+        let mock = MockSecretsGateway::builder()
             .with_secret("/a/1", "v1")
             .with_secret("/b/2", "v2")
             .build()

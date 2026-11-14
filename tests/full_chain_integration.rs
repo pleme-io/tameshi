@@ -27,7 +27,7 @@ use tameshi::iac_attestation::{IacTestPhase, IacTestPhaseResult, IacTestSuiteRep
 use tameshi::merkle::compose_merkle;
 use tameshi::sdlc::{ALL_PHASES, SdlcChain, SdlcCheckpoint, SdlcPhase};
 use tameshi::signature::{LayerSignature, LayerType};
-use tameshi::signing::{MerkleRootSigner, MockDfcSigner};
+use tameshi::signing::{MerkleRootSigner, MockFragmentSigner};
 use tameshi::verify::verify_master;
 
 // ---------------------------------------------------------------------------
@@ -37,13 +37,13 @@ use tameshi::verify::verify_master;
 fn pangea_synthesis_json() -> Vec<u8> {
     br#"{
         "resource": {
-            "akeyless_auth_method": {
+            "secret_auth_method": {
                 "api_key_prod": {
                     "path": "/pleme/prod/api-key",
                     "type": "api_key"
                 }
             },
-            "akeyless_static_secret": {
+            "static_secret": {
                 "db_password": {
                     "path": "/pleme/prod/db-password",
                     "value": "PLACEHOLDER"
@@ -59,12 +59,12 @@ fn rspec_result_json() -> Vec<u8> {
         "version": "3.12",
         "examples": [
             {
-                "full_description": "akeyless auth method creates API key",
+                "full_description": "secrets_manager auth method creates API key",
                 "status": "passed",
                 "run_time": 0.012
             },
             {
-                "full_description": "akeyless static secret stores value",
+                "full_description": "secrets_manager static secret stores value",
                 "status": "passed",
                 "run_time": 0.008
             }
@@ -80,15 +80,15 @@ fn rspec_result_json() -> Vec<u8> {
 fn inspec_result_json() -> Vec<u8> {
     br#"{
         "profiles": [{
-            "name": "akeyless-baseline",
+            "name": "secrets-baseline",
             "controls": [
                 {
-                    "id": "akeyless-1.1",
+                    "id": "secrets-1.1",
                     "impact": 0.7,
                     "results": [{"status": "passed"}]
                 },
                 {
-                    "id": "akeyless-1.2",
+                    "id": "secrets-1.2",
                     "impact": 0.9,
                     "results": [{"status": "passed"}]
                 }
@@ -152,7 +152,7 @@ fn make_iac_test_suite() -> IacTestSuiteReport {
 
     let suite_hash = IacTestSuiteReport::compute_suite_hash(&phases);
     IacTestSuiteReport {
-        suite_name: "akeyless-integration".to_string(),
+        suite_name: "secrets-integration".to_string(),
         platform: "pangea".to_string(),
         environment: "production".to_string(),
         phases,
@@ -171,17 +171,17 @@ async fn full_chain_end_to_end() {
     // -----------------------------------------------------------------------
     // Step 1: Hash collectors (Pangea, RSpec, InSpec)
     // -----------------------------------------------------------------------
-    let pangea_sig = hash_synthesis_json(&pangea_synthesis_json(), "pangea-akeyless")
+    let pangea_sig = hash_synthesis_json(&pangea_synthesis_json(), "pangea-secrets")
         .await
         .expect("Pangea synthesis hash failed");
     assert_eq!(pangea_sig.layer, LayerType::PangeaSynthesis);
 
-    let rspec_sig = hash_rspec_output(&rspec_result_json(), "rspec-akeyless")
+    let rspec_sig = hash_rspec_output(&rspec_result_json(), "rspec-secrets")
         .await
         .expect("RSpec result hash failed");
     assert_eq!(rspec_sig.layer, LayerType::RSpecResult);
 
-    let inspec_sig = hash_inspec_output(&inspec_result_json(), "inspec-akeyless")
+    let inspec_sig = hash_inspec_output(&inspec_result_json(), "inspec-secrets")
         .await
         .expect("InSpec result hash failed");
     assert_eq!(inspec_sig.layer, LayerType::InSpecResult);
@@ -265,9 +265,9 @@ async fn full_chain_end_to_end() {
     );
 
     // -----------------------------------------------------------------------
-    // Step 8: Sign the Merkle root with MockDfcSigner
+    // Step 8: Sign the Merkle root with MockFragmentSigner
     // -----------------------------------------------------------------------
-    let signer = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "ci-signer");
+    let signer = MockFragmentSigner::from_fragments([1u8; 32], [2u8; 32], "ci-signer");
     let signed_root = signer
         .sign(master.gating_signature())
         .await
@@ -279,7 +279,7 @@ async fn full_chain_end_to_end() {
         .verify(&signed_root)
         .await
         .expect("Signature verification failed");
-    assert!(sig_valid, "MockDfcSigner verification should pass");
+    assert!(sig_valid, "MockFragmentSigner verification should pass");
 
     // -----------------------------------------------------------------------
     // Step 9: Verify the signed root against the master

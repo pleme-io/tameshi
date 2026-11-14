@@ -9,7 +9,7 @@
 ### The GC Tax
 
 Go's garbage collector is a stop-the-world tax on every secrets operation.
-Every `GetSecretValue` call in the Akeyless Gateway allocates heap objects
+Every `GetSecretValue` call in the secrets-manager Gateway allocates heap objects
 for JSON parsing, TLS buffers, and cryptographic intermediate values. The
 GC must eventually trace, mark, and sweep these allocations. Under load,
 this produces latency spikes of 1-10ms at the p99 tail — invisible in
@@ -37,7 +37,7 @@ the container registry can substitute a malicious binary that passes all
 signature checks but contains backdoors, because the signature only covers
 the container image hash — not the source code semantics.
 
-### The Solution: Akeyless Gateway 2.0
+### The Solution: Secrets-manager Gateway 2.0
 
 Tameshi eliminates both problems through a three-layer architecture:
 
@@ -412,7 +412,7 @@ input spaces. Unlike proptest, this is complete — it proves the
 | `liveness_proofs` | 7 | Merkle construction terminates (4-leaf, 3-leaf), chain build+verify terminates, global root terminates, BPF cycle terminates, mutex no-starvation, empty inputs terminate |
 | `ffi_safety_proofs` | 7 | PomsEntry size (80 bytes), alignment (8), roundtrip preserves all fields, violations at correct offset, KanshiConfig layout, safe PoMS authorized at FFI, unsafe PoMS denied at FFI |
 | `performance_bounds` | 6 | Merkle proof O(log n) for 4/8/16 leaves, doubling = +1 step, artifact O(1), chain O(n) |
-| `crypto_timing_proofs` | 4 | DFC combine deterministic, different secrets diverge, constant-time comparison, XOR all-bytes |
+| `crypto_timing_proofs` | 4 | Fragment combine deterministic, different secrets diverge, constant-time comparison, XOR all-bytes |
 | `resource_bounds` | 4 | Attestation within budget, cost monotonic, max cost bounded (36 units), BPF cycle bounded |
 
 ### 5.3 Layer 3: Formal Proofs (F*)
@@ -519,17 +519,17 @@ the attestation pipeline:
 
 ### 7.1 Constant-Time Cryptographic Operations
 
-Kani's `crypto_timing_proofs` module proves that DFC key reconstruction
+Kani's `crypto_timing_proofs` module proves that Fragment key reconstruction
 and signing operations are constant-time:
 
 | Harness | What It Proves |
 |---------|----------------|
-| `dfc_combine_deterministic` | Same inputs always produce same signature |
-| `dfc_different_secrets_different_sigs` | Different fragments produce different XOR values |
+| `fragment_combine_deterministic` | Same inputs always produce same signature |
+| `fragment_different_secrets_different_sigs` | Different fragments produce different XOR values |
 | `constant_time_eq_correct` | Hash comparison processes all bytes (no early exit) |
 | `xor_self_is_zero` | XOR processes all bytes regardless of value |
 
-The DFC combine path (`xor → hash → keyed_hash`) contains no
+The Fragment combine path (`xor → hash → keyed_hash`) contains no
 data-dependent branches. The XOR is element-wise (no conditional),
 the hash is fixed-iteration (FNV-1a always processes all input bytes),
 and the combine uses fixed-length concatenation. Timing observation

@@ -1,6 +1,6 @@
 //! Testing utilities for the tameshi attestation ecosystem.
 //!
-//! Provides mock implementations of external services (Akeyless, K8s, etc.)
+//! Provides mock implementations of external services (The secrets manager, K8s, etc.)
 //! for deterministic, offline testing without real infrastructure.
 
-pub mod akeyless_mock;
+pub mod secrets_mock;

@@ -37,7 +37,7 @@ fuzz_target!(|data: &[u8]| {
         DimensionType::FedRamp,
         DimensionType::CsaStar,
         DimensionType::FrameworkSelfAttestation,
-        DimensionType::AkeylessTargetVerification,
+        DimensionType::SecretTargetVerification,
     ];
 
     // Use the builder with self-attestation dimensions driven by fuzz data

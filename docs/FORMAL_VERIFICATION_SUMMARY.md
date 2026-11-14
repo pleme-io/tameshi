@@ -58,7 +58,7 @@ of cryptographic protocols. Our F* modules prove:
   assumption).
 - **Merkle tree integrity:** The Merkle root uniquely identifies the exact
   set of layer signatures. Any modification to any layer changes the root.
-- **Signature unforgeability:** The Ed25519/DFC signing scheme cannot
+- **Signature unforgeability:** The Ed25519/Fragment signing scheme cannot
   produce a valid signature without the private key (reduction to the
   discrete logarithm problem).
 - **Chain integrity:** The append-only audit chain cannot be retroactively

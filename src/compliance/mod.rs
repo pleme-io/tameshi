@@ -33,8 +33,8 @@
 //! | Testing frameworks | `frameworks` | InSpec, OPA, kube-bench, Trivy, etc. |
 //! | Unified composition | `dimensions` | All of the above |
 
-pub mod akeyless;
-pub mod akeyless_target;
+pub mod secrets;
+pub mod secret_target;
 pub mod cis;
 pub mod cve;
 pub mod dimensions;

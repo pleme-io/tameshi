@@ -4,7 +4,7 @@
 
 The Global State Root produces a mathematically deterministic, append-only history of every infrastructure state transition across all clusters. This is not syslog data. This is cryptographically structured state -- every entry is a Merkle tree binding provenance, compliance, and intent into a single hash. This structure makes it the ideal training dataset for security AI because:
 
-1. **Every data point has cryptographic provenance.** Each `CertificationArtifact` records exactly what produced it (`artifact_hash` from `NixCollector` or `OciCollector`), what compliance assessment validated it (`control_hash` from kensa), and what infrastructure intent declared it (`intent_hash` from `PangeaSynthesisCollector`). The `SignedRoot` binds the artifact to a specific `AkeylessDfcSigner` identity and timestamp. Tampering with any field changes the `composed_root`, breaking the chain.
+1. **Every data point has cryptographic provenance.** Each `CertificationArtifact` records exactly what produced it (`artifact_hash` from `NixCollector` or `OciCollector`), what compliance assessment validated it (`control_hash` from kensa), and what infrastructure intent declared it (`intent_hash` from `PangeaSynthesisCollector`). The `SignedRoot` binds the artifact to a specific `RemoteFragmentSigner` identity and timestamp. Tampering with any field changes the `composed_root`, breaking the chain.
 
 2. **The state space is finite and enumerable.** There are exactly N `composed_root` values across M clusters, each a 256-bit BLAKE3 hash of known structure. The `GlobalStateRoot` is a deterministic function of sorted `ClusterRootEntry` values stored in a `BTreeMap<String, ClusterRootEntry>`. Two independent observers processing the same cluster reports produce identical roots.
 

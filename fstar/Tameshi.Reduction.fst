@@ -12,7 +12,7 @@ open Tameshi.Signing
 
     Any successful forgery of a tameshi attestation implies either:
       1. A BLAKE3 collision (breaking hash_collision_resistant), or
-      2. A DFC key compromise (breaking split-knowledge XOR)
+      2. A Fragment key compromise (breaking split-knowledge XOR)
 
     This is the capstone theorem that ties the entire proof together.
 

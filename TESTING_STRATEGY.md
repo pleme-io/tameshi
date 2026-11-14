@@ -84,7 +84,7 @@ How fast does the system mathematically reject a tampered deployment?
 | Scenario | What changes | Expected behavior |
 |----------|-------------|-------------------|
 | Tampered container image | OCI layer hash changes | Merkle root changes → signature mismatch → DENY |
-| Mutated Akeyless target | Target config hash changes | AkeylessTarget layer hash changes → DENY |
+| Mutated secrets-manager target | Target config hash changes | SecretTarget layer hash changes → DENY |
 | Stale signature | Signature older than max_age | evaluate_gate detects staleness → DENY |
 | Missing compliance | No compliance hash | require_compliance policy → DENY |
 | Missing required layer | Layer not in Merkle tree | required_layers policy → DENY |

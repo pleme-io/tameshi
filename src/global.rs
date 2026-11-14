@@ -47,7 +47,7 @@ pub struct ClusterRootEntry {
     pub cluster_id: String,
     /// BLAKE3 Merkle root of all composed_roots on this cluster.
     pub cluster_root: Blake3Hash,
-    /// DFC-signed root (using the cluster's signer).
+    /// Fragment-signed root (using the cluster's signer).
     pub signed_root: SignedRoot,
     /// Number of nodes reporting attestations.
     pub node_count: u32,
@@ -80,7 +80,7 @@ pub struct ClusterRootReport {
     pub cluster_id: String,
     /// BLAKE3 Merkle root of all composed_roots on this cluster.
     pub cluster_root: Blake3Hash,
-    /// DFC-signed root.
+    /// Fragment-signed root.
     pub signed_root: SignedRoot,
     /// Number of nodes reporting attestations.
     pub node_count: u32,
@@ -353,7 +353,7 @@ fn test_signed_root(root: &Blake3Hash) -> SignedRoot {
     SignedRoot {
         root: root.clone(),
         signature: vec![0xAA; 64],
-        algorithm: crate::signing::SigningAlgorithm::MockDfc,
+        algorithm: crate::signing::SigningAlgorithm::MockFragment,
         signer_id: "test-signer".to_string(),
         signed_at: Utc::now(),
     }

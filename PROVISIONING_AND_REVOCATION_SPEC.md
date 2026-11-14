@@ -74,7 +74,7 @@ the BLAKE3 hash of the OCI manifest digest.
 
 ### Problem
 
-Tameshi proves Code (Nix) and Secrets (Akeyless) but not Infrastructure State.
+Tameshi proves Code (Nix) and Secrets (The secrets manager) but not Infrastructure State.
 If an attacker compromises K8s RBAC, changes a ServiceMesh policy, or modifies
 a deployment's `runAsUser: 0`, the Merkle tree won't detect it because it only
 attests the artifact, not the runtime environment.
@@ -167,7 +167,7 @@ kernel (5.15+) without needing a C compiler on the node.
 
 ### Problem
 
-Tameshi is fail-closed. If the Akeyless API is down, or kensa's attestation store
+Tameshi is fail-closed. If the secrets-manager API is down, or kensa's attestation store
 has a network blip, sekiban cannot verify the Merkle root. In fail-closed mode,
 **no new pods can start**, potentially taking down the entire production cluster.
 
@@ -186,7 +186,7 @@ An emergency bypass system with full cryptographic auditability:
      "issued_at": "2026-03-20T10:00:00Z",
      "valid_until": "2026-03-20T14:00:00Z",
      "issuer": "oncall-sre@pleme.io",
-     "reason": "Akeyless API outage — INC-2847",
+     "reason": "Secrets-manager API outage — INC-2847",
      "scope": ["namespace:production"],
      "signature": "ed25519:<hex>"
    }
@@ -290,7 +290,7 @@ rootfs enforcement, this provides equivalent security with lower overhead:
 
 ### Problem
 
-Akeyless Dynamic Secrets rotate values constantly. Hashing the secret **value**
+Secrets-manager Dynamic Secrets rotate values constantly. Hashing the secret **value**
 into the Merkle tree breaks the deployment on every rotation — the hash changes
 even though the security posture hasn't.
 
@@ -298,12 +298,12 @@ even though the security posture hasn't.
 
 The Merkle leaf node for a secret hashes:
 - **Secret Path** (e.g., `/pleme/production/db-credentials`)
-- **Target ID** (the Akeyless target that backs this secret)
+- **Target ID** (The secrets-manager target that backs this secret)
 - **Access Role** (the role that grants access to this secret)
 - **Producer Type** (dynamic-secret, rotated-secret, static-secret)
 
 ```rust
-// tameshi/src/collectors/akeyless.rs — policy-path hashing
+// tameshi/src/collectors/secrets_manager.rs — policy-path hashing
 fn hash_secret_policy(path: &str, target_id: &str, access_role: &str) -> Blake3Hash {
     let mut data = Vec::new();
     data.extend_from_slice(path.as_bytes());
@@ -317,14 +317,14 @@ fn hash_secret_policy(path: &str, target_id: &str, access_role: &str) -> Blake3H
 
 **What this proves:** The authorization policy is untampered. The secret path,
 target, and role haven't been changed by an attacker. The actual secret value
-rotates freely within the Akeyless DFC ecosystem — as designed.
+rotates freely within the remote Fragment ecosystem — as designed.
 
 **What this does NOT prove:** The secret value itself (by design — dynamic secrets
 must rotate without breaking attestation).
 
 ### Already Implemented
 
-The `AkeylessTargetCollector` and `LiveAkeylessTargetCollector` in tameshi already
+The `SecretTargetCollector` and `LiveSecretTargetCollector` in tameshi already
 hash target configuration (30 target types) rather than secret values. The
 `ProducerAssociation` type captures the target + producer relationship. This
 approach is architecturally sound and already in production.
@@ -469,7 +469,7 @@ critical zero-day response (via kanshi's admin API endpoint).
 | inshou (Nix) | 10/10 | Low | Bulletproof |
 | sekiban (Webhook) | 9/10 | Medium | Digest check eliminates timeout. Break-glass prevents outages |
 | kanshi (eBPF) | 7/10 | Medium | CO-RE solves portability. Audit-only fallback for old kernels |
-| Akeyless Integration | 9/10 | Low | Policy-path hashing is architecturally sound |
+| Secrets-manager Integration | 9/10 | Low | Policy-path hashing is architecturally sound |
 | kensa (Compliance) | 9/10 | Low | Compliance scanning + revocation = defense in depth |
 
 ### Risk Register

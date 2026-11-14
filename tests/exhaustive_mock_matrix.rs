@@ -18,7 +18,7 @@ use tameshi::heartbeat::{HeartbeatChain, HeartbeatEvent, VerificationOutcome, Ve
 use tameshi::merkle::{compose_merkle, compute_merkle_root};
 use tameshi::signature::{LayerSignature, LayerType, MasterSignature};
 use tameshi::signing::{
-    BreakGlassToken, FailableDfcSigner, LocalSigner, MerkleRootSigner, MockDfcSigner,
+    BreakGlassToken, FailableFragmentSigner, LocalSigner, MerkleRootSigner, MockFragmentSigner,
 };
 use tameshi::traits::FixedClock;
 
@@ -119,7 +119,7 @@ fn strict_policy() -> GatingPolicy {
 #[tokio::test]
 async fn v01_happy_path_all_valid_allow() {
     // Setup
-    let signer = MockDfcSigner::for_testing();
+    let signer = MockFragmentSigner::for_testing();
     let artifact = make_valid_artifact();
     let (master, expected) = make_attested_master("production");
     let chain = HeartbeatChain::new();
@@ -416,17 +416,17 @@ fn v07_toctou_hash_changes_deny() {
 }
 
 // ===========================================================================
-// V-08: DFC signer timeout -> DENY
+// V-08: Fragment signer timeout -> DENY
 // ===========================================================================
 
 #[tokio::test]
-async fn v08_dfc_timeout_deny() {
-    let signer = FailableDfcSigner::new().with_timeout(Duration::from_secs(5));
+async fn v08_fragment_timeout_deny() {
+    let signer = FailableFragmentSigner::new().with_timeout(Duration::from_secs(5));
     let root = Blake3Hash::digest(b"test-root");
 
     // INV-3: external service failure -> error
     let result = signer.sign(&root).await;
-    assert!(result.is_err(), "V-08 / INV-3: DFC timeout must error");
+    assert!(result.is_err(), "V-08 / INV-3: Fragment timeout must error");
 
     let err_msg = result.unwrap_err().to_string();
     assert!(
@@ -442,26 +442,26 @@ async fn v08_dfc_timeout_deny() {
 }
 
 // ===========================================================================
-// V-09: DFC corrupted signature -> verify fails -> DENY
+// V-09: Fragment corrupted signature -> verify fails -> DENY
 // ===========================================================================
 
 #[tokio::test]
-async fn v09_dfc_corrupted_signature_deny() {
-    let signer = FailableDfcSigner::new().with_corrupted_signature();
+async fn v09_fragment_corrupted_signature_deny() {
+    let signer = FailableFragmentSigner::new().with_corrupted_signature();
     let root = Blake3Hash::digest(b"test-root");
 
     // Sign succeeds but signature is corrupted
     let signed = signer.sign(&root).await.unwrap();
 
     // Verify with a clean signer -> false (corrupted bits)
-    let clean_signer = MockDfcSigner::for_testing();
+    let clean_signer = MockFragmentSigner::for_testing();
     let verified = clean_signer.verify(&signed).await.unwrap();
     assert!(
         !verified,
         "V-09 / INV-5: corrupted signature must not verify"
     );
 
-    // Also verify with the failable signer itself (delegates to inner MockDfcSigner)
+    // Also verify with the failable signer itself (delegates to inner MockFragmentSigner)
     let failable_verified = signer.verify(&signed).await.unwrap();
     assert!(
         !failable_verified,
@@ -475,17 +475,17 @@ async fn v09_dfc_corrupted_signature_deny() {
 }
 
 // ===========================================================================
-// V-10: DFC auth failure -> DENY
+// V-10: Fragment auth failure -> DENY
 // ===========================================================================
 
 #[tokio::test]
-async fn v10_dfc_auth_failure_deny() {
-    let signer = FailableDfcSigner::new().with_auth_failure();
+async fn v10_fragment_auth_failure_deny() {
+    let signer = FailableFragmentSigner::new().with_auth_failure();
     let root = Blake3Hash::digest(b"test-root");
 
     // INV-3: auth failure -> error
     let result = signer.sign(&root).await;
-    assert!(result.is_err(), "V-10 / INV-3: DFC auth failure must error");
+    assert!(result.is_err(), "V-10 / INV-3: Fragment auth failure must error");
 
     let err_msg = result.unwrap_err().to_string();
     assert!(
@@ -498,7 +498,7 @@ async fn v10_dfc_auth_failure_deny() {
         .verify(&tameshi::signing::SignedRoot {
             root: root.clone(),
             signature: vec![0u8; 32],
-            algorithm: tameshi::signing::SigningAlgorithm::MockDfc,
+            algorithm: tameshi::signing::SigningAlgorithm::MockFragment,
             signer_id: "test".to_string(),
             signed_at: chrono::Utc::now(),
         })
@@ -558,11 +558,11 @@ async fn v11_ai_timeout_gate_decides_alone() {
 
 #[tokio::test]
 async fn v12_all_services_down_deny() {
-    // DFC: timeout
-    let signer = FailableDfcSigner::new().with_timeout(Duration::from_secs(5));
+    // Fragment: timeout
+    let signer = FailableFragmentSigner::new().with_timeout(Duration::from_secs(5));
     let root = Blake3Hash::digest(b"test-root");
     let sign_result = signer.sign(&root).await;
-    assert!(sign_result.is_err(), "V-12: DFC must fail");
+    assert!(sign_result.is_err(), "V-12: Fragment must fail");
 
     // AI: unavailable
     let ai = FailableAiThreatClient::new().with_unavailable();
@@ -956,11 +956,11 @@ fn v20_empty_allow_map_enforce_deny_all() {
 // Cross-cutting invariant tests
 // ===========================================================================
 
-/// INV-5: MockDfcSigner with wrong fragments -> verify returns false.
+/// INV-5: MockFragmentSigner with wrong fragments -> verify returns false.
 #[tokio::test]
 async fn inv05_wrong_fragments_verify_false() {
-    let signer_a = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "signer-a");
-    let signer_b = MockDfcSigner::from_fragments([3u8; 32], [4u8; 32], "signer-b");
+    let signer_a = MockFragmentSigner::from_fragments([1u8; 32], [2u8; 32], "signer-a");
+    let signer_b = MockFragmentSigner::from_fragments([3u8; 32], [4u8; 32], "signer-b");
     let root = Blake3Hash::digest(b"test-root");
 
     let signed = signer_a.sign(&root).await.unwrap();
@@ -1097,10 +1097,10 @@ fn inv06_heartbeat_records_both_outcomes() {
     assert!(chain.verify_integrity());
 }
 
-/// DFC rate-limited failure.
+/// Fragment rate-limited failure.
 #[tokio::test]
-async fn dfc_rate_limited_deny() {
-    let signer = FailableDfcSigner::new().with_rate_limited();
+async fn fragment_rate_limited_deny() {
+    let signer = FailableFragmentSigner::new().with_rate_limited();
     let root = Blake3Hash::digest(b"test-root");
 
     let result = signer.sign(&root).await;

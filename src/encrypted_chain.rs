@@ -1,6 +1,6 @@
 //! Encrypted heartbeat chain entries.
 //!
-//! Encrypts chain entry payloads using a DFC-derived key before storage.
+//! Encrypts chain entry payloads using a Fragment-derived key before storage.
 //! Even if the storage backend is compromised, entries are unreadable
 //! without the encryption key fragments.
 

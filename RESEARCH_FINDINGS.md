@@ -106,9 +106,9 @@ content integrity in a single attestation artifact.
 | L1: Provenance exists | Yes — Nix derivation + BLAKE3 Merkle |
 | L2: Hosted build platform | Yes — Forge CI pipeline |
 | L3: Hardened/hermetic builds | Yes — Nix sandbox (chroot, no network, no env) |
-| L3: Signing keys inaccessible to build steps | Yes — Akeyless DFC (key never in memory) |
+| L3: Signing keys inaccessible to build steps | Yes — remote Fragment (key never in memory) |
 
-**tameshi achieves SLSA Build L3** with Nix + Forge + Akeyless DFC.
+**tameshi achieves SLSA Build L3** with Nix + Forge + remote Fragment.
 
 ### TUF for Merkle Root Distribution
 
@@ -116,7 +116,7 @@ TUF (The Update Framework) solves a problem tameshi needs:
 **How do nodes securely get the latest trusted Merkle root?**
 
 TUF's delegation model maps cleanly:
-- **Root role** → tameshi ecosystem trust anchor (DFC-signed)
+- **Root role** → tameshi ecosystem trust anchor (Fragment-signed)
 - **Targets role** → per-environment Merkle roots
 - **Snapshot role** → version numbers of all targets (prevents rollback)
 - **Timestamp role** → freshness (prevents freeze attacks)
@@ -231,8 +231,8 @@ approach but not strictly needed for BLAKE3 hash comparisons.
 ### FIPS 140-3 Status — Confirmed NOT Approved
 
 BLAKE3 is NOT FIPS approved and has **no standardization path**. However:
-- Akeyless DFC has FIPS 140-2 cert #3589 (AES, RSA, SHA-2, ECDSA)
-- tameshi's attestation of Akeyless secrets inherits Akeyless's FIPS compliance
+- remote Fragment has FIPS 140-2 cert #3589 (AES, RSA, SHA-2, ECDSA)
+- tameshi's attestation of secrets-manager secrets inherits the secrets manager's FIPS compliance
 - For FIPS-regulated attestation itself: dual-hash (BLAKE3 + SHA-256) needed
 
 ### Domain Separation — Critical Finding
@@ -246,13 +246,13 @@ separation in Merkle trees:
 BLAKE3's built-in flag system provides this for its internal tree, but tameshi's
 external Merkle tree (over attestation layers) needs explicit domain separation.
 
-### DFC Technical Details
+### Fragment Technical Details
 
 - Key fragments generated independently, **never combine** into full key
 - Operations use one-time derived keys from fragment computations, then discard
 - Fragment refresh changes values while preserving mathematical relationship
-- FIPS cert #3589 validates AES/RSA/SHA-2/ECDSA inside DFC module
-- DFC is NOT Shamir Secret Sharing — key is never created as a whole
+- FIPS cert #3589 validates AES/RSA/SHA-2/ECDSA inside Fragment module
+- Fragment is NOT Shamir Secret Sharing — key is never created as a whole
 
 ### Consistency Proofs for Heartbeat Chain
 

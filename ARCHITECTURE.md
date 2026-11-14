@@ -18,8 +18,8 @@ graph TB
         UntestSig --> SecureSig["Secure Signature<br/>BLAKE3(untested ∥ compliance)"]
         ComplianceHash --> SecureSig
         SecureSig --> CertArtifact["CertificationArtifact<br/>3-leaf Merkle tree"]
-        CertArtifact --> DFCSigner["MerkleRootSigner<br/>(DFC threshold)"]
-        DFCSigner --> SignedRoot["SignedRoot"]
+        CertArtifact --> FragmentSigner["MerkleRootSigner<br/>(Fragment threshold)"]
+        FragmentSigner --> SignedRoot["SignedRoot"]
     end
 
     subgraph "Gating Points"
@@ -114,8 +114,8 @@ Changing any single input hash changes the `composed_root`. The root cannot be f
 | Signer | Key Management | Algorithm | Use Case |
 |--------|---------------|-----------|----------|
 | `LocalSigner` | 32-byte seed on disk | BLAKE3 keyed MAC (`H(seed ∥ data)`) | Development, testing |
-| `AkeylessDfcSigner` | Akeyless DFC API | Threshold signing (key never assembled) | Production |
-| `MockDfcSigner` | XOR of two 32-byte fragments | `BLAKE3(fragment_a XOR fragment_b)` | CI/CD, integration tests |
+| `RemoteFragmentSigner` | remote Fragment API | Threshold signing (key never assembled) | Production |
+| `MockFragmentSigner` | XOR of two 32-byte fragments | `BLAKE3(fragment_a XOR fragment_b)` | CI/CD, integration tests |
 
 ### MerkleRootSigner Trait
 
@@ -126,11 +126,11 @@ pub trait MerkleRootSigner: Send + Sync {
 }
 ```
 
-### MockDfcSigner Split-Knowledge
+### MockFragmentSigner Split-Knowledge
 
 ```
 Fragment A: loaded from .tameshi_frag file (hex-encoded)
-Fragment B: loaded from AKEYLESS_MOCK_FRAG env var (hex-encoded)
+Fragment B: loaded from SECRETS_MOCK_FRAG env var (hex-encoded)
 
 Key = BLAKE3(fragment_a XOR fragment_b)
 
@@ -141,9 +141,9 @@ Properties:
 - Debug output prints [REDACTED] for both fragments
 ```
 
-### AkeylessDfcSigner
+### RemoteFragmentSigner
 
-Calls `/sign-data-with-classic-key` on the Akeyless gateway REST API. The gateway performs the threshold signing internally -- the complete key never leaves the secure enclave. Supports mTLS via `TlsConfig` (pinned CA, client certificates). Authentication via API key (`/auth` endpoint).
+Calls `/sign-data-with-classic-key` on the secrets-manager gateway REST API. The gateway performs the threshold signing internally -- the complete key never leaves the secure enclave. Supports mTLS via `TlsConfig` (pinned CA, client certificates). Authentication via API key (`/auth` endpoint).
 
 ### BreakGlassToken
 
@@ -161,7 +161,7 @@ Emergency bypass when the attestation system is unavailable. Every activation is
 pub struct SignedRoot {
     pub root: Blake3Hash,
     pub signature: Vec<u8>,
-    pub algorithm: SigningAlgorithm,  // Ed25519Local | AkeylessDfc | MockDfc | BreakGlass
+    pub algorithm: SigningAlgorithm,  // Ed25519Local | RemoteFragment | MockFragment | BreakGlass
     pub signer_id: String,
     pub signed_at: DateTime<Utc>,
 }
@@ -504,7 +504,7 @@ sequenceDiagram
     CI->>Ken: run compliance assessment
     Ken->>Tam: compliance_hash
     Tam->>Tam: compose_certification_artifact(artifact, control, intent)
-    Tam->>Tam: AkeylessDfcSigner.sign(composed_root)
+    Tam->>Tam: RemoteFragmentSigner.sign(composed_root)
     Tam-->>HB: append(Certification, Allowed)
 
     CI->>Ins: gate check (Nix rebuild)

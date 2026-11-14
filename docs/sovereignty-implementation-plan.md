@@ -11,14 +11,14 @@
 | Ownership analysis (use-after-free, double-free, channel move) | **Shipped** | 391 Go tests, 87% coverage |
 | Merkle composition (15 layer types, domain separation) | **Shipped** | 1,579 Rust tests, 39 proptest properties |
 | eBPF enforcement (LSM hook, BPF map, audit events) | **Shipped** | 12 struct layout tests, C code reviewed |
-| DFC split-knowledge (2-of-2 XOR fragments) | **Shipped** | F* proof + Kani harnesses + unit tests |
+| Fragment split-knowledge (2-of-2 XOR fragments) | **Shipped** | F* proof + Kani harnesses + unit tests |
 | Selective disclosure (prove one leaf, hide others) | **Shipped** | proptest `selective_disclosure_hides_other_leaves` |
-| Fragment extension (Merkle root as DFC fragment N+1) | **Proved in F*** | `Tameshi.FragmentedSovereignty.fst` — no Rust impl |
+| Fragment extension (Merkle root as key fragment N+1) | **Proved in F*** | `Tameshi.FragmentedSovereignty.fst` — no Rust impl |
 | Taint tracking (information flow control) | **Not built** | Architecture assessed, SSA infra ready |
 | Sparse Merkle Tree | **Not built** | Crates assessed, module boundary defined |
 | Shamir Secret Sharing (k-of-n threshold) | **Not built** | Crates assessed, trait boundary defined |
 | Hardware salt / TPM binding | **Not built** | No code, no design |
-| Encrypted heartbeat chain | **Not built** | Described in AKEYLESS_INTEGRATION.md |
+| Encrypted heartbeat chain | **Not built** | Described in a private integration note |
 
 ---
 
@@ -31,7 +31,7 @@ in Rust with witness tests that validate each F* lemma.
 
 **Why first:** This is the lowest-effort, highest-value gap. The math is already proved. The
 implementation is ~100 lines. It turns an F* sketch into a shipping feature that binds the
-signing key to the specific attestation — meaning even correct DFC fragments cannot sign a
+signing key to the specific attestation — meaning even correct key fragments cannot sign a
 different artifact.
 
 **Effort:** 1 day
@@ -41,7 +41,7 @@ different artifact.
 - `tests/proptest_properties.rs` — 2 new properties (~40 lines)
 - `proofs/kani/src/fragment_extension_proofs.rs` — 2 harnesses (~60 lines)
 
-**Dependencies:** None. Uses existing `Blake3Hash`, `MockDfcSigner` patterns.
+**Dependencies:** None. Uses existing `Blake3Hash`, `MockFragmentSigner` patterns.
 
 **Verification:**
 - 4 unit tests witnessing F* lemmas
@@ -58,10 +58,10 @@ of them and the signature breaks."
 ### Gap 2: Taint Tracking in Ferrite
 
 **What:** Add an information flow pass to the SSA analyzer that prevents `Owned[T]` values
-produced by sensitive sources (DFC decryption, secret fetch) from flowing to insecure sinks
+produced by sensitive sources (Fragment decryption, secret fetch) from flowing to insecure sinks
 (logging, serialization, network output).
 
-**Why second:** This is the most architecturally valuable gap for the Akeyless story.
+**Why second:** This is the most architecturally valuable gap for the secrets-manager story.
 It means Ferrite doesn't just prove "no memory bugs" — it proves "secrets don't leak."
 The existing SSA infrastructure (`resolveValue`, `OwnershipFact`, fixed-point iteration)
 handles 90% of the work.
@@ -104,12 +104,12 @@ handles 90% of the work.
 
 ---
 
-### Gap 3: Shamir DFC Signer
+### Gap 3: Shamir Fragment Signer
 
-**What:** Implement a `ShamirDfcSigner` that uses k-of-n threshold reconstruction
+**What:** Implement a `ShamirFragmentSigner` that uses k-of-n threshold reconstruction
 instead of the current 2-of-2 XOR scheme. Compatible with the existing `MerkleRootSigner` trait.
 
-**Why third:** This upgrades the DFC model from "both fragments required" to "any k of n
+**Why third:** This upgrades the Fragment model from "both fragments required" to "any k of n
 fragments sufficient." Combined with Gap 1 (fragment extension), this means the Merkle root
 is fragment N+1 in a (k+1)-of-(N+1) threshold scheme. The `vsss-rs` crate provides
 verifiable secret sharing (Feldman commitments) out of the box.
@@ -118,8 +118,8 @@ verifiable secret sharing (Feldman commitments) out of the box.
 
 **Files:**
 - `Cargo.toml` — add `vsss-rs = "5.3"` or `sharks = "0.5"` dependency
-- `src/shamir_dfc.rs` — ~250 lines
-  - `ShamirDfcSigner` struct (threshold, shares)
+- `src/shamir_fragment.rs` — ~250 lines
+  - `ShamirFragmentSigner` struct (threshold, shares)
   - `create_shares(key, k, n) -> Vec<Share>`
   - `reconstruct_key(shares) -> [u8; 32]`
   - `MerkleRootSigner` trait implementation
@@ -132,7 +132,7 @@ verifiable secret sharing (Feldman commitments) out of the box.
 Merkle root as an automatic additional share.
 
 **What it buys:** "Any 2 of 3 custodians can attest, but none alone" — the threshold
-trust story that maps directly to Akeyless DFC's value proposition.
+trust story that maps directly to the remote fragment signer's value proposition.
 
 ---
 
@@ -143,7 +143,7 @@ Merkle tree alongside the existing balanced tree.
 
 **Why fourth:** The current balanced tree works perfectly for the 15-layer composition.
 The SMT adds value for two specific use cases:
-1. **Akeyless target attestation** — 30 target types as key-value leaves instead of a flat list
+1. **Secrets-manager target attestation** — 30 target types as key-value leaves instead of a flat list
 2. **Non-inclusion proofs** — prove a binary is NOT in the tree (the balanced tree can only
    prove inclusion)
 
@@ -208,7 +208,7 @@ binding story. But only meaningful when we know the deployment target.
 Gap 1: Fragment Extension  ──────────────────────────────┐
   (1 day, no deps)                                       │
                                                          ▼
-Gap 2: Taint Tracking      Gap 3: Shamir DFC  ◀── uses Gap 1
+Gap 2: Taint Tracking      Gap 3: Shamir Fragment  ◀── uses Gap 1
   (2-3 days, no deps)        (2-3 days)
                                                          │
                               Gap 4: Sparse Merkle Tree  │
@@ -230,7 +230,7 @@ Gap 5 benefits from Gap 4. Maximum parallelism: 3 gaps simultaneously.
 |-----|--------|---------|-----------|------|
 | 1. Fragment Extension | 1 day | ~200 | ~8 | Low — math is proved |
 | 2. Taint Tracking | 2-3 days | ~315 | ~5 | Medium — new analysis pass |
-| 3. Shamir DFC | 2-3 days | ~330 | ~12 | Low — crate does the math |
+| 3. Shamir Fragment | 2-3 days | ~330 | ~12 | Low — crate does the math |
 | 4. Sparse Merkle Tree | 3-4 days | ~400 | ~20 | Low — crate is mature |
 | 5. Hardware Salt (mock) | 2 days | ~200 | ~5 | Low — mock only |
 | **Total** | **10-13 days** | **~1,445** | **~50** | |
@@ -255,7 +255,7 @@ Gap 5 benefits from Gap 4. Maximum parallelism: 3 gaps simultaneously.
 **Week 1:**
 - Day 1: Gap 1 (Fragment Extension) — ship immediately
 - Days 2-3: Gap 2 (Taint Tracking) — start in parallel
-- Days 3-4: Gap 3 (Shamir DFC) — start after Gap 1 lands
+- Days 3-4: Gap 3 (Shamir Fragment) — start after Gap 1 lands
 
 **Week 2:**
 - Days 5-8: Gap 4 (Sparse Merkle Tree)
@@ -265,6 +265,6 @@ Gap 5 benefits from Gap 4. Maximum parallelism: 3 gaps simultaneously.
 **What we do NOT build:**
 - ZK-SNARKs in the kernel (requires eBPF verifier changes, not practical)
 - Pedersen commitments in the BPF map (adds complexity without clear benefit over hash)
-- Encrypted heartbeat chain (DFC encryption of chain entries — deferred to post-MVP)
+- Encrypted heartbeat chain (Fragment encryption of chain entries — deferred to post-MVP)
 
 These remain documented as future architecture directions, not shipped features.

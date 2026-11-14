@@ -10,7 +10,7 @@ The rules:
 - **Critical traits have a `Failable*` implementation.** These inject deterministic failures for chaos/negative testing.
 - **Some traits have a `Demo*` implementation.** These power the live Mocked Theater demo (ALLOW by default, DENY on command).
 - **All mocks are `#[must_use]` with builder patterns.** Configuration is explicit and chainable.
-- **All tests run on macOS.** No Linux kernel, no K8s cluster, no Akeyless gateway, no AI model. The entire 2,789-test ecosystem runs natively on a MacBook.
+- **All tests run on macOS.** No Linux kernel, no K8s cluster, no secrets-manager gateway, no AI model. The entire 2,789-test ecosystem runs natively on a MacBook.
 - **Mocks use `Mutex`/`RwLock` for thread safety.** Every mock can be wrapped in `Arc` and shared across async tasks.
 
 ---
@@ -19,31 +19,31 @@ The rules:
 
 ### 2.1 State/Secrets Boundary
 
-#### AkeylessClient
+#### SecretsManagerClient
 
-**Trait** (`tameshi/src/akeyless_client.rs`):
+**Trait** (`tameshi/src/secrets_client.rs`):
 
 ```rust
-pub trait AkeylessClient: Send + Sync {
-    fn authenticate(&self) -> impl Future<Output = Result<String, AkeylessClientError>> + Send;
-    fn get_secret_hash(&self, path: &str, token: &str) -> impl Future<Output = Result<AkeylessSecretAccess, AkeylessClientError>> + Send;
-    fn list_secrets(&self, prefix: &str, token: &str) -> impl Future<Output = Result<Vec<String>, AkeylessClientError>> + Send;
-    fn gateway_cert_hash(&self) -> impl Future<Output = Result<Blake3Hash, AkeylessClientError>> + Send;
-    fn build_attestation(&self, secret_paths: &[String]) -> impl Future<Output = Result<AkeylessSecretAttestation, AkeylessClientError>> + Send;
-    fn get_target(&self, name: &str, token: &str) -> impl Future<Output = Result<TargetInfo, AkeylessClientError>> + Send;
-    fn list_targets(&self, token: &str) -> impl Future<Output = Result<Vec<String>, AkeylessClientError>> + Send;
-    fn get_dynamic_secret_details(&self, name: &str, token: &str) -> impl Future<Output = Result<DynamicSecretInfo, AkeylessClientError>> + Send;
-    fn build_target_attestation(&self, target_names: &[String]) -> impl Future<Output = Result<Vec<AkeylessTargetAttestation>, AkeylessClientError>> + Send;
+pub trait SecretsManagerClient: Send + Sync {
+    fn authenticate(&self) -> impl Future<Output = Result<String, SecretsManagerError>> + Send;
+    fn get_secret_hash(&self, path: &str, token: &str) -> impl Future<Output = Result<SecretAccess, SecretsManagerError>> + Send;
+    fn list_secrets(&self, prefix: &str, token: &str) -> impl Future<Output = Result<Vec<String>, SecretsManagerError>> + Send;
+    fn gateway_cert_hash(&self) -> impl Future<Output = Result<Blake3Hash, SecretsManagerError>> + Send;
+    fn build_attestation(&self, secret_paths: &[String]) -> impl Future<Output = Result<SecretAttestation, SecretsManagerError>> + Send;
+    fn get_target(&self, name: &str, token: &str) -> impl Future<Output = Result<TargetInfo, SecretsManagerError>> + Send;
+    fn list_targets(&self, token: &str) -> impl Future<Output = Result<Vec<String>, SecretsManagerError>> + Send;
+    fn get_dynamic_secret_details(&self, name: &str, token: &str) -> impl Future<Output = Result<DynamicSecretInfo, SecretsManagerError>> + Send;
+    fn build_target_attestation(&self, target_names: &[String]) -> impl Future<Output = Result<Vec<SecretTargetAttestation>, SecretsManagerError>> + Send;
 }
 ```
 
-**Real:** `HttpAkeylessClient<H: HttpClient>` -- generic over HTTP transport, calls the Akeyless gateway REST API. Hashes secret VALUES (never stores them). Salts with `gateway_url:path:value` to defeat rainbow tables.
+**Real:** `HttpSecretsManagerClient<H: HttpClient>` -- generic over HTTP transport, calls the secrets-manager gateway REST API. Hashes secret VALUES (never stores them). Salts with `gateway_url:path:value` to defeat rainbow tables.
 
-**Mock:** `MockAkeylessClient` -- returns canned attestation data from `sample_attestation()`. Builder methods: `with_attestation()`, `with_target_attestations()`. Runtime override: `set_attestation()`, `set_target_attestations()`.
+**Mock:** `MockSecretsManagerClient` -- returns canned attestation data from `sample_attestation()`. Builder methods: `with_attestation()`, `with_target_attestations()`. Runtime override: `set_attestation()`, `set_target_attestations()`.
 
 ```rust
-let mock = MockAkeylessClient::new(); // uses sample_attestation()
-let mock = MockAkeylessClient::with_attestation(custom_attestation);
+let mock = MockSecretsManagerClient::new(); // uses sample_attestation()
+let mock = MockSecretsManagerClient::with_attestation(custom_attestation);
 mock.set_secret_hash("/path", hash); // runtime override
 ```
 
@@ -60,22 +60,22 @@ pub trait MerkleRootSigner: Send + Sync {
 
 **Real implementations:**
 - `LocalSigner` -- Ed25519 HMAC-like signing using BLAKE3 keyed hash. `for_testing()` creates with seed `[42u8; 32]`.
-- `AkeylessDfcSigner` -- Calls Akeyless gateway `/sign-data-with-classic-key` endpoint. Key never exists in one piece (Distributed Fragment Cryptography). Supports mTLS via `TlsConfig`.
+- `RemoteFragmentSigner` -- Calls secrets-manager gateway `/sign-data-with-classic-key` endpoint. Key never exists in one piece. Supports mTLS via `TlsConfig`.
 
-**Mock:** `MockDfcSigner` -- Split-knowledge XOR simulation. Two 32-byte fragments. Key = `BLAKE3(fragment_a XOR fragment_b)`. Neither fragment alone reveals the key. Debug output redacts fragments.
+**Mock:** `MockFragmentSigner` -- Split-knowledge XOR simulation. Two 32-byte fragments. Key = `BLAKE3(fragment_a XOR fragment_b)`. Neither fragment alone reveals the key. Debug output redacts fragments.
 
 ```rust
-pub struct MockDfcSigner {
+pub struct MockFragmentSigner {
     signer_id: String,
     fragment_a: [u8; 32],  // Debug: "[REDACTED]"
     fragment_b: [u8; 32],  // Debug: "[REDACTED]"
 }
 
-let signer = MockDfcSigner::for_testing();           // fragments [1u8;32], [2u8;32]
-let signer = MockDfcSigner::from_fragments(a, b, id); // explicit
+let signer = MockFragmentSigner::for_testing();           // fragments [1u8;32], [2u8;32]
+let signer = MockFragmentSigner::from_fragments(a, b, id); // explicit
 ```
 
-**Failable:** `FailableDfcSigner` -- wraps `MockDfcSigner`, injects 4 failure modes:
+**Failable:** `FailableFragmentSigner` -- wraps `MockFragmentSigner`, injects 4 failure modes:
 
 ```rust
 pub enum FailMode {
@@ -85,7 +85,7 @@ pub enum FailMode {
     RateLimited,               // sign/verify return rate limit error
 }
 
-let signer = FailableDfcSigner::new()
+let signer = FailableFragmentSigner::new()
     .with_timeout(Duration::from_secs(5));  // or
     .with_corrupted_signature();             // or
     .with_auth_failure();                    // or
@@ -452,8 +452,8 @@ let engine = MockScriptEngine::always_error("script timeout");
 
 | Boundary | Trait | Real Impl | Mock | Failable | Demo | Repo |
 |----------|-------|-----------|------|----------|------|------|
-| State/Secrets | `AkeylessClient` | `HttpAkeylessClient<H>` | `MockAkeylessClient` | -- | -- | tameshi |
-| State/Secrets | `MerkleRootSigner` | `LocalSigner`, `AkeylessDfcSigner` | `MockDfcSigner` | `FailableDfcSigner` | -- | tameshi |
+| State/Secrets | `SecretsManagerClient` | `HttpSecretsManagerClient<H>` | `MockSecretsManagerClient` | -- | -- | tameshi |
+| State/Secrets | `MerkleRootSigner` | `LocalSigner`, `RemoteFragmentSigner` | `MockFragmentSigner` | `FailableFragmentSigner` | -- | tameshi |
 | State/Secrets | `GlobalStateClient` | -- (planned) | `MockGlobalStateClient` | -- | -- | tameshi |
 | State/Secrets | `IacTestAttester` | -- (iac-test-runner) | `MockIacTestAttester` | -- | -- | tameshi |
 | I/O | `CommandRunner` | `SystemCommandRunner` | `MockCommandRunner` | -- | -- | tameshi |
@@ -490,7 +490,7 @@ This demonstrates the complete mock wiring for a fail-secure gate evaluation. Th
 
 ```rust
 use tameshi::hash::Blake3Hash;
-use tameshi::signing::{MockDfcSigner, FailableDfcSigner, MerkleRootSigner, SignedRoot};
+use tameshi::signing::{MockFragmentSigner, FailableFragmentSigner, MerkleRootSigner, SignedRoot};
 use tameshi::certification_artifact::compose_certification_artifact;
 use tameshi::ai_threat::{
     DemoAiThreatClient, AiThreatClient, AiDecision,
@@ -506,7 +506,7 @@ async fn fail_secure_gate_scenario() {
     // ---------------------------------------------------------------
     // 1. Create all mocks
     // ---------------------------------------------------------------
-    let signer = MockDfcSigner::for_testing();
+    let signer = MockFragmentSigner::for_testing();
     let ai_client = DemoAiThreatClient::new();
     let nix_collector = MockCollector::new(LayerType::Nix);
     let heartbeat = HeartbeatChain::new();
@@ -525,7 +525,7 @@ async fn fail_secure_gate_scenario() {
     );
 
     // ---------------------------------------------------------------
-    // 3. Sign with MockDfcSigner
+    // 3. Sign with MockFragmentSigner
     // ---------------------------------------------------------------
     let signed = signer.sign(&artifact.composed_root).await.unwrap();
     assert_eq!(signed.root, artifact.composed_root);
@@ -534,7 +534,7 @@ async fn fail_secure_gate_scenario() {
     // 4. Verify signature
     // ---------------------------------------------------------------
     let verified = signer.verify(&signed).await.unwrap();
-    assert!(verified, "MockDfcSigner should verify its own signatures");
+    assert!(verified, "MockFragmentSigner should verify its own signatures");
 
     // ---------------------------------------------------------------
     // 5. AI analysis: normal mode -> ALLOW
@@ -554,9 +554,9 @@ async fn fail_secure_gate_scenario() {
     assert_eq!(heartbeat.len(), 1);
 
     // ---------------------------------------------------------------
-    // 6. Inject signing failure: FailableDfcSigner with timeout
+    // 6. Inject signing failure: FailableFragmentSigner with timeout
     // ---------------------------------------------------------------
-    let failing_signer = FailableDfcSigner::new()
+    let failing_signer = FailableFragmentSigner::new()
         .with_timeout(std::time::Duration::from_secs(5));
     let sign_result = failing_signer.sign(&artifact.composed_root).await;
     assert!(sign_result.is_err(), "Timeout should cause sign to fail");
@@ -574,7 +574,7 @@ async fn fail_secure_gate_scenario() {
     // ---------------------------------------------------------------
     // 7. Inject corrupted signature: sign succeeds but verify fails
     // ---------------------------------------------------------------
-    let corrupt_signer = FailableDfcSigner::new()
+    let corrupt_signer = FailableFragmentSigner::new()
         .with_corrupted_signature();
     let corrupt_signed = corrupt_signer.sign(&artifact.composed_root).await.unwrap();
     let corrupt_verify = corrupt_signer.verify(&corrupt_signed).await.unwrap();
@@ -631,16 +631,16 @@ async fn fail_secure_gate_scenario() {
 
 ## 5. The Mocked Theater Demo Setup
 
-The Mocked Theater wires all mock implementations together for a live demonstration. Every component is running locally -- no Linux kernel, no K8s cluster, no Akeyless, no AI model.
+The Mocked Theater wires all mock implementations together for a live demonstration. Every component is running locally -- no Linux kernel, no K8s cluster, no the secrets manager, no AI model.
 
 ```rust
-use tameshi::signing::MockDfcSigner;
+use tameshi::signing::MockFragmentSigner;
 use tameshi::ai_threat::DemoAiThreatClient;
 use tameshi::collectors::mock::MockCollector;
 use tameshi::signature::LayerType;
 use tameshi::heartbeat::HeartbeatChain;
 use tameshi::forensics::ledger::{MerkleLedger, InMemoryLedgerStore};
-use tameshi::akeyless_client::MockAkeylessClient;
+use tameshi::secrets_client::MockSecretsManagerClient;
 use tameshi::global::MockGlobalStateClient;
 use tameshi::traits::FixedClock;
 
@@ -649,7 +649,7 @@ use kanshi::event_reader::MockEventReader;
 use kanshi::forensics_writer::InMemoryForensicsWriter;
 
 struct MockedTheater {
-    signer: MockDfcSigner,
+    signer: MockFragmentSigner,
     ai: DemoAiThreatClient,
     bpf: MockBpfLoader,
     events: MockEventReader,
@@ -657,7 +657,7 @@ struct MockedTheater {
     heartbeat: HeartbeatChain,
     ledger: MerkleLedger,
     ledger_store: InMemoryLedgerStore,
-    akeyless: MockAkeylessClient,
+    secrets_manager: MockSecretsManagerClient,
     global: MockGlobalStateClient,
     nix_collector: MockCollector,
     oci_collector: MockCollector,
@@ -666,7 +666,7 @@ struct MockedTheater {
 }
 
 fn setup_mocked_theater() -> MockedTheater {
-    let signer = MockDfcSigner::for_testing();
+    let signer = MockFragmentSigner::for_testing();
     let ai = DemoAiThreatClient::new();
     let mut bpf = MockBpfLoader::new();
     bpf.load().unwrap();  // "load" the mock BPF programs
@@ -675,7 +675,7 @@ fn setup_mocked_theater() -> MockedTheater {
     let heartbeat = HeartbeatChain::new();
     let ledger = MerkleLedger::new();
     let ledger_store = InMemoryLedgerStore::new();
-    let akeyless = MockAkeylessClient::new();
+    let secrets_manager = MockSecretsManagerClient::new();
     let global = MockGlobalStateClient::new();
     let nix_collector = MockCollector::new(LayerType::Nix);
     let oci_collector = MockCollector::new(LayerType::Oci);
@@ -691,7 +691,7 @@ fn setup_mocked_theater() -> MockedTheater {
         heartbeat,
         ledger,
         ledger_store,
-        akeyless,
+        secrets_manager,
         global,
         nix_collector,
         oci_collector,
@@ -715,10 +715,10 @@ Demo script:
 
 | Mock | Failure Mode | Method | Expected Behavior |
 |------|-------------|--------|-------------------|
-| `FailableDfcSigner` | Timeout | `.with_timeout(5s)` | `sign()` and `verify()` return `Err(HashError)`. Gate DENY. |
-| `FailableDfcSigner` | CorruptedSignature | `.with_corrupted_signature()` | `sign()` returns `Ok(corrupted)`. `verify()` returns `Ok(false)`. Gate DENY. |
-| `FailableDfcSigner` | AuthFailure | `.with_auth_failure()` | `sign()` and `verify()` return `Err(HashError)`. Gate DENY. |
-| `FailableDfcSigner` | RateLimited | `.with_rate_limited()` | `sign()` and `verify()` return `Err(HashError)`. Gate DENY. |
+| `FailableFragmentSigner` | Timeout | `.with_timeout(5s)` | `sign()` and `verify()` return `Err(HashError)`. Gate DENY. |
+| `FailableFragmentSigner` | CorruptedSignature | `.with_corrupted_signature()` | `sign()` returns `Ok(corrupted)`. `verify()` returns `Ok(false)`. Gate DENY. |
+| `FailableFragmentSigner` | AuthFailure | `.with_auth_failure()` | `sign()` and `verify()` return `Err(HashError)`. Gate DENY. |
+| `FailableFragmentSigner` | RateLimited | `.with_rate_limited()` | `sign()` and `verify()` return `Err(HashError)`. Gate DENY. |
 | `FailableAiThreatClient` | Timeout | `.with_timeout(500)` | `analyze_provenance()` returns `Err(Timeout(500))`. Merkle gate decides alone. |
 | `FailableAiThreatClient` | Unavailable | `.with_unavailable()` | `analyze_provenance()` returns `Err(Unavailable)`. Merkle gate decides alone. |
 | `FailableAiThreatClient` | Corrupted | `.with_corrupted()` | `analyze_provenance()` returns `Err(Unprocessable)`. Merkle gate decides alone. |
@@ -751,7 +751,7 @@ Demo script:
 |-------------------|------:|
 | `hash` (Blake3Hash, Sha256Hash, AttestationHasher) | 42 |
 | `merkle` (compose, verify, domain separation) | 28 |
-| `signing` (LocalSigner, MockDfcSigner, FailableDfcSigner, BreakGlassToken) | 61 |
+| `signing` (LocalSigner, MockFragmentSigner, FailableFragmentSigner, BreakGlassToken) | 61 |
 | `certification_artifact` (3-leaf Merkle, proof paths) | 38 |
 | `heartbeat` (HeartbeatChain, ConsistencyProof, S3Emitter) | 45 |
 | `gating` (GatingPolicy, evaluate_gate) | 32 |
@@ -760,7 +760,7 @@ Demo script:
 | `forensics` (MerkleLedger, LedgerIndex, query, blast_radius) | 67 |
 | `global` (GlobalStateRoot, MockGlobalStateClient) | 48 |
 | `traits` (CommandRunner, FileSystem, HttpClient, Clock) | 36 |
-| `akeyless_client` (MockAkeylessClient, HttpAkeylessClient) | 52 |
+| `secrets_client` (MockSecretsManagerClient, HttpSecretsManagerClient) | 52 |
 | `ai_threat` (MockAiThreatClient, FailableAiThreatClient, DemoAiThreatClient) | 58 |
 | `iac_attestation` (MockIacTestAttester) | 24 |
 | `compliance_api` (ComplianceQuery types) | 18 |

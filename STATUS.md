@@ -10,7 +10,7 @@
 
 | Component | LOC | Tests | Status |
 |-----------|-----|-------|--------|
-| BLAKE3 hashing (salted Akeyless, streaming file) | 698 | 39 | Complete |
+| BLAKE3 hashing (salted the secrets manager, streaming file) | 698 | 39 | Complete |
 | Merkle tree (rs_merkle, proofs, composition) | 573 | 21 | Complete |
 | Signatures (11 LayerTypes, MasterSignature, two-phase) | 514 | 25 | Complete |
 | Gating (policy evaluation, FluxCD/ArgoCD/Tatara gates) | 545 | 18 | Complete |
@@ -18,13 +18,13 @@
 | ProductCertification (7-stage builder) | 933 | — | Complete |
 | Collectors (13 implementations + mock + generic) | 3,917 | — | Complete |
 | Compliance (13 frameworks, 100+ controls) | 5,168 | — | Complete |
-| Akeyless client (HTTP + Mock, salted hashing) | 1,393 | — | Complete |
+| Secrets-manager client (HTTP + Mock, salted hashing) | 1,393 | — | Complete |
 | Traits (11 public: CommandRunner, FileSystem, HttpClient, Clock, etc.) | 1,187 | — | Complete |
 | Config (figment layered: defaults→YAML→env) | 294 | 7 | Complete |
 | Reporting, selftest, alerts, CI helpers | 2,336 | — | Complete |
 | Canonicalization (Strict/Logical, YAML/JSON/HCL/Raw) | ~350 | 40 | Complete |
 | Heartbeat chain (append-only BLAKE3, 4 emitters) | ~350 | 26 | Complete |
-| DFC signing + Break-Glass tokens | ~400 | 19 | Complete |
+| Fragment signing + Break-Glass tokens | ~400 | 19 | Complete |
 | **Total source** | **~30,161** | **518 lib** | |
 | Criterion benchmarks (8 suites) | 730 | — | Complete |
 | Proptest properties (15) | 264 | 15 | Complete |
@@ -37,7 +37,7 @@
 **Optimizations applied:**
 - `Blake3Hash::combine` — stack-allocated `[u8; 64]` (was heap Vec)
 - `blake3_file_async` — streaming 64KB buffers (was full file read)
-- Akeyless secret hashing — salted with `gateway_url:path:value` (rainbow-table proof)
+- Secrets-manager secret hashing — salted with `gateway_url:path:value` (rainbow-table proof)
 
 ---
 
@@ -178,7 +178,7 @@
 | CI/CD workflows | 13 |
 | Helm chart files | 49 |
 | Public traits | 38 |
-| Infrastructure layer types | 11 + 30 Akeyless target types |
+| Infrastructure layer types | 11 + 30 secrets-manager target types |
 | Compliance frameworks | 13 |
 
 ---
@@ -191,7 +191,7 @@
 |------|------|-------|--------|
 | Canonicalization layer (YAML/JSON/HCL/Raw, Strict/Logical) | tameshi | 40 | DONE |
 | Heartbeat chain (append-only BLAKE3, 4 emitters) | tameshi | 26 | DONE |
-| DFC signing + Break-Glass tokens | tameshi | 19 | DONE |
+| Fragment signing + Break-Glass tokens | tameshi | 19 | DONE |
 | Version-pinned attestations (VersionedSignature, history) | sekiban | 6 | DONE |
 | Multi-cluster federation (config, replicator, verifier) | sekiban | 22 | DONE |
 | kensa Prometheus metrics (MetricsRecorder trait) | kensa | 10 | DONE |
@@ -215,7 +215,7 @@
 | Performance cache (CachedCollector + CacheStats) | tameshi | 9 | DONE |
 | Domain separation (0x00 leaf, 0x01 node, RFC 9162) | tameshi | 10 | DONE |
 | SHA-256 FIPS hasher (Sha256Hasher) | tameshi | 6 | DONE |
-| Akeyless mock server (8 endpoints, builder pattern) | tameshi | 18 | DONE |
+| Secrets-manager mock server (8 endpoints, builder pattern) | tameshi | 18 | DONE |
 | Thread-safe RollbackRateLimiter (Mutex) | sekiban | +1 | DONE |
 | Thread-safe PolicyEngine (RwLock) | kanshi | +5 | DONE |
 | Config validation (map sizes, policy) | kanshi | +3 | DONE |
@@ -229,7 +229,7 @@
 | Item | Repo | Priority |
 |------|------|----------|
 | kanshi eBPF programs (Linux-only, aya-rs) | kanshi | P0 |
-| Akeyless DFC API integration (real gateway calls) | tameshi | P0 |
+| remote Fragment API integration (real gateway calls) | tameshi | P0 |
 | K8s auth sub-claims for binary hash | tameshi | P0 |
 | mTLS + certificate pinning (actual reqwest wiring) | tameshi | P1 |
 | S3/Splunk log forwarding emitter | tameshi | P1 |
@@ -330,7 +330,7 @@ StdoutEmitter, FileEmitter, HttpEmitter, S3Emitter
 - inshou: emit on every `run_gate_with()` call
 - kanshi: emit on every LSM hook verification
 
-### 5. DFC Signing (tameshi + kensa)
+### 5. Fragment Signing (tameshi + kensa)
 
 **Where:** New `tameshi/src/signing.rs` module
 
@@ -341,11 +341,11 @@ trait MerkleRootSigner: Send + Sync
   async fn verify(&self, signed: &SignedRoot) -> Result<bool>
 
 struct LocalSigner { key_path: PathBuf }           -- Ed25519 file (dev)
-struct AkeylessDfcSigner { gateway_url, key_name }  -- DFC API (prod)
+struct RemoteFragmentSigner { gateway_url, key_name }  -- Fragment API (prod)
 struct SignedRoot { root, signature, algorithm, signer_id, signed_at }
 ```
 
-**Akeyless API integration:** Call the DFC signing endpoint. The Akeyless Gateway coordinates fragment holders for threshold signing. The full key never exists in memory.
+**Secrets-manager API integration:** Call the Fragment signing endpoint. The secrets-manager Gateway coordinates fragment holders for threshold signing. The full key never exists in memory.
 
 ---
 
@@ -357,7 +357,7 @@ Week 3-4:  Circuit breaker + OTel + kensa metrics ── unblocks monitoring
 Week 5-8:  kanshi eBPF LSM hooks ──────────────── unblocks runtime verification
 Week 6-8:  Heartbeat chain ────────────────────── unblocks CIRCIA compliance
 Week 9-12: kanshi Helm + sekiban integration ──── unblocks full pipeline
-Week 13-16: DFC signing ──────────────────────── unblocks key security
+Week 13-16: Fragment signing ──────────────────────── unblocks key security
 Week 17-18: Cilium integration ────────────────── unblocks network correlation
 Week 19-24: Federation + compliance expansion ─── unblocks enterprise scale
 ```
@@ -383,15 +383,15 @@ Week 19-24: Federation + compliance expansion ─── unblocks enterprise scal
 
 ### Pillar 3: The Identity Binding
 
-**Test:** Request an Akeyless secret from a pod whose Merkle leaf doesn't match the DFC policy.
-**Expected:** Akeyless refuses to release the secret — K8s auth sub-claim mismatch.
-**Requires:** K8s auth method with binary hash sub-claims, Akeyless Access Roles.
+**Test:** Request a secrets-manager secret from a pod whose Merkle leaf doesn't match the Fragment policy.
+**Expected:** secrets-manager refuses to release the secret — K8s auth sub-claim mismatch.
+**Requires:** K8s auth method with binary hash sub-claims, secrets-manager Access Roles.
 
 ### Pillar 4: The Evidence Trail
 
 **Test:** Every verification attempt (pass or fail) must generate a signed heartbeat entry.
 **Expected:** 72-hour CIRCIA report can be generated from the heartbeat chain at any time.
-**Requires:** Heartbeat chain (heartbeat.rs), DFC-signed entries, log forwarding to immutable storage.
+**Requires:** Heartbeat chain (heartbeat.rs), Fragment-signed entries, log forwarding to immutable storage.
 
 ---
 
@@ -400,7 +400,7 @@ Week 19-24: Federation + compliance expansion ─── unblocks enterprise scal
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
 | kanshi requires Linux kernel 5.15+ with CONFIG_BPF_LSM=y | Some older K8s distros may not support | Verify target kernel configs before deployment |
-| DFC signing adds latency to kensa certification | Each signing request is a network round-trip | Cache signed roots, batch signing requests |
+| Fragment signing adds latency to kensa certification | Each signing request is a network round-trip | Cache signed roots, batch signing requests |
 | Heartbeat chain at high admission volume generates large logs | Storage cost, query latency | Configurable emission interval, log rotation, compact binary format |
 | Canonicalization for Nix requires rnix parser | Parser may not handle all Nix edge cases | Fallback to Strict mode on parse failure |
 | JIT languages (Node/Java) cannot be fully verified by kanshi | Reduced security guarantee for interpreted workloads | Document limitation, combine with read-only rootfs + Seccomp |

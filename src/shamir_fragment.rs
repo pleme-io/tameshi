@@ -1,16 +1,16 @@
-//! Shamir Secret Sharing for threshold DFC attestation.
+//! Shamir Secret Sharing for threshold Fragment attestation.
 //!
 //! Implements (k, n) threshold secret sharing over GF(256) for splitting
 //! signing keys (or Merkle roots) into n shares where any k shares can
 //! reconstruct the original, but k-1 shares reveal nothing.
 //!
-//! This upgrades the tameshi signing model from 2-of-2 XOR (MockDfcSigner)
-//! to k-of-n threshold (ShamirDfcSigner). Combined with the fragment
+//! This upgrades the tameshi signing model from 2-of-2 XOR (MockFragmentSigner)
+//! to k-of-n threshold (ShamirFragmentSigner). Combined with the fragment
 //! extension theorem, the Merkle root can be an additional share.
 //!
 //! # Reconstructs the key
 //!
-//! [`ShamirDfcSigner`] interpolates the whole signing key in memory on every
+//! [`ShamirFragmentSigner`] interpolates the whole signing key in memory on every
 //! sign and every verify. The shares are k-of-n at rest only. For a key that
 //! must never exist as one value in any memory, use
 //! [`ThresholdSigner`](crate::threshold::signing::ThresholdSigner): FROST
@@ -214,10 +214,10 @@ pub fn reconstruct(shares: &[Share]) -> Vec<u8> {
 }
 
 // =========================================================================
-// Shamir DFC Signer
+// Shamir Fragment Signer
 // =========================================================================
 
-/// Threshold DFC signer using Shamir Secret Sharing.
+/// Threshold Fragment signer using Shamir Secret Sharing.
 ///
 /// The signing key is split into n shares with threshold k. Any k shares
 /// can reconstruct the key and produce a valid signature. k-1 shares
@@ -227,22 +227,22 @@ pub fn reconstruct(shares: &[Share]) -> Vec<u8> {
 ///
 /// `sign` and `verify` interpolate the whole 32-byte key from `k` shares in
 /// this process's memory, then MAC with BLAKE3 (tagged
-/// [`SigningAlgorithm::MockDfc`]). It is kept, and nothing selects it by
+/// [`SigningAlgorithm::MockFragment`]). It is kept, and nothing selects it by
 /// default. [`ThresholdSigner`](crate::threshold::signing::ThresholdSigner)
 /// is the signer that never assembles the key, and the default for new
 /// fragments.
 ///
 /// This implements the `MerkleRootSigner` trait so it can be used as a
-/// drop-in replacement for `MockDfcSigner` or `AkeylessDfcSigner`.
-pub struct ShamirDfcSigner {
+/// drop-in replacement for `MockFragmentSigner` or `RemoteFragmentSigner`.
+pub struct ShamirFragmentSigner {
     signer_id: String,
     shares: Vec<Share>,
     threshold: u8,
 }
 
-impl std::fmt::Debug for ShamirDfcSigner {
+impl std::fmt::Debug for ShamirFragmentSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ShamirDfcSigner")
+        f.debug_struct("ShamirFragmentSigner")
             .field("signer_id", &self.signer_id)
             .field("threshold", &self.threshold)
             .field(
@@ -253,7 +253,7 @@ impl std::fmt::Debug for ShamirDfcSigner {
     }
 }
 
-impl ShamirDfcSigner {
+impl ShamirFragmentSigner {
     /// Create a signer from pre-split shares.
     #[must_use]
     pub fn from_shares(shares: Vec<Share>, threshold: u8, signer_id: &str) -> Self {
@@ -286,9 +286,9 @@ impl ShamirDfcSigner {
 
     /// Reconstruct the whole signing key from the available shares, in memory.
     fn reconstruct_key(&self) -> [u8; 32] {
-        let secret = reconstruct(&self.shares[..self.threshold as usize]);
+        let recovered = reconstruct(&self.shares[..self.threshold as usize]);
         let mut key = [0u8; 32];
-        key.copy_from_slice(&secret);
+        key.copy_from_slice(&recovered);
         key
     }
 
@@ -305,14 +305,14 @@ impl ShamirDfcSigner {
     }
 }
 
-impl MerkleRootSigner for ShamirDfcSigner {
+impl MerkleRootSigner for ShamirFragmentSigner {
     async fn sign(&self, root: &Blake3Hash) -> crate::error::Result<SignedRoot> {
         let key = self.reconstruct_key();
         let signature = blake3::keyed_hash(&key, &root.0).as_bytes().to_vec();
         Ok(SignedRoot {
             root: root.clone(),
             signature,
-            algorithm: SigningAlgorithm::MockDfc, // reuse enum variant
+            algorithm: SigningAlgorithm::MockFragment, // reuse enum variant
             signer_id: self.signer_id.clone(),
             signed_at: Utc::now(),
         })
@@ -453,11 +453,11 @@ mod tests {
         assert_ne!(s1[0].y, s2[0].y);
     }
 
-    // -- ShamirDfcSigner --
+    // -- ShamirFragmentSigner --
 
     #[tokio::test]
     async fn shamir_signer_sign_verify_roundtrip() {
-        let signer = ShamirDfcSigner::for_testing();
+        let signer = ShamirFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"test-root");
         let signed = signer.sign(&root).await.unwrap();
         assert!(signer.verify(&signed).await.unwrap());
@@ -465,7 +465,7 @@ mod tests {
 
     #[tokio::test]
     async fn shamir_signer_wrong_root_fails() {
-        let signer = ShamirDfcSigner::for_testing();
+        let signer = ShamirFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"correct-root");
         let mut signed = signer.sign(&root).await.unwrap();
         signed.root = Blake3Hash::digest(b"tampered-root");
@@ -474,7 +474,7 @@ mod tests {
 
     #[tokio::test]
     async fn shamir_signer_deterministic() {
-        let signer = ShamirDfcSigner::for_testing();
+        let signer = ShamirFragmentSigner::for_testing();
         let root = Blake3Hash::digest(b"determinism-test");
         let sig1 = signer.sign(&root).await.unwrap();
         let sig2 = signer.sign(&root).await.unwrap();
@@ -487,14 +487,14 @@ mod tests {
         let all_shares = split(&key, 2, 5);
 
         // Signer with shares 1,3 (any 2 of 5)
-        let signer_a = ShamirDfcSigner::from_shares(
+        let signer_a = ShamirFragmentSigner::from_shares(
             vec![all_shares[0].clone(), all_shares[2].clone()],
             2,
             "signer-a",
         );
 
         // Signer with shares 2,4 (different 2 of 5)
-        let signer_b = ShamirDfcSigner::from_shares(
+        let signer_b = ShamirFragmentSigner::from_shares(
             vec![all_shares[1].clone(), all_shares[3].clone()],
             2,
             "signer-b",
@@ -518,7 +518,7 @@ mod tests {
         let all_shares = split(&key, 3, 5);
 
         // Signer with all 5 shares, threshold 3 (correct)
-        let correct_signer = ShamirDfcSigner::from_shares(all_shares.clone(), 3, "correct");
+        let correct_signer = ShamirFragmentSigner::from_shares(all_shares.clone(), 3, "correct");
 
         // Signer with only 2 shares but claiming threshold 2
         // (reconstructing with fewer shares gives a DIFFERENT key)
@@ -540,14 +540,14 @@ mod tests {
 
     #[test]
     fn for_testing_deterministic() {
-        let s1 = ShamirDfcSigner::for_testing();
-        let s2 = ShamirDfcSigner::for_testing();
+        let s1 = ShamirFragmentSigner::for_testing();
+        let s2 = ShamirFragmentSigner::for_testing();
         assert_eq!(s1.reconstruct_key(), s2.reconstruct_key());
     }
 
     #[test]
     fn share_count_and_threshold() {
-        let signer = ShamirDfcSigner::for_testing();
+        let signer = ShamirFragmentSigner::for_testing();
         assert_eq!(signer.share_count(), 3);
         assert_eq!(signer.threshold(), 2);
     }

@@ -16,7 +16,7 @@ INV-1:  If BPF allow_map lacks the binary's BLAKE3 hash, execution yields DENY.
 INV-2:  If BPF revocation_list contains the hash, execution yields DENY (revocation > allow).
 INV-3:  On any external service failure (timeout, 500, auth), system defaults to FAIL-SECURE (deny).
 INV-4:  CertificationArtifact verification failure -> gate DENY.
-INV-5:  MockDfcSigner with wrong fragments -> verify returns false.
+INV-5:  MockFragmentSigner with wrong fragments -> verify returns false.
 INV-6:  HeartbeatChain records EVERY decision (ALLOW and DENY).
 INV-7:  HeartbeatChain tampering is detectable (verify_integrity fails).
 INV-8:  AI DENY overrides Merkle gate ALLOW.
@@ -34,7 +34,7 @@ Every row is a distinct test variant. The combination of states across the
 six columns is unique, and the Expected Decision column is the single ground
 truth assertion.
 
-| ID | Variant | Hash State | Cert State | AI State | DFC State | BPF State | Expected Decision | Invariants Tested |
+| ID | Variant | Hash State | Cert State | AI State | Fragment State | BPF State | Expected Decision | Invariants Tested |
 |----|---------|-----------|------------|----------|-----------|-----------|-------------------|-------------------|
 | V-01 | Happy path (all valid) | Valid BLAKE3 | Valid 3-leaf artifact | ALLOW (0.98 conf) | Sign + verify OK | Hash in allow_map | **ALLOW** | INV-6, INV-12 |
 | V-02 | Hash not in allow map | Valid BLAKE3 | Valid artifact | ALLOW | Sign OK | Hash absent | **DENY** | INV-1, INV-6 |
@@ -43,9 +43,9 @@ truth assertion.
 | V-05 | AI detects 94.2% breach | Valid BLAKE3 | Valid artifact | DENY (0.942 similarity) | Sign OK | Hash in allow_map | **DENY** | INV-8, INV-6 |
 | V-06 | AI WARN + valid gate | Valid BLAKE3 | Valid artifact | WARN (0.31 similarity) | Sign OK | Hash in allow_map | **ALLOW** (logged) | INV-6, INV-9 |
 | V-07 | TOCTOU: hash changes | Hash A at admission, Hash B at exec | Valid artifact | ALLOW | Sign OK | Hash A in map, B absent | **DENY** (exec phase) | INV-1, INV-6 |
-| V-08 | DFC signer timeout | Valid BLAKE3 | Valid artifact | ALLOW | Timeout(5s) | N/A | **DENY** | INV-3, INV-6 |
-| V-09 | DFC corrupted signature | Valid BLAKE3 | Valid artifact | ALLOW | CorruptedSignature | N/A | **DENY** (verify fails) | INV-5, INV-6 |
-| V-10 | DFC auth failure | Valid BLAKE3 | Valid artifact | ALLOW | AuthFailure | N/A | **DENY** | INV-3, INV-6 |
+| V-08 | Fragment signer timeout | Valid BLAKE3 | Valid artifact | ALLOW | Timeout(5s) | N/A | **DENY** | INV-3, INV-6 |
+| V-09 | Fragment corrupted signature | Valid BLAKE3 | Valid artifact | ALLOW | CorruptedSignature | N/A | **DENY** (verify fails) | INV-5, INV-6 |
+| V-10 | Fragment auth failure | Valid BLAKE3 | Valid artifact | ALLOW | AuthFailure | N/A | **DENY** | INV-3, INV-6 |
 | V-11 | AI timeout, gate decides | Valid BLAKE3 | Valid artifact | Timeout(500ms) | Sign OK | Hash in allow_map | **ALLOW** (AI fail-open) | INV-9, INV-6 |
 | V-12 | All services down | Valid BLAKE3 | No artifact | Unavailable | Timeout | N/A | **DENY** | INV-3, INV-6 |
 | V-13 | Tampered CertificationArtifact | Valid BLAKE3 | artifact_hash mutated | ALLOW | Sign OK | Hash in allow_map | **DENY** | INV-4, INV-7 |
@@ -72,7 +72,7 @@ use tameshi::certification_artifact::{
     compose_certification_artifact, verify_certification_artifact,
 };
 use tameshi::signing::{
-    BreakGlassToken, FailableDfcSigner, LocalSigner, MerkleRootSigner, MockDfcSigner,
+    BreakGlassToken, FailableFragmentSigner, LocalSigner, MerkleRootSigner, MockFragmentSigner,
 };
 use tameshi::gating::{evaluate_gate, evaluate_gate_with_clock, GatingPolicy};
 use tameshi::heartbeat::{
@@ -104,7 +104,7 @@ Every test function follows the pattern:
 v{NN}_{snake_case_variant_description}
 ```
 
-Examples: `v01_happy_path_all_valid_allow`, `v08_dfc_timeout_deny`.
+Examples: `v01_happy_path_all_valid_allow`, `v08_fragment_timeout_deny`.
 
 ### Async vs Sync
 
@@ -136,7 +136,7 @@ assert!(!decision.allowed, "INV-1: hash not in allow map must DENY");
 ### INV-3: Service failure -> fail-secure
 
 ```rust
-let signer = FailableDfcSigner::new().with_timeout(Duration::from_secs(5));
+let signer = FailableFragmentSigner::new().with_timeout(Duration::from_secs(5));
 let result = signer.sign(&root).await;
 assert!(result.is_err(), "INV-3: external failure must error");
 // Caller interprets error as DENY (fail-secure)
@@ -150,11 +150,11 @@ artifact.artifact_hash = Blake3Hash::digest(b"tampered");
 assert!(!verify_certification_artifact(&artifact), "INV-4: tampered artifact must fail");
 ```
 
-### INV-5: Wrong DFC fragments -> verify false
+### INV-5: Wrong key fragments -> verify false
 
 ```rust
-let signer_a = MockDfcSigner::from_fragments([1u8; 32], [2u8; 32], "a");
-let signer_b = MockDfcSigner::from_fragments([3u8; 32], [4u8; 32], "b");
+let signer_a = MockFragmentSigner::from_fragments([1u8; 32], [2u8; 32], "a");
+let signer_b = MockFragmentSigner::from_fragments([3u8; 32], [4u8; 32], "b");
 let signed = signer_a.sign(&root).await.unwrap();
 let verified = signer_b.verify(&signed).await.unwrap();
 assert!(!verified, "INV-5: wrong fragments must not verify");

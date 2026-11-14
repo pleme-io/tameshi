@@ -1,42 +1,42 @@
-//! Akeyless secret management collector.
+//! Secrets-manager secret management collector.
 //!
-//! Produces a [`LayerSignature`] from an [`AkeylessSecretAttestation`],
+//! Produces a [`LayerSignature`] from an [`SecretAttestation`],
 //! recording which secrets were accessed and computing a deterministic
-//! hash for the Akeyless compliance dimension.
+//! hash for the secrets-manager compliance dimension.
 //!
 //! Two collector variants are provided:
 //!
-//! - [`AkeylessCollector`] — takes a pre-built attestation (simple/offline).
-//! - [`LiveAkeylessCollector`] — uses an [`AkeylessClient`] to authenticate
+//! - [`SecretsManagerCollector`] — takes a pre-built attestation (simple/offline).
+//! - [`LiveSecretsManagerCollector`] — uses an [`SecretsManagerClient`] to authenticate
 //!   and fetch secrets from a live gateway.
 
-use crate::akeyless_client::AkeylessClient;
-use crate::compliance::akeyless::{AkeylessSecretAttestation, compute_akeyless_hash};
+use crate::secrets_client::SecretsManagerClient;
+use crate::compliance::secrets::{SecretAttestation, compute_secret_hash};
 use crate::error::{Result, TameshiError};
 use crate::signature::{InputHash, LayerSignature, LayerType, SignatureMetadata};
 
 use super::traits::LayerCollector;
 
-/// Collector for Akeyless secret management attestation.
+/// Collector for secrets-manager secret management attestation.
 ///
-/// Takes a pre-built [`AkeylessSecretAttestation`] and produces a
+/// Takes a pre-built [`SecretAttestation`] and produces a
 /// [`LayerSignature`] with hashes of all accessed secrets.
-pub struct AkeylessCollector {
+pub struct SecretsManagerCollector {
     /// The attestation data to collect from.
-    pub attestation: AkeylessSecretAttestation,
+    pub attestation: SecretAttestation,
 }
 
-impl AkeylessCollector {
-    /// Create a new Akeyless collector from an attestation.
+impl SecretsManagerCollector {
+    /// Create a new secrets-manager collector from an attestation.
     #[must_use]
-    pub fn new(attestation: AkeylessSecretAttestation) -> Self {
+    pub fn new(attestation: SecretAttestation) -> Self {
         Self { attestation }
     }
 }
 
-impl LayerCollector for AkeylessCollector {
+impl LayerCollector for SecretsManagerCollector {
     async fn collect(&self) -> Result<LayerSignature> {
-        let hash = compute_akeyless_hash(&self.attestation);
+        let hash = compute_secret_hash(&self.attestation);
         let inputs: Vec<InputHash> = self
             .attestation
             .secrets_accessed
@@ -54,7 +54,7 @@ impl LayerCollector for AkeylessCollector {
             metadata: SignatureMetadata {
                 computed_at: chrono::Utc::now(),
                 collector_version: env!("CARGO_PKG_VERSION").to_string(),
-                source: format!("akeyless:{}", self.attestation.gateway_url),
+                source: format!("secrets_manager:{}", self.attestation.gateway_url),
                 environment: None,
             },
             inputs,
@@ -62,24 +62,24 @@ impl LayerCollector for AkeylessCollector {
     }
 
     fn layer_type(&self) -> LayerType {
-        LayerType::Akeyless
+        LayerType::SecretsManager
     }
 }
 
 // ---------------------------------------------------------------------------
-// LiveAkeylessCollector
+// LiveSecretsManagerCollector
 // ---------------------------------------------------------------------------
 
-/// Collector that uses a live [`AkeylessClient`] to build attestations.
+/// Collector that uses a live [`SecretsManagerClient`] to build attestations.
 ///
 /// Authenticates to the gateway, fetches and hashes the specified secrets,
 /// and produces a [`LayerSignature`] from the result.
-pub struct LiveAkeylessCollector<C: AkeylessClient> {
+pub struct LiveSecretsManagerCollector<C: SecretsManagerClient> {
     client: C,
     secret_paths: Vec<String>,
 }
 
-impl<C: AkeylessClient> LiveAkeylessCollector<C> {
+impl<C: SecretsManagerClient> LiveSecretsManagerCollector<C> {
     /// Create a new live collector targeting the given secret paths.
     #[must_use]
     pub fn new(client: C, secret_paths: Vec<String>) -> Self {
@@ -90,18 +90,18 @@ impl<C: AkeylessClient> LiveAkeylessCollector<C> {
     }
 }
 
-impl<C: AkeylessClient> LayerCollector for LiveAkeylessCollector<C> {
+impl<C: SecretsManagerClient> LayerCollector for LiveSecretsManagerCollector<C> {
     async fn collect(&self) -> Result<LayerSignature> {
         let attestation = self
             .client
             .build_attestation(&self.secret_paths)
             .await
             .map_err(|e| TameshiError::CollectorError {
-                layer: "akeyless".to_string(),
+                layer: "secrets_manager".to_string(),
                 message: format!("{e}"),
             })?;
 
-        let hash = compute_akeyless_hash(&attestation);
+        let hash = compute_secret_hash(&attestation);
         let inputs: Vec<InputHash> = attestation
             .secrets_accessed
             .iter()
@@ -118,7 +118,7 @@ impl<C: AkeylessClient> LayerCollector for LiveAkeylessCollector<C> {
             metadata: SignatureMetadata {
                 computed_at: chrono::Utc::now(),
                 collector_version: env!("CARGO_PKG_VERSION").to_string(),
-                source: format!("akeyless:{}", attestation.gateway_url),
+                source: format!("secrets_manager:{}", attestation.gateway_url),
                 environment: None,
             },
             inputs,
@@ -126,33 +126,33 @@ impl<C: AkeylessClient> LayerCollector for LiveAkeylessCollector<C> {
     }
 
     fn layer_type(&self) -> LayerType {
-        LayerType::Akeyless
+        LayerType::SecretsManager
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compliance::akeyless::{
-        AkeylessAuthMethod, AkeylessSecretAccess, AkeylessSecretType,
+    use crate::compliance::secrets::{
+        SecretAuthMethod, SecretAccess, SecretKind,
     };
     use crate::hash::Blake3Hash;
 
-    fn sample_attestation() -> AkeylessSecretAttestation {
-        AkeylessSecretAttestation {
-            gateway_url: "https://gw.akeyless.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::K8s,
+    fn sample_attestation() -> SecretAttestation {
+        SecretAttestation {
+            gateway_url: "https://gw.secrets.example.com".to_string(),
+            auth_method: SecretAuthMethod::K8s,
             secrets_accessed: vec![
-                AkeylessSecretAccess {
+                SecretAccess {
                     path: "/production/db/password".to_string(),
-                    secret_type: AkeylessSecretType::Static,
+                    secret_type: SecretKind::Static,
                     value_hash: Blake3Hash::digest(b"secret-value-1"),
                     accessed_at: chrono::Utc::now(),
                     version: Some(1),
                 },
-                AkeylessSecretAccess {
+                SecretAccess {
                     path: "/production/api/key".to_string(),
-                    secret_type: AkeylessSecretType::RotatedSecret,
+                    secret_type: SecretKind::RotatedSecret,
                     value_hash: Blake3Hash::digest(b"secret-value-2"),
                     accessed_at: chrono::Utc::now(),
                     version: Some(3),
@@ -164,70 +164,70 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn akeyless_collector_produces_signature() {
+    async fn secrets_manager_collector_produces_signature() {
         let attestation = sample_attestation();
-        let collector = AkeylessCollector::new(attestation);
+        let collector = SecretsManagerCollector::new(attestation);
         let sig = collector.collect().await.unwrap();
 
-        assert_eq!(sig.layer, LayerType::Akeyless);
+        assert_eq!(sig.layer, LayerType::SecretsManager);
         assert_eq!(sig.inputs.len(), 2);
         assert_eq!(sig.inputs[0].name, "/production/db/password");
         assert_eq!(sig.inputs[1].name, "/production/api/key");
-        assert!(sig.metadata.source.starts_with("akeyless:"));
+        assert!(sig.metadata.source.starts_with("secrets_manager:"));
     }
 
     #[tokio::test]
-    async fn akeyless_collector_deterministic() {
+    async fn secrets_manager_collector_deterministic() {
         let attestation = sample_attestation();
-        let collector = AkeylessCollector::new(attestation);
+        let collector = SecretsManagerCollector::new(attestation);
         let sig1 = collector.collect().await.unwrap();
         let sig2 = collector.collect().await.unwrap();
         assert_eq!(sig1.hash, sig2.hash);
     }
 
     #[test]
-    fn akeyless_collector_layer_type() {
+    fn secrets_manager_collector_layer_type() {
         let attestation = sample_attestation();
-        let collector = AkeylessCollector::new(attestation);
-        assert_eq!(collector.layer_type(), LayerType::Akeyless);
+        let collector = SecretsManagerCollector::new(attestation);
+        assert_eq!(collector.layer_type(), LayerType::SecretsManager);
     }
 
     // -----------------------------------------------------------------------
-    // LiveAkeylessCollector tests
+    // LiveSecretsManagerCollector tests
     // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn live_collector_produces_valid_layer_signature() {
-        use crate::akeyless_client::MockAkeylessClient;
+        use crate::secrets_client::MockSecretsManagerClient;
 
-        let client = MockAkeylessClient::new();
-        let collector = LiveAkeylessCollector::new(client, vec!["/mock/secret".to_string()]);
+        let client = MockSecretsManagerClient::new();
+        let collector = LiveSecretsManagerCollector::new(client, vec!["/mock/secret".to_string()]);
         let sig = collector.collect().await.unwrap();
 
-        assert_eq!(sig.layer, LayerType::Akeyless);
-        assert!(sig.metadata.source.starts_with("akeyless:"));
+        assert_eq!(sig.layer, LayerType::SecretsManager);
+        assert!(sig.metadata.source.starts_with("secrets_manager:"));
         assert!(!sig.inputs.is_empty());
     }
 
     #[test]
     fn live_collector_layer_type() {
-        use crate::akeyless_client::MockAkeylessClient;
+        use crate::secrets_client::MockSecretsManagerClient;
 
-        let client = MockAkeylessClient::new();
-        let collector = LiveAkeylessCollector::new(client, vec!["/mock/secret".to_string()]);
-        assert_eq!(collector.layer_type(), LayerType::Akeyless);
+        let client = MockSecretsManagerClient::new();
+        let collector = LiveSecretsManagerCollector::new(client, vec!["/mock/secret".to_string()]);
+        assert_eq!(collector.layer_type(), LayerType::SecretsManager);
     }
 
     #[tokio::test]
     async fn live_collector_different_secrets_produce_different_hashes() {
-        use crate::akeyless_client::MockAkeylessClient;
+        use crate::secrets_client::MockSecretsManagerClient;
 
-        let att1 = AkeylessSecretAttestation {
+        let att1 = SecretAttestation {
             gateway_url: "https://gw.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::ApiKey,
-            secrets_accessed: vec![AkeylessSecretAccess {
+            auth_method: SecretAuthMethod::ApiKey,
+            secrets_accessed: vec![SecretAccess {
                 path: "/secret/a".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"value-a"),
                 accessed_at: chrono::Utc::now(),
                 version: None,
@@ -235,12 +235,12 @@ mod tests {
             gateway_certificate_hash: Blake3Hash::digest(b"cert"),
             session_hash: Blake3Hash::digest(b"session"),
         };
-        let att2 = AkeylessSecretAttestation {
+        let att2 = SecretAttestation {
             gateway_url: "https://gw.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::ApiKey,
-            secrets_accessed: vec![AkeylessSecretAccess {
+            auth_method: SecretAuthMethod::ApiKey,
+            secrets_accessed: vec![SecretAccess {
                 path: "/secret/b".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"value-b"),
                 accessed_at: chrono::Utc::now(),
                 version: None,
@@ -249,11 +249,11 @@ mod tests {
             session_hash: Blake3Hash::digest(b"session"),
         };
 
-        let c1 = MockAkeylessClient::with_attestation(att1);
-        let c2 = MockAkeylessClient::with_attestation(att2);
+        let c1 = MockSecretsManagerClient::with_attestation(att1);
+        let c2 = MockSecretsManagerClient::with_attestation(att2);
 
-        let col1 = LiveAkeylessCollector::new(c1, vec!["/secret/a".to_string()]);
-        let col2 = LiveAkeylessCollector::new(c2, vec!["/secret/b".to_string()]);
+        let col1 = LiveSecretsManagerCollector::new(c1, vec!["/secret/a".to_string()]);
+        let col2 = LiveSecretsManagerCollector::new(c2, vec!["/secret/b".to_string()]);
 
         let sig1 = col1.collect().await.unwrap();
         let sig2 = col2.collect().await.unwrap();

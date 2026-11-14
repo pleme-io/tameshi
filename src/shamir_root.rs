@@ -5,7 +5,7 @@
 //! ensuring no single entity can forge an attestation.
 
 use crate::hash::Blake3Hash;
-use crate::shamir_dfc::{Share, reconstruct, split, split_deterministic};
+use crate::shamir_fragment::{Share, reconstruct, split, split_deterministic};
 
 /// A Shamir-split attestation root.
 #[derive(Clone, Debug)]

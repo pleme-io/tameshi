@@ -15,12 +15,12 @@ use tameshi::certification::{
     BuildAttestation, ChartAttestation, DependencyHash, DeploymentAttestation, ImageAttestation,
     ProductCertification, SourceAttestation, relaxed_staging_policy, strict_production_policy,
 };
-use tameshi::collectors::akeyless::AkeylessCollector;
+use tameshi::collectors::secrets_manager::SecretsManagerCollector;
 use tameshi::collectors::mock::MockCollector;
 use tameshi::collectors::traits::LayerCollector;
-use tameshi::compliance::akeyless::{
-    AkeylessAuthMethod, AkeylessSecretAccess, AkeylessSecretAttestation, AkeylessSecretType,
-    compute_akeyless_hash,
+use tameshi::compliance::secrets::{
+    SecretAuthMethod, SecretAccess, SecretAttestation, SecretKind,
+    compute_secret_hash,
 };
 use tameshi::compliance::cve::{
     ScanTarget, ScanTargetType, VulnSummary, VulnerabilityScan, VulnerabilityScanner,
@@ -152,21 +152,21 @@ fn make_compliance() -> ComplianceAttestation {
     }
 }
 
-fn sample_akeyless_attestation() -> AkeylessSecretAttestation {
-    AkeylessSecretAttestation {
-        gateway_url: "https://gw.akeyless.example.com".to_string(),
-        auth_method: AkeylessAuthMethod::K8s,
+fn sample_secrets_manager_attestation() -> SecretAttestation {
+    SecretAttestation {
+        gateway_url: "https://gw.secrets.example.com".to_string(),
+        auth_method: SecretAuthMethod::K8s,
         secrets_accessed: vec![
-            AkeylessSecretAccess {
+            SecretAccess {
                 path: "/production/db-password".to_string(),
-                secret_type: AkeylessSecretType::DynamicDatabase,
+                secret_type: SecretKind::DynamicDatabase,
                 value_hash: Blake3Hash::digest(b"secret-db-password-value"),
                 accessed_at: Utc::now(),
                 version: Some(3),
             },
-            AkeylessSecretAccess {
+            SecretAccess {
                 path: "/production/api-key".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"secret-api-key-value"),
                 accessed_at: Utc::now(),
                 version: Some(1),
@@ -255,20 +255,20 @@ async fn full_attestation_chain() {
     let oci_collector = MockCollector::new(LayerType::Oci);
     let helm_collector = MockCollector::new(LayerType::Helm);
     let k8s_collector = MockCollector::new(LayerType::Kubernetes);
-    let akeyless_collector = AkeylessCollector::new(sample_akeyless_attestation());
+    let secrets_manager_collector = SecretsManagerCollector::new(sample_secrets_manager_attestation());
 
     let nix_sig = nix_collector.collect().await.unwrap();
     let oci_sig = oci_collector.collect().await.unwrap();
     let helm_sig = helm_collector.collect().await.unwrap();
     let k8s_sig = k8s_collector.collect().await.unwrap();
-    let akeyless_sig = akeyless_collector.collect().await.unwrap();
+    let secrets_manager_sig = secrets_manager_collector.collect().await.unwrap();
 
     let signatures = vec![
         nix_sig.clone(),
         oci_sig.clone(),
         helm_sig.clone(),
         k8s_sig.clone(),
-        akeyless_sig.clone(),
+        secrets_manager_sig.clone(),
     ];
     assert_eq!(signatures.len(), 5);
 
@@ -325,12 +325,12 @@ async fn full_attestation_chain() {
         );
     }
 
-    // 10. Akeyless in the chain — verify it's present and non-trivial
-    assert_eq!(akeyless_sig.layer, LayerType::Akeyless);
-    assert_ne!(akeyless_sig.hash, Blake3Hash::digest(b"empty"));
-    assert_eq!(akeyless_sig.inputs.len(), 2);
-    assert_eq!(akeyless_sig.inputs[0].name, "/production/db-password");
-    assert_eq!(akeyless_sig.inputs[1].name, "/production/api-key");
+    // 10. The secrets manager in the chain — verify it's present and non-trivial
+    assert_eq!(secrets_manager_sig.layer, LayerType::SecretsManager);
+    assert_ne!(secrets_manager_sig.hash, Blake3Hash::digest(b"empty"));
+    assert_eq!(secrets_manager_sig.inputs.len(), 2);
+    assert_eq!(secrets_manager_sig.inputs[0].name, "/production/db-password");
+    assert_eq!(secrets_manager_sig.inputs[1].name, "/production/api-key");
 }
 
 // ---------------------------------------------------------------------------
@@ -390,25 +390,25 @@ async fn tamper_detection_invalidates_verification() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: Akeyless secrets in the attestation chain
+// Test 4: Secrets-manager secrets in the attestation chain
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn akeyless_secrets_in_attestation_chain() {
-    let attestation1 = sample_akeyless_attestation();
-    let collector1 = AkeylessCollector::new(attestation1);
+async fn secrets_in_attestation_chain() {
+    let attestation1 = sample_secrets_manager_attestation();
+    let collector1 = SecretsManagerCollector::new(attestation1);
     let sig1 = collector1.collect().await.unwrap();
 
-    assert_eq!(collector1.layer_type(), LayerType::Akeyless);
+    assert_eq!(collector1.layer_type(), LayerType::SecretsManager);
     assert_ne!(sig1.hash, Blake3Hash::digest(b"empty"));
 
     // Build a second attestation with different secrets
-    let attestation2 = AkeylessSecretAttestation {
-        gateway_url: "https://gw.akeyless.example.com".to_string(),
-        auth_method: AkeylessAuthMethod::K8s,
-        secrets_accessed: vec![AkeylessSecretAccess {
+    let attestation2 = SecretAttestation {
+        gateway_url: "https://gw.secrets.example.com".to_string(),
+        auth_method: SecretAuthMethod::K8s,
+        secrets_accessed: vec![SecretAccess {
             path: "/staging/different-secret".to_string(),
-            secret_type: AkeylessSecretType::Static,
+            secret_type: SecretKind::Static,
             value_hash: Blake3Hash::digest(b"completely-different-secret"),
             accessed_at: Utc::now(),
             version: Some(1),
@@ -416,7 +416,7 @@ async fn akeyless_secrets_in_attestation_chain() {
         gateway_certificate_hash: Blake3Hash::digest(b"gateway-tls-cert"),
         session_hash: Blake3Hash::digest(b"auth-session-token"),
     };
-    let collector2 = AkeylessCollector::new(attestation2);
+    let collector2 = SecretsManagerCollector::new(attestation2);
     let sig2 = collector2.collect().await.unwrap();
 
     // Different secrets = different hash
@@ -425,9 +425,9 @@ async fn akeyless_secrets_in_attestation_chain() {
         "Different secrets must produce different hashes"
     );
 
-    // Both are Akeyless layers
-    assert_eq!(sig1.layer, LayerType::Akeyless);
-    assert_eq!(sig2.layer, LayerType::Akeyless);
+    // Both are secrets-manager layers
+    assert_eq!(sig1.layer, LayerType::SecretsManager);
+    assert_eq!(sig2.layer, LayerType::SecretsManager);
 }
 
 // ---------------------------------------------------------------------------
@@ -613,7 +613,7 @@ async fn merkle_proofs_verify_all_layers() {
         LayerType::Helm,
         LayerType::Kubernetes,
         LayerType::Tofu,
-        LayerType::Akeyless,
+        LayerType::SecretsManager,
         LayerType::FluxCD,
     ];
 
@@ -662,24 +662,24 @@ async fn merkle_proofs_verify_all_layers() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 10: Akeyless hash determinism and sensitivity
+// Test 10: Secrets-manager hash determinism and sensitivity
 // ---------------------------------------------------------------------------
 
 #[test]
-fn akeyless_hash_determinism_and_sensitivity() {
-    let attestation = sample_akeyless_attestation();
+fn secrets_manager_hash_determinism_and_sensitivity() {
+    let attestation = sample_secrets_manager_attestation();
 
     // Deterministic
-    let h1 = compute_akeyless_hash(&attestation);
-    let h2 = compute_akeyless_hash(&attestation);
+    let h1 = compute_secret_hash(&attestation);
+    let h2 = compute_secret_hash(&attestation);
     assert_eq!(h1, h2, "Same attestation must produce same hash");
 
     // Sensitive to gateway URL change
     let mut modified = attestation.clone();
-    modified.gateway_url = "https://other-gw.akeyless.example.com".to_string();
+    modified.gateway_url = "https://other-gw.secrets.example.com".to_string();
     assert_ne!(
-        compute_akeyless_hash(&attestation),
-        compute_akeyless_hash(&modified),
+        compute_secret_hash(&attestation),
+        compute_secret_hash(&modified),
         "Different gateway URL must change hash"
     );
 
@@ -687,17 +687,17 @@ fn akeyless_hash_determinism_and_sensitivity() {
     let mut modified2 = attestation.clone();
     modified2.secrets_accessed[0].path = "/staging/other-secret".to_string();
     assert_ne!(
-        compute_akeyless_hash(&attestation),
-        compute_akeyless_hash(&modified2),
+        compute_secret_hash(&attestation),
+        compute_secret_hash(&modified2),
         "Different secret path must change hash"
     );
 
     // Sensitive to auth method change
     let mut modified3 = attestation.clone();
-    modified3.auth_method = AkeylessAuthMethod::ApiKey;
+    modified3.auth_method = SecretAuthMethod::ApiKey;
     assert_ne!(
-        compute_akeyless_hash(&attestation),
-        compute_akeyless_hash(&modified3),
+        compute_secret_hash(&attestation),
+        compute_secret_hash(&modified3),
         "Different auth method must change hash"
     );
 
@@ -705,8 +705,8 @@ fn akeyless_hash_determinism_and_sensitivity() {
     let mut modified4 = attestation.clone();
     modified4.secrets_accessed[0].value_hash = Blake3Hash::digest(b"rotated-secret-value");
     assert_ne!(
-        compute_akeyless_hash(&attestation),
-        compute_akeyless_hash(&modified4),
+        compute_secret_hash(&attestation),
+        compute_secret_hash(&modified4),
         "Different secret value hash must change hash"
     );
 }
@@ -841,11 +841,11 @@ fn secure_signature_composition() {
 // ---------------------------------------------------------------------------
 
 /// Exercises the FULL hackathon demo flow end-to-end:
-///   Source -> Build -> Image -> Chart -> K8s -> Akeyless -> Merkle Tree
+///   Source -> Build -> Image -> Chart -> K8s -> Secrets Manager -> Merkle Tree
 ///   -> Compliance -> Secure Signature -> Certification -> Verification
 ///   -> Tamper Detection -> Gate Decision -> Merkle Inclusion Proofs
 ///
-/// All mocked — no real K8s, Nix, or Akeyless needed.
+/// All mocked — no real K8s, Nix, or secrets-manager needed.
 #[tokio::test]
 async fn hackathon_demo_full_pipeline() {
     // === Step 1: Source Attestation ===
@@ -882,21 +882,21 @@ async fn hackathon_demo_full_pipeline() {
     let k8s_sig = k8s_collector.collect().await.unwrap();
     assert_eq!(k8s_sig.layer, LayerType::Kubernetes);
 
-    // === Step 6: Akeyless Secret Attestation ===
-    let akeyless_attestation = AkeylessSecretAttestation {
-        gateway_url: "https://gw.akeyless.example.com".to_string(),
-        auth_method: AkeylessAuthMethod::K8s,
+    // === Step 6: Secrets-manager Secret Attestation ===
+    let secrets_manager_attestation = SecretAttestation {
+        gateway_url: "https://gw.secrets.example.com".to_string(),
+        auth_method: SecretAuthMethod::K8s,
         secrets_accessed: vec![
-            AkeylessSecretAccess {
+            SecretAccess {
                 path: "/production/db-password".to_string(),
-                secret_type: AkeylessSecretType::DynamicDatabase,
+                secret_type: SecretKind::DynamicDatabase,
                 value_hash: Blake3Hash::digest(b"real-db-password"),
                 accessed_at: Utc::now(),
                 version: Some(3),
             },
-            AkeylessSecretAccess {
+            SecretAccess {
                 path: "/production/api-key".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"real-api-key"),
                 accessed_at: Utc::now(),
                 version: Some(1),
@@ -905,12 +905,12 @@ async fn hackathon_demo_full_pipeline() {
         gateway_certificate_hash: Blake3Hash::digest(b"gw-cert"),
         session_hash: Blake3Hash::digest(b"session"),
     };
-    let akeyless_collector = AkeylessCollector::new(akeyless_attestation.clone());
-    let akeyless_sig = akeyless_collector.collect().await.unwrap();
-    assert_eq!(akeyless_sig.layer, LayerType::Akeyless);
-    assert_eq!(akeyless_sig.inputs.len(), 2);
-    assert_eq!(akeyless_sig.inputs[0].name, "/production/db-password");
-    assert_eq!(akeyless_sig.inputs[1].name, "/production/api-key");
+    let secrets_manager_collector = SecretsManagerCollector::new(secrets_manager_attestation.clone());
+    let secrets_manager_sig = secrets_manager_collector.collect().await.unwrap();
+    assert_eq!(secrets_manager_sig.layer, LayerType::SecretsManager);
+    assert_eq!(secrets_manager_sig.inputs.len(), 2);
+    assert_eq!(secrets_manager_sig.inputs[0].name, "/production/db-password");
+    assert_eq!(secrets_manager_sig.inputs[1].name, "/production/api-key");
 
     // === Step 7: Compose Merkle Tree ===
     let all_sigs = vec![
@@ -918,7 +918,7 @@ async fn hackathon_demo_full_pipeline() {
         oci_sig.clone(),
         helm_sig.clone(),
         k8s_sig.clone(),
-        akeyless_sig.clone(),
+        secrets_manager_sig.clone(),
     ];
     assert_eq!(all_sigs.len(), 5, "Must have all 5 layers");
 
@@ -1091,14 +1091,14 @@ async fn hackathon_demo_full_pipeline() {
 
     // === Step 11: Tamper Detection ===
     // Change one secret value and verify the hash changes at every level
-    let mut tampered_attestation = akeyless_attestation;
+    let mut tampered_attestation = secrets_manager_attestation;
     tampered_attestation.secrets_accessed[0].value_hash = Blake3Hash::digest(b"TAMPERED-password");
-    let tampered_collector = AkeylessCollector::new(tampered_attestation);
+    let tampered_collector = SecretsManagerCollector::new(tampered_attestation);
     let tampered_sig = tampered_collector.collect().await.unwrap();
 
-    // Tampered Akeyless signature must differ from original
+    // Tampered secrets-manager signature must differ from original
     assert_ne!(
-        akeyless_sig.hash, tampered_sig.hash,
+        secrets_manager_sig.hash, tampered_sig.hash,
         "Tampered secret MUST change the layer hash"
     );
 
@@ -1128,7 +1128,7 @@ async fn hackathon_demo_full_pipeline() {
     // === Step 12: Gate Decision ===
     let gate_policy = tameshi::gating::GatingPolicy {
         name: "production-gate".to_string(),
-        required_layers: vec!["nix".to_string(), "oci".to_string(), "akeyless".to_string()],
+        required_layers: vec!["nix".to_string(), "oci".to_string(), "secrets_manager".to_string()],
         require_compliance: true,
         max_signature_age_secs: Some(3600),
         fail_open: false,
@@ -1294,7 +1294,7 @@ async fn hackathon_demo_full_pipeline() {
     println!("Compliance hash: {}", compliance_hash.to_prefixed());
     println!("Secure signature: {}", secure.to_prefixed());
     println!("Gate decision: ALLOWED");
-    println!("Akeyless secrets attested: {}", akeyless_sig.inputs.len());
+    println!("Secrets-manager secrets attested: {}", secrets_manager_sig.inputs.len());
     println!("Tamper detection: WORKING");
     println!(
         "Certification: CERTIFIED (product={}, env={}, cluster={})",
@@ -1313,21 +1313,21 @@ async fn hackathon_demo_full_pipeline() {
 }
 
 // ===========================================================================
-// Akeyless Target Attestation E2E Tests
+// Secrets-manager Target Attestation E2E Tests
 // ===========================================================================
 
-use tameshi::akeyless_client::MockAkeylessClient;
-use tameshi::collectors::akeyless_target::AkeylessTargetCollector;
-use tameshi::compliance::akeyless_target::{
-    AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation, compute_multi_target_hash,
+use tameshi::secrets_client::MockSecretsManagerClient;
+use tameshi::collectors::secret_target::SecretTargetCollector;
+use tameshi::compliance::secret_target::{
+    SecretTargetAttestation, SecretTargetType, ProducerAssociation, compute_multi_target_hash,
     compute_target_attestation_hash,
 };
 
 fn make_target_attestation(
     name: &str,
-    target_type: AkeylessTargetType,
-) -> AkeylessTargetAttestation {
-    AkeylessTargetAttestation {
+    target_type: SecretTargetType,
+) -> SecretTargetAttestation {
+    SecretTargetAttestation {
         target_name: name.to_string(),
         target_type,
         target_config_hash: Blake3Hash::digest(format!("config-{name}").as_bytes()),
@@ -1337,7 +1337,7 @@ fn make_target_attestation(
         backend_tls_verified: true,
         associated_producers: vec![ProducerAssociation {
             producer_name: format!("/producers/{name}-dynamic"),
-            producer_type: AkeylessSecretType::DynamicDatabase,
+            producer_type: SecretKind::DynamicDatabase,
             user_ttl: "1h".to_string(),
             target_assoc_id: Some(format!("assoc-{name}")),
         }],
@@ -1347,9 +1347,9 @@ fn make_target_attestation(
 
 #[tokio::test]
 async fn e2e_target_attestation_with_mock_client() {
-    let target_att = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
-    let client = MockAkeylessClient::new().with_target_attestations(vec![target_att.clone()]);
-    let result = tameshi::akeyless_client::AkeylessClient::build_target_attestation(
+    let target_att = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
+    let client = MockSecretsManagerClient::new().with_target_attestations(vec![target_att.clone()]);
+    let result = tameshi::secrets_client::SecretsManagerClient::build_target_attestation(
         &client,
         &["/targets/prod/db".to_string()],
     )
@@ -1357,12 +1357,12 @@ async fn e2e_target_attestation_with_mock_client() {
     .unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].target_name, "/targets/prod/db");
-    assert_eq!(result[0].target_type, AkeylessTargetType::Database);
+    assert_eq!(result[0].target_type, SecretTargetType::Database);
 }
 
 #[test]
 fn e2e_target_config_hash_sensitivity() {
-    let att1 = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
+    let att1 = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
     let mut att2 = att1.clone();
     att2.backend_endpoint_hash = Blake3Hash::digest(b"different-endpoint:5432");
 
@@ -1373,7 +1373,7 @@ fn e2e_target_config_hash_sensitivity() {
 
 #[test]
 fn e2e_tls_cert_hash_rotation_detection() {
-    let att1 = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
+    let att1 = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
     let mut att2 = att1.clone();
     att2.backend_tls_cert_hash = Some(Blake3Hash::digest(b"rotated-tls-cert-2025"));
 
@@ -1384,12 +1384,12 @@ fn e2e_tls_cert_hash_rotation_detection() {
 
 #[test]
 fn e2e_producer_association_tracking() {
-    let mut att = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
+    let mut att = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
     let h_before = compute_target_attestation_hash(&att);
 
     att.associated_producers.push(ProducerAssociation {
         producer_name: "/producers/db-readonly".to_string(),
-        producer_type: AkeylessSecretType::DynamicDatabase,
+        producer_type: SecretKind::DynamicDatabase,
         user_ttl: "30m".to_string(),
         target_assoc_id: None,
     });
@@ -1402,9 +1402,9 @@ fn e2e_producer_association_tracking() {
 
 #[test]
 fn e2e_multi_target_composition_deterministic_order_independent() {
-    let att_db = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
-    let att_api = make_target_attestation("/targets/prod/api", AkeylessTargetType::Web);
-    let att_ssh = make_target_attestation("/targets/prod/ssh", AkeylessTargetType::Ssh);
+    let att_db = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
+    let att_api = make_target_attestation("/targets/prod/api", SecretTargetType::Web);
+    let att_ssh = make_target_attestation("/targets/prod/ssh", SecretTargetType::Ssh);
 
     let h_forward = compute_multi_target_hash(&[att_db.clone(), att_api.clone(), att_ssh.clone()]);
     let h_reverse = compute_multi_target_hash(&[att_ssh, att_api, att_db]);
@@ -1414,9 +1414,9 @@ fn e2e_multi_target_composition_deterministic_order_independent() {
     );
 
     // Determinism: same input -> same output
-    let att_db2 = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
-    let att_api2 = make_target_attestation("/targets/prod/api", AkeylessTargetType::Web);
-    let att_ssh2 = make_target_attestation("/targets/prod/ssh", AkeylessTargetType::Ssh);
+    let att_db2 = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
+    let att_api2 = make_target_attestation("/targets/prod/api", SecretTargetType::Web);
+    let att_ssh2 = make_target_attestation("/targets/prod/ssh", SecretTargetType::Ssh);
     let h_again = compute_multi_target_hash(&[att_db2, att_api2, att_ssh2]);
     assert_eq!(
         h_forward, h_again,
@@ -1426,12 +1426,12 @@ fn e2e_multi_target_composition_deterministic_order_independent() {
 
 #[tokio::test]
 async fn e2e_target_layer_in_merkle_tree_with_inclusion_proofs() {
-    let att_db = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
-    let att_api = make_target_attestation("/targets/prod/api", AkeylessTargetType::Web);
+    let att_db = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
+    let att_api = make_target_attestation("/targets/prod/api", SecretTargetType::Web);
 
-    let target_collector = AkeylessTargetCollector::new(vec![att_db.clone(), att_api.clone()]);
+    let target_collector = SecretTargetCollector::new(vec![att_db.clone(), att_api.clone()]);
     let target_sig = target_collector.collect().await.unwrap();
-    assert_eq!(target_sig.layer, LayerType::AkeylessTarget);
+    assert_eq!(target_sig.layer, LayerType::SecretTarget);
     assert_eq!(target_sig.inputs.len(), 2);
 
     // Compose with other layers in a Merkle tree
@@ -1455,7 +1455,7 @@ async fn e2e_target_layer_in_merkle_tree_with_inclusion_proofs() {
     sorted_sigs.sort_by(|a, b| a.layer.cmp(&b.layer));
     let target_idx = sorted_sigs
         .iter()
-        .position(|s| s.layer == LayerType::AkeylessTarget)
+        .position(|s| s.layer == LayerType::SecretTarget)
         .unwrap();
     let proof = merkle_proof(&all_sigs, target_idx).unwrap();
     let verified = verify_proof(
@@ -1494,13 +1494,13 @@ async fn e2e_full_pipeline_source_build_image_chart_secrets_target_deploy_compli
         vec![],
     );
 
-    // === Secrets (Akeyless) ===
-    let akeyless_attestation = AkeylessSecretAttestation {
-        gateway_url: "https://gw.akeyless.example.com".to_string(),
-        auth_method: AkeylessAuthMethod::K8s,
-        secrets_accessed: vec![AkeylessSecretAccess {
+    // === Secrets (The secrets manager) ===
+    let secrets_manager_attestation = SecretAttestation {
+        gateway_url: "https://gw.secrets.example.com".to_string(),
+        auth_method: SecretAuthMethod::K8s,
+        secrets_accessed: vec![SecretAccess {
             path: "/production/db/password".to_string(),
-            secret_type: AkeylessSecretType::Static,
+            secret_type: SecretKind::Static,
             value_hash: Blake3Hash::digest(b"secret-value"),
             accessed_at: chrono::Utc::now(),
             version: Some(1),
@@ -1508,15 +1508,15 @@ async fn e2e_full_pipeline_source_build_image_chart_secrets_target_deploy_compli
         gateway_certificate_hash: Blake3Hash::digest(b"tls-cert"),
         session_hash: Blake3Hash::digest(b"session-data"),
     };
-    let akeyless_collector = AkeylessCollector::new(akeyless_attestation);
-    let akeyless_sig = akeyless_collector.collect().await.unwrap();
+    let secrets_manager_collector = SecretsManagerCollector::new(secrets_manager_attestation);
+    let secrets_manager_sig = secrets_manager_collector.collect().await.unwrap();
 
     // === Target ===
     let target_atts = vec![
-        make_target_attestation("/targets/prod/db", AkeylessTargetType::Database),
-        make_target_attestation("/targets/prod/api", AkeylessTargetType::Web),
+        make_target_attestation("/targets/prod/db", SecretTargetType::Database),
+        make_target_attestation("/targets/prod/api", SecretTargetType::Web),
     ];
-    let target_collector = AkeylessTargetCollector::new(target_atts);
+    let target_collector = SecretTargetCollector::new(target_atts);
     let target_sig = target_collector.collect().await.unwrap();
 
     // === Deploy (K8s) ===
@@ -1532,7 +1532,7 @@ async fn e2e_full_pipeline_source_build_image_chart_secrets_target_deploy_compli
         nix_sig,
         oci_sig,
         helm_sig,
-        akeyless_sig,
+        secrets_manager_sig,
         target_sig.clone(),
         k8s_sig,
     ];
@@ -1544,8 +1544,8 @@ async fn e2e_full_pipeline_source_build_image_chart_secrets_target_deploy_compli
         master
             .layers
             .iter()
-            .any(|l| l.layer == LayerType::AkeylessTarget),
-        "AkeylessTarget layer must be in master"
+            .any(|l| l.layer == LayerType::SecretTarget),
+        "SecretTarget layer must be in master"
     );
 
     // === Compliance ===
@@ -1563,8 +1563,8 @@ async fn e2e_full_pipeline_source_build_image_chart_secrets_target_deploy_compli
 
 #[tokio::test]
 async fn e2e_tamper_detection_target_endpoint_changes_master_signature() {
-    let att_db = make_target_attestation("/targets/prod/db", AkeylessTargetType::Database);
-    let target_collector = AkeylessTargetCollector::new(vec![att_db.clone()]);
+    let att_db = make_target_attestation("/targets/prod/db", SecretTargetType::Database);
+    let target_collector = SecretTargetCollector::new(vec![att_db.clone()]);
     let original_sig = target_collector.collect().await.unwrap();
 
     let nix_sig = LayerSignature::new(LayerType::Nix, Blake3Hash::digest(b"nix"), "nix", vec![]);
@@ -1576,7 +1576,7 @@ async fn e2e_tamper_detection_target_endpoint_changes_master_signature() {
     // Tamper: change the backend endpoint
     let mut tampered_att = att_db;
     tampered_att.backend_endpoint_hash = Blake3Hash::digest(b"TAMPERED-endpoint:9999");
-    let tampered_collector = AkeylessTargetCollector::new(vec![tampered_att]);
+    let tampered_collector = SecretTargetCollector::new(vec![tampered_att]);
     let tampered_sig = tampered_collector.collect().await.unwrap();
 
     let tampered_sigs = vec![nix_sig, tampered_sig];

@@ -1,7 +1,7 @@
-//! Fragment extension — binding the Merkle root as a DFC fragment.
+//! Fragment extension — binding the Merkle root as a key fragment.
 //!
 //! Makes the F* theorem from `fstar/Tameshi.FragmentedSovereignty.fst` executable
-//! in Rust. The standard DFC reconstruction is `key = BLAKE3(F_a XOR F_b)`. The
+//! in Rust. The standard Fragment reconstruction is `key = BLAKE3(F_a XOR F_b)`. The
 //! extended reconstruction adds the composed Merkle root as a third fragment:
 //!
 //! ```text
@@ -10,7 +10,7 @@
 //!
 //! This binds the signing key to the specific attestation artifact. A key
 //! reconstructed with a different root produces a different signature — even if
-//! the DFC fragments are correct. No single entity holds enough information to
+//! the key fragments are correct. No single entity holds enough information to
 //! forge an attestation.
 //!
 //! # Security Properties (proved in F*)
@@ -26,7 +26,7 @@
 
 use crate::hash::Blake3Hash;
 
-/// Trait for extended DFC signing operations.
+/// Trait for extended Fragment signing operations.
 ///
 /// Enables swapping the key reconstruction and signing strategy
 /// for testing or alternative fragment schemes.
@@ -116,16 +116,16 @@ impl ExtendedSigner for MockExtendedSigner {
     }
 }
 
-/// Reconstruct a signing key from two DFC fragments plus the Merkle root.
+/// Reconstruct a signing key from two key fragments plus the Merkle root.
 ///
 /// This is the "extended" reconstruction that binds the key to the artifact.
-/// Standard DFC: `key = BLAKE3(F_a XOR F_b)`.
-/// Extended DFC: `key = BLAKE3(F_a XOR F_b XOR root)`.
+/// Standard Fragment: `key = BLAKE3(F_a XOR F_b)`.
+/// Extended Fragment: `key = BLAKE3(F_a XOR F_b XOR root)`.
 ///
 /// # Arguments
 ///
-/// * `frag_a` — First DFC key fragment (32 bytes).
-/// * `frag_b` — Second DFC key fragment (32 bytes).
+/// * `frag_a` — First Fragment key fragment (32 bytes).
+/// * `frag_b` — Second Fragment key fragment (32 bytes).
 /// * `root` — Composed Merkle root from a [`CertificationArtifact`](crate::certification_artifact::CertificationArtifact).
 ///
 /// # Returns
@@ -151,15 +151,15 @@ pub fn reconstruct_key_extended(
     *blake3::hash(&xored).as_bytes()
 }
 
-/// Sign data using the extended DFC scheme.
+/// Sign data using the extended Fragment scheme.
 ///
 /// Reconstructs the signing key from both fragments and the Merkle root,
 /// then produces a BLAKE3 keyed hash of the data.
 ///
 /// # Arguments
 ///
-/// * `frag_a` — First DFC key fragment (32 bytes).
-/// * `frag_b` — Second DFC key fragment (32 bytes).
+/// * `frag_a` — First Fragment key fragment (32 bytes).
+/// * `frag_b` — Second Fragment key fragment (32 bytes).
 /// * `root` — Composed Merkle root binding the key to the attestation.
 /// * `data` — The hash to sign (typically a [`Blake3Hash`] of the payload).
 ///
@@ -184,8 +184,8 @@ pub fn sign_extended(
 ///
 /// # Arguments
 ///
-/// * `frag_a` — First DFC key fragment (32 bytes).
-/// * `frag_b` — Second DFC key fragment (32 bytes).
+/// * `frag_a` — First Fragment key fragment (32 bytes).
+/// * `frag_b` — Second Fragment key fragment (32 bytes).
 /// * `root` — Composed Merkle root used during signing.
 /// * `data` — The hash that was signed.
 /// * `signature` — The signature bytes to verify.
@@ -290,7 +290,7 @@ mod tests {
             "production",
         );
 
-        // The artifact's composed_root is used as the DFC fragment extension
+        // The artifact's composed_root is used as the key fragment extension
         let frag_a = make_fragment(0x10);
         let frag_b = make_fragment(0x20);
         let data = Blake3Hash::digest(b"deploy-manifest");
@@ -304,7 +304,7 @@ mod tests {
         // operates independently of the signing key derivation
         assert!(
             verify_certification_artifact(&artifact),
-            "artifact verification must work independently of DFC signing"
+            "artifact verification must work independently of Fragment signing"
         );
     }
 

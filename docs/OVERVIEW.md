@@ -242,7 +242,7 @@ assumptions. The F* type checker confirmed them computationally.
 
 ### "How do you know the signing keys are safe from timing attacks?"
 
-Kani's `crypto_timing_proofs` module proves that the DFC key
+Kani's `crypto_timing_proofs` module proves that the Fragment key
 reconstruction path (XOR fragments, hash, sign) contains no
 data-dependent branches. The hash comparison function processes
 all bytes unconditionally — no early exit that could leak information
@@ -397,17 +397,17 @@ binary can execute.
 > single Rust file implementing the `LayerCollector` trait.
 > See `docs/quick-start-guide.md`, Section 6.
 
-**2. Secrets: Akeyless Vault Integration**
+**2. Secrets: Secrets-Manager Integration**
 
-Akeyless is not just the deployment target — it is an attested layer.
+The secrets manager is not just the deployment target — it is an attested layer.
 Two collectors hash the secrets infrastructure itself:
 
 | Collector | What It Hashes |
 |-----------|---------------|
-| `LiveAkeylessCollector` | Secret metadata (hashes the VALUES, never stores them) |
-| `AkeylessTargetCollector` | 30 target types with producer associations |
+| `LiveSecretsManagerCollector` | Secret metadata (hashes the VALUES, never stores them) |
+| `SecretTargetCollector` | 30 target types with producer associations |
 
-If a secret is rotated, added, or deleted, the Akeyless layer hash
+If a secret is rotated, added, or deleted, the secrets-manager layer hash
 changes, the Merkle root changes, and the entire attestation must be
 recomputed. The secrets vault attests itself.
 
@@ -505,7 +505,7 @@ Memory safety is not just checked. It is **enforced by the kernel**.
 
 The core insight of tameshi is that the 3-leaf Merkle tree pattern —
 **what was built** + **what compliance says** + **what the code proves** —
-is not specific to Go binaries or Akeyless gateways. It is a general
+is not specific to Go binaries or secrets-manager gateways. It is a general
 pattern that applies anywhere you need to answer: "is the thing running
 right now exactly the thing that was approved?"
 
@@ -563,13 +563,13 @@ state aggregation, heartbeat chain recording, and kernel enforcement.
 No changes to the Merkle tree code, the chain code, or the eBPF code.
 
 > **Currently implemented:** 15 layer types across infrastructure (Nix,
-> OCI, Helm, Tofu, Kubernetes, FluxCD, ArgoCD), secrets (Akeyless,
-> AkeylessTarget), compliance (PangeaSynthesis, RSpecResult, InSpecResult),
+> OCI, Helm, Tofu, Kubernetes, FluxCD, ArgoCD), secrets (The secrets manager,
+> SecretTarget), compliance (PangeaSynthesis, RSpecResult, InSpecResult),
 > cluster management (Kindling, Tatara), and memory safety (FerritePoms).
 
 ---
 
-## Hiding the Tree: DFC Fragment Extension
+## Hiding the Tree: Key Fragment Extension
 
 A natural question: if the Merkle root is a single 32-byte value that
 encodes everything about the system's state, is it safe to store it in
@@ -591,21 +591,21 @@ memory-safe") to an auditor without revealing the other two leaves
 `selective_disclosure_hides_other_leaves` verifies across 10,000 random
 artifacts that the proof path does not contain raw sibling leaf values.
 
-**DFC signing already uses split-knowledge.** The `MockDfcSigner`
+**Fragment signing already uses split-knowledge.** The `MockFragmentSigner`
 reconstructs the signing key from two XOR'd fragments. Neither fragment
 alone reveals the key. This is proved in F* (`Tameshi.Signing`,
 Theorem 10.1) and verified by Kani (`signing_proofs`, 2 harnesses).
 
 ### What is proved in theory (F*) but not yet implemented in Rust
 
-The F* module `Tameshi.FragmentedSovereignty` proves that the DFC
+The F* module `Tameshi.FragmentedSovereignty` proves that the Fragment
 scheme can be **extended by one fragment** — the Merkle root itself —
 without weakening any security property:
 
 | Theorem | What It Proves | Status |
 |---------|---------------|--------|
 | `lemma_root_binds_key` | Different Merkle roots produce different signing keys | Proved in F* |
-| `lemma_fragments_still_independent` | The original DFC fragments remain independent | Proved in F* (no `admit()`) |
+| `lemma_fragments_still_independent` | The original key fragments remain independent | Proved in F* (no `admit()`) |
 | `lemma_wrong_root_fails_verify` | Tampered artifact invalidates the signature | Proved in F* (no `admit()`) |
 | `lemma_selective_disclosure_composable` | Inclusion proofs work independently of signing | Proved in F* (definitional) |
 | `theorem_fragment_extension` | All four properties hold simultaneously | Proved in F* |
@@ -615,10 +615,10 @@ In this model, the signing key becomes:
 key = BLAKE3(XOR(XOR(fragment_a, fragment_b), composed_root))
 ```
 
-This means: even if an attacker has both DFC fragments, they cannot
+This means: even if an attacker has both key fragments, they cannot
 sign a different attestation because the Merkle root is part of the key.
 And even if an attacker has the Merkle root, they cannot sign without
-the DFC fragments. **No single entity holds enough information to forge
+the key fragments. **No single entity holds enough information to forge
 an attestation.**
 
 ### What is now implemented (previously planned)

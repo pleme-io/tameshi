@@ -1,8 +1,8 @@
-//! Real Akeyless gateway client for attestation.
+//! Real secrets-manager gateway client for attestation.
 //!
-//! Provides a trait-based client that authenticates to an Akeyless gateway,
+//! Provides a trait-based client that authenticates to a secrets-manager gateway,
 //! lists and fetches secrets, hashes their values (never storing the raw
-//! secret), and builds [`AkeylessSecretAttestation`] from live API responses.
+//! secret), and builds [`SecretAttestation`] from live API responses.
 //!
 //! **Important:** Only the *hashes* of secret values leave this module, never
 //! the secret values themselves.
@@ -10,20 +10,20 @@
 //! # Architecture
 //!
 //! ```text
-//! AkeylessClient (trait)
-//!   ├── HttpAkeylessClient<H: HttpClient>  ── real gateway REST calls
-//!   └── MockAkeylessClient                 ── in-memory testing stub
+//! SecretsManagerClient (trait)
+//!   ├── HttpSecretsManagerClient<H: HttpClient>  ── real gateway REST calls
+//!   └── MockSecretsManagerClient                 ── in-memory testing stub
 //! ```
 //!
 //! # Usage
 //!
 //! ```rust,ignore
-//! use tameshi::akeyless_client::*;
+//! use tameshi::secrets_client::*;
 //! use tameshi::traits::ReqwestHttpClient;
 //!
-//! let config = AkeylessConfig {
-//!     gateway_url: "https://gw.akeyless.example.com".to_string(),
-//!     auth_method: AkeylessAuthMethod::ApiKey,
+//! let config = SecretsManagerConfig {
+//!     gateway_url: "https://gw.secrets.example.com".to_string(),
+//!     auth_method: SecretAuthMethod::ApiKey,
 //!     access_id: Some("p-abc123".to_string()),
 //!     access_key: Some("my-access-key".to_string()),
 //!     k8s_token_path: None,
@@ -31,7 +31,7 @@
 //!     tls: TlsConfig::default(),
 //! };
 //!
-//! let client = HttpAkeylessClient::new(config, ReqwestHttpClient::new());
+//! let client = HttpSecretsManagerClient::new(config, ReqwestHttpClient::new());
 //! let attestation = client.build_attestation(&[
 //!     "/production/db/password".to_string(),
 //!     "/production/api/key".to_string(),
@@ -40,11 +40,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::compliance::akeyless::{
-    AkeylessAuthMethod, AkeylessSecretAccess, AkeylessSecretAttestation, AkeylessSecretType,
+use crate::compliance::secrets::{
+    SecretAuthMethod, SecretAccess, SecretAttestation, SecretKind,
 };
-use crate::compliance::akeyless_target::{
-    AkeylessTargetAttestation, AkeylessTargetType, ProducerAssociation,
+use crate::compliance::secret_target::{
+    SecretTargetAttestation, SecretTargetType, ProducerAssociation,
 };
 use crate::hash::Blake3Hash;
 use crate::traits::HttpClient;
@@ -53,9 +53,9 @@ use crate::traits::HttpClient;
 // Error
 // ---------------------------------------------------------------------------
 
-/// Errors returned by the Akeyless client.
+/// Errors returned by the secrets-manager client.
 #[derive(Debug, thiserror::Error)]
-pub enum AkeylessClientError {
+pub enum SecretsManagerError {
     /// Authentication to the gateway failed.
     #[error("authentication failed: {0}")]
     AuthFailed(String),
@@ -99,7 +99,7 @@ pub enum AkeylessClientError {
 // Config
 // ---------------------------------------------------------------------------
 
-/// TLS configuration for Akeyless client connections.
+/// TLS configuration for secrets-manager client connections.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TlsConfig {
     /// Path to a PEM-encoded CA certificate to pin.
@@ -140,18 +140,18 @@ impl Default for TlsConfig {
 ///   and a client identity is configured for mutual TLS.
 /// - If `verify_server` is `false`, server certificate verification is disabled
 ///   (`danger_accept_invalid_certs`).
-pub fn build_tls_client(tls: &TlsConfig) -> Result<reqwest::Client, AkeylessClientError> {
+pub fn build_tls_client(tls: &TlsConfig) -> Result<reqwest::Client, SecretsManagerError> {
     let mut builder = reqwest::Client::builder();
 
     // Pinned CA certificate — replace the system trust store.
     if let Some(ref ca_path) = tls.pinned_ca_path {
         let ca_pem = std::fs::read(ca_path).map_err(|e| {
-            AkeylessClientError::TlsConfigError(format!(
+            SecretsManagerError::TlsConfigError(format!(
                 "failed to read pinned CA at {ca_path}: {e}"
             ))
         })?;
         let ca_cert = reqwest::tls::Certificate::from_pem(&ca_pem).map_err(|e| {
-            AkeylessClientError::TlsConfigError(format!(
+            SecretsManagerError::TlsConfigError(format!(
                 "invalid PEM in pinned CA at {ca_path}: {e}"
             ))
         })?;
@@ -163,12 +163,12 @@ pub fn build_tls_client(tls: &TlsConfig) -> Result<reqwest::Client, AkeylessClie
     // Client certificate + key for mTLS.
     if let (Some(cert_path), Some(key_path)) = (&tls.client_cert_path, &tls.client_key_path) {
         let cert_pem = std::fs::read(cert_path).map_err(|e| {
-            AkeylessClientError::TlsConfigError(format!(
+            SecretsManagerError::TlsConfigError(format!(
                 "failed to read client cert at {cert_path}: {e}"
             ))
         })?;
         let key_pem = std::fs::read(key_path).map_err(|e| {
-            AkeylessClientError::TlsConfigError(format!(
+            SecretsManagerError::TlsConfigError(format!(
                 "failed to read client key at {key_path}: {e}"
             ))
         })?;
@@ -179,7 +179,7 @@ pub fn build_tls_client(tls: &TlsConfig) -> Result<reqwest::Client, AkeylessClie
         identity_pem.extend_from_slice(&key_pem);
 
         let identity = reqwest::Identity::from_pem(&identity_pem).map_err(|e| {
-            AkeylessClientError::TlsConfigError(format!("invalid client identity PEM: {e}"))
+            SecretsManagerError::TlsConfigError(format!("invalid client identity PEM: {e}"))
         })?;
         builder = builder.identity(identity);
     }
@@ -190,17 +190,17 @@ pub fn build_tls_client(tls: &TlsConfig) -> Result<reqwest::Client, AkeylessClie
     }
 
     builder.build().map_err(|e| {
-        AkeylessClientError::TlsConfigError(format!("failed to build HTTP client: {e}"))
+        SecretsManagerError::TlsConfigError(format!("failed to build HTTP client: {e}"))
     })
 }
 
-/// Configuration for the Akeyless client.
+/// Configuration for the secrets-manager client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AkeylessConfig {
-    /// Akeyless Gateway URL (e.g., `https://gw.akeyless.example.com`).
+pub struct SecretsManagerConfig {
+    /// Secrets-manager Gateway URL (e.g., `https://gw.secrets.example.com`).
     pub gateway_url: String,
     /// Authentication method to use.
-    pub auth_method: AkeylessAuthMethod,
+    pub auth_method: SecretAuthMethod,
     /// API key access ID (for `ApiKey` auth).
     pub access_id: Option<String>,
     /// API key (for `ApiKey` auth).
@@ -208,7 +208,7 @@ pub struct AkeylessConfig {
     /// Path to the Kubernetes service account token file (for `K8s` auth).
     /// Defaults to `/var/run/secrets/kubernetes.io/serviceaccount/token`.
     pub k8s_token_path: Option<String>,
-    /// Kubernetes auth config name registered in Akeyless (for `K8s` auth).
+    /// Kubernetes auth config name registered in the secrets manager (for `K8s` auth).
     pub k8s_auth_config_name: Option<String>,
     /// TLS configuration for gateway connections.
     #[serde(default)]
@@ -219,13 +219,13 @@ pub struct AkeylessConfig {
 // Target / Dynamic Secret Info
 // ---------------------------------------------------------------------------
 
-/// Information about an Akeyless target retrieved from the gateway.
+/// Information about a secrets-manager target retrieved from the gateway.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetInfo {
     /// Target name.
     pub name: String,
     /// Target type.
-    pub target_type: AkeylessTargetType,
+    pub target_type: SecretTargetType,
     /// Raw configuration as JSON (for hashing).
     pub config_json: String,
     /// Backend endpoint (host:port or URL).
@@ -244,7 +244,7 @@ pub struct DynamicSecretInfo {
     /// Producer name.
     pub name: String,
     /// Producer type.
-    pub producer_type: AkeylessSecretType,
+    pub producer_type: SecretKind,
     /// User TTL for produced credentials.
     pub user_ttl: String,
 }
@@ -262,108 +262,108 @@ pub struct ItemAssociation {
 // Trait
 // ---------------------------------------------------------------------------
 
-/// Trait for interacting with an Akeyless gateway.
+/// Trait for interacting with a secrets-manager gateway.
 ///
-/// All methods are async and return `Result<_, AkeylessClientError>`.
+/// All methods are async and return `Result<_, SecretsManagerError>`.
 /// Implementations must be `Send + Sync` for use in concurrent collectors.
-pub trait AkeylessClient: Send + Sync {
+pub trait SecretsManagerClient: Send + Sync {
     /// Authenticate and get an access token.
     fn authenticate(
         &self,
-    ) -> impl std::future::Future<Output = Result<String, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<String, SecretsManagerError>> + Send;
 
     /// Get a secret value and return its hash (never returns the actual secret).
     fn get_secret_hash(
         &self,
         path: &str,
         token: &str,
-    ) -> impl std::future::Future<Output = Result<AkeylessSecretAccess, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<SecretAccess, SecretsManagerError>> + Send;
 
     /// List secret paths under a given prefix.
     fn list_secrets(
         &self,
         prefix: &str,
         token: &str,
-    ) -> impl std::future::Future<Output = Result<Vec<String>, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<Vec<String>, SecretsManagerError>> + Send;
 
     /// Get the gateway's TLS certificate hash.
     fn gateway_cert_hash(
         &self,
-    ) -> impl std::future::Future<Output = Result<Blake3Hash, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<Blake3Hash, SecretsManagerError>> + Send;
 
     /// Build a complete attestation by authenticating and hashing all specified secrets.
     fn build_attestation(
         &self,
         secret_paths: &[String],
-    ) -> impl std::future::Future<Output = Result<AkeylessSecretAttestation, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<SecretAttestation, SecretsManagerError>> + Send;
 
     /// Get target details by name.
     fn get_target(
         &self,
         name: &str,
         token: &str,
-    ) -> impl std::future::Future<Output = Result<TargetInfo, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<TargetInfo, SecretsManagerError>> + Send;
 
     /// List all target names.
     fn list_targets(
         &self,
         token: &str,
-    ) -> impl std::future::Future<Output = Result<Vec<String>, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<Vec<String>, SecretsManagerError>> + Send;
 
     /// Get dynamic secret producer details.
     fn get_dynamic_secret_details(
         &self,
         name: &str,
         token: &str,
-    ) -> impl std::future::Future<Output = Result<DynamicSecretInfo, AkeylessClientError>> + Send;
+    ) -> impl std::future::Future<Output = Result<DynamicSecretInfo, SecretsManagerError>> + Send;
 
     /// Build target attestations for the given target names.
     fn build_target_attestation(
         &self,
         target_names: &[String],
     ) -> impl std::future::Future<
-        Output = Result<Vec<AkeylessTargetAttestation>, AkeylessClientError>,
+        Output = Result<Vec<SecretTargetAttestation>, SecretsManagerError>,
     > + Send;
 }
 
 // ---------------------------------------------------------------------------
-// HttpAkeylessClient
+// HttpSecretsManagerClient
 // ---------------------------------------------------------------------------
 
-/// Real Akeyless client that calls the gateway REST API.
+/// Real secrets-manager client that calls the gateway REST API.
 ///
 /// Generic over the HTTP transport so that tests can inject
 /// [`MockHttpClient`](crate::traits::MockHttpClient).
-pub struct HttpAkeylessClient<H: HttpClient> {
+pub struct HttpSecretsManagerClient<H: HttpClient> {
     http: H,
-    config: AkeylessConfig,
+    config: SecretsManagerConfig,
 }
 
-impl<H: HttpClient> HttpAkeylessClient<H> {
+impl<H: HttpClient> HttpSecretsManagerClient<H> {
     /// Create a new client with the given config and HTTP transport.
-    pub fn new(config: AkeylessConfig, http: H) -> Self {
+    pub fn new(config: SecretsManagerConfig, http: H) -> Self {
         Self { http, config }
     }
 }
 
-impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
-    async fn authenticate(&self) -> Result<String, AkeylessClientError> {
+impl<H: HttpClient> SecretsManagerClient for HttpSecretsManagerClient<H> {
+    async fn authenticate(&self) -> Result<String, SecretsManagerError> {
         let auth_body = match &self.config.auth_method {
-            AkeylessAuthMethod::ApiKey => {
+            SecretAuthMethod::ApiKey => {
                 serde_json::json!({
                     "access-id": self.config.access_id.as_deref().unwrap_or(""),
                     "access-key": self.config.access_key.as_deref().unwrap_or(""),
                     "access-type": "api_key"
                 })
             }
-            AkeylessAuthMethod::K8s => {
+            SecretAuthMethod::K8s => {
                 let token_path = self
                     .config
                     .k8s_token_path
                     .as_deref()
                     .unwrap_or("/var/run/secrets/kubernetes.io/serviceaccount/token");
                 let token = std::fs::read_to_string(token_path).map_err(|e| {
-                    AkeylessClientError::AuthFailed(format!("cannot read K8s token: {e}"))
+                    SecretsManagerError::AuthFailed(format!("cannot read K8s token: {e}"))
                 })?;
                 serde_json::json!({
                     "access-id": self.config.access_id.as_deref().unwrap_or(""),
@@ -374,7 +374,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
                 })
             }
             other => {
-                return Err(AkeylessClientError::UnsupportedAuthMethod(format!(
+                return Err(SecretsManagerError::UnsupportedAuthMethod(format!(
                     "{other}"
                 )));
             }
@@ -385,22 +385,22 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .http
             .post_json(&url, &auth_body)
             .await
-            .map_err(|e| AkeylessClientError::GatewayUnreachable(format!("{e}")))?;
+            .map_err(|e| SecretsManagerError::GatewayUnreachable(format!("{e}")))?;
 
         let resp: serde_json::Value = serde_json::from_slice(&response)
-            .map_err(|e| AkeylessClientError::InvalidResponse(e.to_string()))?;
+            .map_err(|e| SecretsManagerError::InvalidResponse(e.to_string()))?;
 
         resp.get("token")
             .and_then(|t| t.as_str())
             .map(String::from)
-            .ok_or_else(|| AkeylessClientError::InvalidResponse("missing token field".to_string()))
+            .ok_or_else(|| SecretsManagerError::InvalidResponse("missing token field".to_string()))
     }
 
     async fn get_secret_hash(
         &self,
         path: &str,
         token: &str,
-    ) -> Result<AkeylessSecretAccess, AkeylessClientError> {
+    ) -> Result<SecretAccess, SecretsManagerError> {
         let url = format!("{}/api/v1/get-secret-value", self.config.gateway_url);
         let body = serde_json::json!({
             "names": [path],
@@ -411,14 +411,14 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .http
             .post_json(&url, &body)
             .await
-            .map_err(|e| AkeylessClientError::HttpError(format!("{e}")))?;
+            .map_err(|e| SecretsManagerError::HttpError(format!("{e}")))?;
 
         let resp: serde_json::Value = serde_json::from_slice(&response)
-            .map_err(|e| AkeylessClientError::InvalidResponse(e.to_string()))?;
+            .map_err(|e| SecretsManagerError::InvalidResponse(e.to_string()))?;
 
-        // The Akeyless API returns {"/path/to/secret": "value"}.
+        // The secrets-manager API returns {"/path/to/secret": "value"}.
         let value = resp.get(path).and_then(|v| v.as_str()).ok_or_else(|| {
-            AkeylessClientError::SecretNotFound {
+            SecretsManagerError::SecretNotFound {
                 path: path.to_string(),
             }
         })?;
@@ -438,9 +438,9 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .concat(),
         );
 
-        Ok(AkeylessSecretAccess {
+        Ok(SecretAccess {
             path: path.to_string(),
-            secret_type: AkeylessSecretType::Static,
+            secret_type: SecretKind::Static,
             value_hash,
             accessed_at: chrono::Utc::now(),
             version: None,
@@ -451,7 +451,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         &self,
         prefix: &str,
         token: &str,
-    ) -> Result<Vec<String>, AkeylessClientError> {
+    ) -> Result<Vec<String>, SecretsManagerError> {
         let url = format!("{}/api/v1/list-items", self.config.gateway_url);
         let body = serde_json::json!({
             "path": prefix,
@@ -463,10 +463,10 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .http
             .post_json(&url, &body)
             .await
-            .map_err(|e| AkeylessClientError::HttpError(format!("{e}")))?;
+            .map_err(|e| SecretsManagerError::HttpError(format!("{e}")))?;
 
         let resp: serde_json::Value = serde_json::from_slice(&response)
-            .map_err(|e| AkeylessClientError::InvalidResponse(e.to_string()))?;
+            .map_err(|e| SecretsManagerError::InvalidResponse(e.to_string()))?;
 
         let items = resp
             .get("items")
@@ -485,7 +485,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         Ok(items)
     }
 
-    async fn gateway_cert_hash(&self) -> Result<Blake3Hash, AkeylessClientError> {
+    async fn gateway_cert_hash(&self) -> Result<Blake3Hash, SecretsManagerError> {
         // For TLS cert hashing we would need to inspect the TLS connection.
         // As a practical approach, hash the gateway URL as a stable identifier.
         // In production one would extract the actual TLS cert from the connection.
@@ -497,7 +497,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
     async fn build_attestation(
         &self,
         secret_paths: &[String],
-    ) -> Result<AkeylessSecretAttestation, AkeylessClientError> {
+    ) -> Result<SecretAttestation, SecretsManagerError> {
         let token = self.authenticate().await?;
         let gateway_cert = self.gateway_cert_hash().await?;
         let session_hash = Blake3Hash::digest(token.as_bytes());
@@ -508,7 +508,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             secrets_accessed.push(access);
         }
 
-        Ok(AkeylessSecretAttestation {
+        Ok(SecretAttestation {
             gateway_url: self.config.gateway_url.clone(),
             auth_method: self.config.auth_method.clone(),
             secrets_accessed,
@@ -517,7 +517,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         })
     }
 
-    async fn get_target(&self, name: &str, token: &str) -> Result<TargetInfo, AkeylessClientError> {
+    async fn get_target(&self, name: &str, token: &str) -> Result<TargetInfo, SecretsManagerError> {
         let url = format!("{}/api/v1/target-get-details", self.config.gateway_url);
         let body = serde_json::json!({
             "name": name,
@@ -528,18 +528,18 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .http
             .post_json(&url, &body)
             .await
-            .map_err(|e| AkeylessClientError::HttpError(format!("{e}")))?;
+            .map_err(|e| SecretsManagerError::HttpError(format!("{e}")))?;
 
         let resp: serde_json::Value = serde_json::from_slice(&response)
-            .map_err(|e| AkeylessClientError::InvalidResponse(e.to_string()))?;
+            .map_err(|e| SecretsManagerError::InvalidResponse(e.to_string()))?;
 
         let target_type_str = resp
             .get("target_type")
             .and_then(|v| v.as_str())
             .unwrap_or("custom");
-        let target_type: AkeylessTargetType = target_type_str
+        let target_type: SecretTargetType = target_type_str
             .parse()
-            .unwrap_or(AkeylessTargetType::Custom);
+            .unwrap_or(SecretTargetType::Custom);
 
         let endpoint = resp
             .get("endpoint")
@@ -590,7 +590,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         })
     }
 
-    async fn list_targets(&self, token: &str) -> Result<Vec<String>, AkeylessClientError> {
+    async fn list_targets(&self, token: &str) -> Result<Vec<String>, SecretsManagerError> {
         let url = format!("{}/api/v1/list-targets", self.config.gateway_url);
         let body = serde_json::json!({
             "token": token
@@ -600,10 +600,10 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .http
             .post_json(&url, &body)
             .await
-            .map_err(|e| AkeylessClientError::HttpError(format!("{e}")))?;
+            .map_err(|e| SecretsManagerError::HttpError(format!("{e}")))?;
 
         let resp: serde_json::Value = serde_json::from_slice(&response)
-            .map_err(|e| AkeylessClientError::InvalidResponse(e.to_string()))?;
+            .map_err(|e| SecretsManagerError::InvalidResponse(e.to_string()))?;
 
         let targets = resp
             .get("targets")
@@ -626,7 +626,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
         &self,
         name: &str,
         token: &str,
-    ) -> Result<DynamicSecretInfo, AkeylessClientError> {
+    ) -> Result<DynamicSecretInfo, SecretsManagerError> {
         let url = format!("{}/api/v1/dynamic-secret-get", self.config.gateway_url);
         let body = serde_json::json!({
             "name": name,
@@ -637,10 +637,10 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .http
             .post_json(&url, &body)
             .await
-            .map_err(|e| AkeylessClientError::HttpError(format!("{e}")))?;
+            .map_err(|e| SecretsManagerError::HttpError(format!("{e}")))?;
 
         let resp: serde_json::Value = serde_json::from_slice(&response)
-            .map_err(|e| AkeylessClientError::InvalidResponse(e.to_string()))?;
+            .map_err(|e| SecretsManagerError::InvalidResponse(e.to_string()))?;
 
         let producer_type_str = resp
             .get("producer_type")
@@ -648,12 +648,12 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
             .unwrap_or("dynamic_custom");
 
         let producer_type = match producer_type_str {
-            "dynamic_aws_iam" => AkeylessSecretType::DynamicAwsIam,
-            "dynamic_gcp" => AkeylessSecretType::DynamicGcp,
-            "dynamic_azure" => AkeylessSecretType::DynamicAzure,
-            "dynamic_k8s" => AkeylessSecretType::DynamicK8s,
-            "dynamic_database" => AkeylessSecretType::DynamicDatabase,
-            _ => AkeylessSecretType::DynamicCustom,
+            "dynamic_aws_iam" => SecretKind::DynamicAwsIam,
+            "dynamic_gcp" => SecretKind::DynamicGcp,
+            "dynamic_azure" => SecretKind::DynamicAzure,
+            "dynamic_k8s" => SecretKind::DynamicK8s,
+            "dynamic_database" => SecretKind::DynamicDatabase,
+            _ => SecretKind::DynamicCustom,
         };
 
         let user_ttl = resp
@@ -672,7 +672,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
     async fn build_target_attestation(
         &self,
         target_names: &[String],
-    ) -> Result<Vec<AkeylessTargetAttestation>, AkeylessClientError> {
+    ) -> Result<Vec<SecretTargetAttestation>, SecretsManagerError> {
         let token = self.authenticate().await?;
         let mut attestations = Vec::with_capacity(target_names.len());
 
@@ -693,7 +693,7 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
                 }
             }
 
-            attestations.push(AkeylessTargetAttestation {
+            attestations.push(SecretTargetAttestation {
                 target_name: info.name.clone(),
                 target_type: info.target_type,
                 target_config_hash: Blake3Hash::digest(info.config_json.as_bytes()),
@@ -716,19 +716,19 @@ impl<H: HttpClient> AkeylessClient for HttpAkeylessClient<H> {
 }
 
 // ---------------------------------------------------------------------------
-// MockAkeylessClient
+// MockSecretsManagerClient
 // ---------------------------------------------------------------------------
 
-/// Mock Akeyless client for testing.
+/// Mock secrets-manager client for testing.
 ///
 /// Returns canned attestation data without making any real API calls.
-pub struct MockAkeylessClient {
-    attestation: std::sync::Mutex<Option<AkeylessSecretAttestation>>,
-    default_attestation: AkeylessSecretAttestation,
-    target_attestations: std::sync::Mutex<Option<Vec<AkeylessTargetAttestation>>>,
+pub struct MockSecretsManagerClient {
+    attestation: std::sync::Mutex<Option<SecretAttestation>>,
+    default_attestation: SecretAttestation,
+    target_attestations: std::sync::Mutex<Option<Vec<SecretTargetAttestation>>>,
 }
 
-impl MockAkeylessClient {
+impl MockSecretsManagerClient {
     /// Create a new mock with a default sample attestation.
     #[must_use]
     pub fn new() -> Self {
@@ -742,7 +742,7 @@ impl MockAkeylessClient {
 
     /// Create a mock that always returns the given attestation.
     #[must_use]
-    pub fn with_attestation(attestation: AkeylessSecretAttestation) -> Self {
+    pub fn with_attestation(attestation: SecretAttestation) -> Self {
         let default = attestation.clone();
         Self {
             attestation: std::sync::Mutex::new(Some(attestation)),
@@ -755,24 +755,24 @@ impl MockAkeylessClient {
     #[must_use]
     pub fn with_target_attestations(
         mut self,
-        attestations: Vec<AkeylessTargetAttestation>,
+        attestations: Vec<SecretTargetAttestation>,
     ) -> Self {
         self.target_attestations = std::sync::Mutex::new(Some(attestations));
         self
     }
 
     /// Override the target attestations returned by future calls.
-    pub fn set_target_attestations(&self, attestations: Vec<AkeylessTargetAttestation>) {
+    pub fn set_target_attestations(&self, attestations: Vec<SecretTargetAttestation>) {
         *self.target_attestations.lock().unwrap() = Some(attestations);
     }
 
     /// Override the attestation returned by future calls.
-    pub fn set_attestation(&self, attestation: AkeylessSecretAttestation) {
+    pub fn set_attestation(&self, attestation: SecretAttestation) {
         *self.attestation.lock().unwrap() = Some(attestation);
     }
 
     /// Get the currently configured attestation (or the default).
-    fn current_attestation(&self) -> AkeylessSecretAttestation {
+    fn current_attestation(&self) -> SecretAttestation {
         self.attestation
             .lock()
             .unwrap()
@@ -780,13 +780,13 @@ impl MockAkeylessClient {
             .unwrap_or_else(|| self.default_attestation.clone())
     }
 
-    fn sample_attestation() -> AkeylessSecretAttestation {
-        AkeylessSecretAttestation {
-            gateway_url: "https://mock-gw.akeyless.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::ApiKey,
-            secrets_accessed: vec![AkeylessSecretAccess {
+    fn sample_attestation() -> SecretAttestation {
+        SecretAttestation {
+            gateway_url: "https://mock-gw.secrets.example.com".to_string(),
+            auth_method: SecretAuthMethod::ApiKey,
+            secrets_accessed: vec![SecretAccess {
                 path: "/mock/secret".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"mock-secret-value"),
                 accessed_at: chrono::Utc::now(),
                 version: Some(1),
@@ -797,14 +797,14 @@ impl MockAkeylessClient {
     }
 }
 
-impl Default for MockAkeylessClient {
+impl Default for MockSecretsManagerClient {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl AkeylessClient for MockAkeylessClient {
-    async fn authenticate(&self) -> Result<String, AkeylessClientError> {
+impl SecretsManagerClient for MockSecretsManagerClient {
+    async fn authenticate(&self) -> Result<String, SecretsManagerError> {
         Ok("mock-token".to_string())
     }
 
@@ -812,13 +812,13 @@ impl AkeylessClient for MockAkeylessClient {
         &self,
         path: &str,
         _token: &str,
-    ) -> Result<AkeylessSecretAccess, AkeylessClientError> {
+    ) -> Result<SecretAccess, SecretsManagerError> {
         let att = self.current_attestation();
         att.secrets_accessed
             .iter()
             .find(|s| s.path == path)
             .cloned()
-            .ok_or(AkeylessClientError::SecretNotFound {
+            .ok_or(SecretsManagerError::SecretNotFound {
                 path: path.to_string(),
             })
     }
@@ -827,7 +827,7 @@ impl AkeylessClient for MockAkeylessClient {
         &self,
         _prefix: &str,
         _token: &str,
-    ) -> Result<Vec<String>, AkeylessClientError> {
+    ) -> Result<Vec<String>, SecretsManagerError> {
         let att = self.current_attestation();
         Ok(att
             .secrets_accessed
@@ -836,7 +836,7 @@ impl AkeylessClient for MockAkeylessClient {
             .collect())
     }
 
-    async fn gateway_cert_hash(&self) -> Result<Blake3Hash, AkeylessClientError> {
+    async fn gateway_cert_hash(&self) -> Result<Blake3Hash, SecretsManagerError> {
         let att = self.current_attestation();
         Ok(att.gateway_certificate_hash.clone())
     }
@@ -844,7 +844,7 @@ impl AkeylessClient for MockAkeylessClient {
     async fn build_attestation(
         &self,
         _secret_paths: &[String],
-    ) -> Result<AkeylessSecretAttestation, AkeylessClientError> {
+    ) -> Result<SecretAttestation, SecretsManagerError> {
         Ok(self.current_attestation())
     }
 
@@ -852,7 +852,7 @@ impl AkeylessClient for MockAkeylessClient {
         &self,
         name: &str,
         _token: &str,
-    ) -> Result<TargetInfo, AkeylessClientError> {
+    ) -> Result<TargetInfo, SecretsManagerError> {
         let atts = self.target_attestations.lock().unwrap();
         if let Some(ref target_atts) = *atts {
             if let Some(att) = target_atts.iter().find(|a| a.target_name == name) {
@@ -877,12 +877,12 @@ impl AkeylessClient for MockAkeylessClient {
                 });
             }
         }
-        Err(AkeylessClientError::TargetNotFound {
+        Err(SecretsManagerError::TargetNotFound {
             name: name.to_string(),
         })
     }
 
-    async fn list_targets(&self, _token: &str) -> Result<Vec<String>, AkeylessClientError> {
+    async fn list_targets(&self, _token: &str) -> Result<Vec<String>, SecretsManagerError> {
         let atts = self.target_attestations.lock().unwrap();
         Ok(atts
             .as_ref()
@@ -894,7 +894,7 @@ impl AkeylessClient for MockAkeylessClient {
         &self,
         name: &str,
         _token: &str,
-    ) -> Result<DynamicSecretInfo, AkeylessClientError> {
+    ) -> Result<DynamicSecretInfo, SecretsManagerError> {
         let atts = self.target_attestations.lock().unwrap();
         if let Some(ref target_atts) = *atts {
             for att in target_atts {
@@ -909,7 +909,7 @@ impl AkeylessClient for MockAkeylessClient {
                 }
             }
         }
-        Err(AkeylessClientError::SecretNotFound {
+        Err(SecretsManagerError::SecretNotFound {
             path: name.to_string(),
         })
     }
@@ -917,7 +917,7 @@ impl AkeylessClient for MockAkeylessClient {
     async fn build_target_attestation(
         &self,
         _target_names: &[String],
-    ) -> Result<Vec<AkeylessTargetAttestation>, AkeylessClientError> {
+    ) -> Result<Vec<SecretTargetAttestation>, SecretsManagerError> {
         let atts = self.target_attestations.lock().unwrap();
         Ok(atts.clone().unwrap_or_default())
     }
@@ -930,35 +930,35 @@ impl AkeylessClient for MockAkeylessClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compliance::akeyless::compute_akeyless_hash;
+    use crate::compliance::secrets::compute_secret_hash;
     use crate::traits::MockHttpClient;
 
     // -----------------------------------------------------------------------
-    // MockAkeylessClient tests
+    // MockSecretsManagerClient tests
     // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn mock_authenticate_returns_token() {
-        let client = MockAkeylessClient::new();
+        let client = MockSecretsManagerClient::new();
         let token = client.authenticate().await.unwrap();
         assert_eq!(token, "mock-token");
     }
 
     #[tokio::test]
     async fn mock_build_attestation_produces_valid_attestation() {
-        let client = MockAkeylessClient::new();
+        let client = MockSecretsManagerClient::new();
         let att = client
             .build_attestation(&["/mock/secret".to_string()])
             .await
             .unwrap();
-        assert_eq!(att.gateway_url, "https://mock-gw.akeyless.example.com");
-        assert_eq!(att.auth_method, AkeylessAuthMethod::ApiKey);
+        assert_eq!(att.gateway_url, "https://mock-gw.secrets.example.com");
+        assert_eq!(att.auth_method, SecretAuthMethod::ApiKey);
         assert!(!att.secrets_accessed.is_empty());
     }
 
     #[tokio::test]
     async fn mock_get_secret_hash_hashes_value_not_path() {
-        let client = MockAkeylessClient::new();
+        let client = MockSecretsManagerClient::new();
         let access = client
             .get_secret_hash("/mock/secret", "token")
             .await
@@ -971,14 +971,14 @@ mod tests {
 
     #[tokio::test]
     async fn mock_list_secrets_returns_configured_paths() {
-        let client = MockAkeylessClient::new();
+        let client = MockSecretsManagerClient::new();
         let paths = client.list_secrets("/", "token").await.unwrap();
         assert_eq!(paths, vec!["/mock/secret".to_string()]);
     }
 
     #[tokio::test]
     async fn mock_gateway_cert_hash_is_deterministic() {
-        let client = MockAkeylessClient::new();
+        let client = MockSecretsManagerClient::new();
         let h1 = client.gateway_cert_hash().await.unwrap();
         let h2 = client.gateway_cert_hash().await.unwrap();
         assert_eq!(h1, h2);
@@ -986,12 +986,12 @@ mod tests {
 
     #[tokio::test]
     async fn mock_different_secrets_produce_different_hashes() {
-        let att1 = AkeylessSecretAttestation {
+        let att1 = SecretAttestation {
             gateway_url: "https://gw.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::ApiKey,
-            secrets_accessed: vec![AkeylessSecretAccess {
+            auth_method: SecretAuthMethod::ApiKey,
+            secrets_accessed: vec![SecretAccess {
                 path: "/secret/a".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"value-a"),
                 accessed_at: chrono::Utc::now(),
                 version: None,
@@ -999,12 +999,12 @@ mod tests {
             gateway_certificate_hash: Blake3Hash::digest(b"cert"),
             session_hash: Blake3Hash::digest(b"session"),
         };
-        let att2 = AkeylessSecretAttestation {
+        let att2 = SecretAttestation {
             gateway_url: "https://gw.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::ApiKey,
-            secrets_accessed: vec![AkeylessSecretAccess {
+            auth_method: SecretAuthMethod::ApiKey,
+            secrets_accessed: vec![SecretAccess {
                 path: "/secret/b".to_string(),
-                secret_type: AkeylessSecretType::Static,
+                secret_type: SecretKind::Static,
                 value_hash: Blake3Hash::digest(b"value-b"),
                 accessed_at: chrono::Utc::now(),
                 version: None,
@@ -1013,21 +1013,21 @@ mod tests {
             session_hash: Blake3Hash::digest(b"session"),
         };
 
-        let c1 = MockAkeylessClient::with_attestation(att1.clone());
-        let c2 = MockAkeylessClient::with_attestation(att2.clone());
+        let c1 = MockSecretsManagerClient::with_attestation(att1.clone());
+        let c2 = MockSecretsManagerClient::with_attestation(att2.clone());
 
         let a1 = c1.build_attestation(&[]).await.unwrap();
         let a2 = c2.build_attestation(&[]).await.unwrap();
 
-        assert_ne!(compute_akeyless_hash(&a1), compute_akeyless_hash(&a2));
+        assert_ne!(compute_secret_hash(&a1), compute_secret_hash(&a2));
     }
 
     #[tokio::test]
     async fn mock_set_attestation_overrides() {
-        let client = MockAkeylessClient::new();
-        let custom = AkeylessSecretAttestation {
+        let client = MockSecretsManagerClient::new();
+        let custom = SecretAttestation {
             gateway_url: "https://custom.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::K8s,
+            auth_method: SecretAuthMethod::K8s,
             secrets_accessed: vec![],
             gateway_certificate_hash: Blake3Hash::digest(b"custom-cert"),
             session_hash: Blake3Hash::digest(b"custom-session"),
@@ -1035,28 +1035,28 @@ mod tests {
         client.set_attestation(custom.clone());
         let att = client.build_attestation(&[]).await.unwrap();
         assert_eq!(att.gateway_url, "https://custom.example.com");
-        assert_eq!(att.auth_method, AkeylessAuthMethod::K8s);
+        assert_eq!(att.auth_method, SecretAuthMethod::K8s);
     }
 
     #[tokio::test]
     async fn mock_get_secret_hash_returns_not_found_for_missing() {
-        let client = MockAkeylessClient::new();
+        let client = MockSecretsManagerClient::new();
         let result = client.get_secret_hash("/nonexistent/secret", "token").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, AkeylessClientError::SecretNotFound { path } if path == "/nonexistent/secret")
+            matches!(err, SecretsManagerError::SecretNotFound { path } if path == "/nonexistent/secret")
         );
     }
 
     // -----------------------------------------------------------------------
-    // HttpAkeylessClient tests (with MockHttpClient)
+    // HttpSecretsManagerClient tests (with MockHttpClient)
     // -----------------------------------------------------------------------
 
-    fn api_key_config(gateway_url: &str) -> AkeylessConfig {
-        AkeylessConfig {
+    fn api_key_config(gateway_url: &str) -> SecretsManagerConfig {
+        SecretsManagerConfig {
             gateway_url: gateway_url.to_string(),
-            auth_method: AkeylessAuthMethod::ApiKey,
+            auth_method: SecretAuthMethod::ApiKey,
             access_id: Some("p-test-id".to_string()),
             access_key: Some("test-access-key".to_string()),
             k8s_token_path: None,
@@ -1076,7 +1076,7 @@ mod tests {
             &serde_json::json!({"token": "t-abc123"}),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let token = client.authenticate().await.unwrap();
         assert_eq!(token, "t-abc123");
     }
@@ -1091,12 +1091,12 @@ mod tests {
             &serde_json::json!({"error": "bad credentials"}),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.authenticate().await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::InvalidResponse(_)
+            SecretsManagerError::InvalidResponse(_)
         ));
     }
 
@@ -1106,12 +1106,12 @@ mod tests {
         let config = api_key_config("https://gw.test.com");
         // No response registered -> network failure.
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.authenticate().await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::GatewayUnreachable(_)
+            SecretsManagerError::GatewayUnreachable(_)
         ));
     }
 
@@ -1122,20 +1122,20 @@ mod tests {
 
         http.add_json_response(
             "https://gw.test.com/api/v1/get-secret-value",
-            &serde_json::json!({"/prod/db/password": "super-secret-123"}),
+            &serde_json::json!({"/prod/db/credential": "super-secret-123"}),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let access = client
-            .get_secret_hash("/prod/db/password", "t-token")
+            .get_secret_hash("/prod/db/credential", "t-token")
             .await
             .unwrap();
 
-        assert_eq!(access.path, "/prod/db/password");
-        assert_eq!(access.secret_type, AkeylessSecretType::Static);
+        assert_eq!(access.path, "/prod/db/credential");
+        assert_eq!(access.secret_type, SecretKind::Static);
         // The hash should be salted: BLAKE3(gateway_url:path:value)
         let expected_salted =
-            Blake3Hash::digest(b"https://gw.test.com:/prod/db/password:super-secret-123");
+            Blake3Hash::digest(b"https://gw.test.com:/prod/db/credential:super-secret-123");
         assert_eq!(access.value_hash, expected_salted);
         // Should NOT equal unsalted hash of just the value
         assert_ne!(access.value_hash, Blake3Hash::digest(b"super-secret-123"));
@@ -1152,11 +1152,11 @@ mod tests {
             &serde_json::json!({"/other/secret": "value"}),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.get_secret_hash("/missing/secret", "t-token").await;
         assert!(result.is_err());
         assert!(
-            matches!(result.unwrap_err(), AkeylessClientError::SecretNotFound { path } if path == "/missing/secret")
+            matches!(result.unwrap_err(), SecretsManagerError::SecretNotFound { path } if path == "/missing/secret")
         );
     }
 
@@ -1170,12 +1170,12 @@ mod tests {
             b"not-json".to_vec(),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.get_secret_hash("/secret", "t-token").await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::InvalidResponse(_)
+            SecretsManagerError::InvalidResponse(_)
         ));
     }
 
@@ -1194,7 +1194,7 @@ mod tests {
             }),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let items = client.list_secrets("/prod", "t-token").await.unwrap();
         assert_eq!(items.len(), 2);
         assert_eq!(items[0], "/prod/db/password");
@@ -1211,7 +1211,7 @@ mod tests {
             &serde_json::json!({"items": []}),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let items = client.list_secrets("/empty", "t-token").await.unwrap();
         assert!(items.is_empty());
     }
@@ -1220,7 +1220,7 @@ mod tests {
     async fn http_gateway_cert_hash_is_deterministic() {
         let http = MockHttpClient::new();
         let config = api_key_config("https://gw.test.com");
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
 
         let h1 = client.gateway_cert_hash().await.unwrap();
         let h2 = client.gateway_cert_hash().await.unwrap();
@@ -1244,14 +1244,14 @@ mod tests {
             &serde_json::json!({"/db/pass": "db-password-value"}),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let att = client
             .build_attestation(&["/db/pass".to_string()])
             .await
             .unwrap();
 
         assert_eq!(att.gateway_url, "https://gw.test.com");
-        assert_eq!(att.auth_method, AkeylessAuthMethod::ApiKey);
+        assert_eq!(att.auth_method, SecretAuthMethod::ApiKey);
         assert_eq!(att.secrets_accessed.len(), 1);
         assert_eq!(att.secrets_accessed[0].path, "/db/pass");
         // value_hash is now salted: BLAKE3(gateway_url:path:value)
@@ -1268,7 +1268,7 @@ mod tests {
         let config = api_key_config("https://gw.test.com");
         // No auth response registered -> failure.
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.build_attestation(&["/secret".to_string()]).await;
         assert!(result.is_err());
     }
@@ -1276,9 +1276,9 @@ mod tests {
     #[tokio::test]
     async fn http_unsupported_auth_method_returns_error() {
         let http = MockHttpClient::new();
-        let config = AkeylessConfig {
+        let config = SecretsManagerConfig {
             gateway_url: "https://gw.test.com".to_string(),
-            auth_method: AkeylessAuthMethod::AwsIam,
+            auth_method: SecretAuthMethod::AwsIam,
             access_id: None,
             access_key: None,
             k8s_token_path: None,
@@ -1286,12 +1286,12 @@ mod tests {
             tls: TlsConfig::default(),
         };
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.authenticate().await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::UnsupportedAuthMethod(_)
+            SecretsManagerError::UnsupportedAuthMethod(_)
         ));
     }
 
@@ -1300,12 +1300,12 @@ mod tests {
         let http = MockHttpClient::new();
         let config = api_key_config("https://gw.test.com");
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.list_secrets("/prod", "token").await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::HttpError(_)
+            SecretsManagerError::HttpError(_)
         ));
     }
 
@@ -1314,12 +1314,12 @@ mod tests {
         let http = MockHttpClient::new();
         let config = api_key_config("https://gw.test.com");
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.get_secret_hash("/secret", "token").await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::HttpError(_)
+            SecretsManagerError::HttpError(_)
         ));
     }
 
@@ -1327,10 +1327,10 @@ mod tests {
     // Target attestation tests
     // -----------------------------------------------------------------------
 
-    fn sample_target_attestations() -> Vec<AkeylessTargetAttestation> {
-        vec![AkeylessTargetAttestation {
+    fn sample_target_attestations() -> Vec<SecretTargetAttestation> {
+        vec![SecretTargetAttestation {
             target_name: "/targets/prod/database".to_string(),
-            target_type: AkeylessTargetType::Database,
+            target_type: SecretTargetType::Database,
             target_config_hash: Blake3Hash::digest(b"db-config"),
             target_credential_hash: Blake3Hash::digest(b"db-creds"),
             backend_endpoint_hash: Blake3Hash::digest(b"db.prod.internal:5432"),
@@ -1338,7 +1338,7 @@ mod tests {
             backend_tls_verified: true,
             associated_producers: vec![ProducerAssociation {
                 producer_name: "/producers/db-dynamic".to_string(),
-                producer_type: AkeylessSecretType::DynamicDatabase,
+                producer_type: SecretKind::DynamicDatabase,
                 user_ttl: "1h".to_string(),
                 target_assoc_id: Some("assoc-123".to_string()),
             }],
@@ -1349,7 +1349,7 @@ mod tests {
     #[tokio::test]
     async fn mock_build_target_attestation_returns_configured() {
         let atts = sample_target_attestations();
-        let client = MockAkeylessClient::new().with_target_attestations(atts.clone());
+        let client = MockSecretsManagerClient::new().with_target_attestations(atts.clone());
         let result = client
             .build_target_attestation(&["/targets/prod/database".to_string()])
             .await
@@ -1361,37 +1361,37 @@ mod tests {
     #[tokio::test]
     async fn mock_get_target_returns_info() {
         let atts = sample_target_attestations();
-        let client = MockAkeylessClient::new().with_target_attestations(atts);
+        let client = MockSecretsManagerClient::new().with_target_attestations(atts);
         let info = client
             .get_target("/targets/prod/database", "token")
             .await
             .unwrap();
         assert_eq!(info.name, "/targets/prod/database");
-        assert_eq!(info.target_type, AkeylessTargetType::Database);
+        assert_eq!(info.target_type, SecretTargetType::Database);
     }
 
     #[tokio::test]
     async fn mock_get_target_not_found() {
-        let client = MockAkeylessClient::new().with_target_attestations(vec![]);
+        let client = MockSecretsManagerClient::new().with_target_attestations(vec![]);
         let result = client.get_target("/targets/missing", "token").await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::TargetNotFound { .. }
+            SecretsManagerError::TargetNotFound { .. }
         ));
     }
 
     #[tokio::test]
     async fn mock_list_targets_returns_names() {
         let atts = sample_target_attestations();
-        let client = MockAkeylessClient::new().with_target_attestations(atts);
+        let client = MockSecretsManagerClient::new().with_target_attestations(atts);
         let names = client.list_targets("token").await.unwrap();
         assert_eq!(names, vec!["/targets/prod/database".to_string()]);
     }
 
     #[tokio::test]
     async fn mock_set_target_attestations_overrides() {
-        let client = MockAkeylessClient::new();
+        let client = MockSecretsManagerClient::new();
         assert!(client.list_targets("token").await.unwrap().is_empty());
 
         client.set_target_attestations(sample_target_attestations());
@@ -1402,13 +1402,13 @@ mod tests {
     #[tokio::test]
     async fn mock_get_dynamic_secret_details_from_targets() {
         let atts = sample_target_attestations();
-        let client = MockAkeylessClient::new().with_target_attestations(atts);
+        let client = MockSecretsManagerClient::new().with_target_attestations(atts);
         let ds = client
             .get_dynamic_secret_details("/producers/db-dynamic", "token")
             .await
             .unwrap();
         assert_eq!(ds.name, "/producers/db-dynamic");
-        assert_eq!(ds.producer_type, AkeylessSecretType::DynamicDatabase);
+        assert_eq!(ds.producer_type, SecretKind::DynamicDatabase);
         assert_eq!(ds.user_ttl, "1h");
     }
 
@@ -1430,13 +1430,13 @@ mod tests {
             }),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let info = client
             .get_target("/targets/prod/db", "t-token")
             .await
             .unwrap();
         assert_eq!(info.name, "/targets/prod/db");
-        assert_eq!(info.target_type, AkeylessTargetType::Database);
+        assert_eq!(info.target_type, SecretTargetType::Database);
         assert_eq!(info.endpoint, "db.prod.internal:5432");
         assert!(info.tls_verified);
         assert_eq!(info.tls_cert, Some("PEM-CERT-DATA".to_string()));
@@ -1458,7 +1458,7 @@ mod tests {
             }),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let targets = client.list_targets("t-token").await.unwrap();
         assert_eq!(targets.len(), 2);
         assert_eq!(targets[0], "/targets/prod/db");
@@ -1471,9 +1471,9 @@ mod tests {
 
     #[test]
     fn k8s_auth_config_defaults() {
-        let config = AkeylessConfig {
+        let config = SecretsManagerConfig {
             gateway_url: "https://gw.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::K8s,
+            auth_method: SecretAuthMethod::K8s,
             access_id: Some("p-k8s-id".to_string()),
             access_key: None,
             k8s_token_path: None,
@@ -1494,9 +1494,9 @@ mod tests {
 
     #[test]
     fn k8s_auth_config_serde() {
-        let config = AkeylessConfig {
+        let config = SecretsManagerConfig {
             gateway_url: "https://gw.k8s.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::K8s,
+            auth_method: SecretAuthMethod::K8s,
             access_id: Some("p-k8s-access".to_string()),
             access_key: None,
             k8s_token_path: Some("/custom/token/path".to_string()),
@@ -1505,10 +1505,10 @@ mod tests {
         };
 
         let json = serde_json::to_string(&config).unwrap();
-        let deserialized: AkeylessConfig = serde_json::from_str(&json).unwrap();
+        let deserialized: SecretsManagerConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.gateway_url, "https://gw.k8s.example.com");
-        assert_eq!(deserialized.auth_method, AkeylessAuthMethod::K8s);
+        assert_eq!(deserialized.auth_method, SecretAuthMethod::K8s);
         assert_eq!(deserialized.access_id, Some("p-k8s-access".to_string()));
         assert!(deserialized.access_key.is_none());
         assert_eq!(
@@ -1529,9 +1529,9 @@ mod tests {
         std::fs::write(&token_path, "eyJ0eXAiOiJKV1QifQ.test-payload.sig\n").unwrap();
 
         let http = MockHttpClient::new();
-        let config = AkeylessConfig {
+        let config = SecretsManagerConfig {
             gateway_url: "https://gw.test.com".to_string(),
-            auth_method: AkeylessAuthMethod::K8s,
+            auth_method: SecretAuthMethod::K8s,
             access_id: Some("p-k8s-id".to_string()),
             access_key: None,
             k8s_token_path: Some(token_path.to_str().unwrap().to_string()),
@@ -1544,7 +1544,7 @@ mod tests {
             &serde_json::json!({"token": "t-k8s-token-123"}),
         );
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let token = client.authenticate().await.unwrap();
         assert_eq!(token, "t-k8s-token-123");
     }
@@ -1552,9 +1552,9 @@ mod tests {
     #[tokio::test]
     async fn http_k8s_auth_fails_when_token_file_missing() {
         let http = MockHttpClient::new();
-        let config = AkeylessConfig {
+        let config = SecretsManagerConfig {
             gateway_url: "https://gw.test.com".to_string(),
-            auth_method: AkeylessAuthMethod::K8s,
+            auth_method: SecretAuthMethod::K8s,
             access_id: Some("p-k8s-id".to_string()),
             access_key: None,
             k8s_token_path: Some("/nonexistent/path/token".to_string()),
@@ -1562,12 +1562,12 @@ mod tests {
             tls: TlsConfig::default(),
         };
 
-        let client = HttpAkeylessClient::new(config, http);
+        let client = HttpSecretsManagerClient::new(config, http);
         let result = client.authenticate().await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            AkeylessClientError::AuthFailed(_)
+            SecretsManagerError::AuthFailed(_)
         ));
     }
 
@@ -1601,10 +1601,10 @@ mod tests {
     }
 
     #[test]
-    fn akeyless_config_with_tls() {
-        let config = AkeylessConfig {
+    fn secrets_manager_config_with_tls() {
+        let config = SecretsManagerConfig {
             gateway_url: "https://gw.example.com".to_string(),
-            auth_method: AkeylessAuthMethod::ApiKey,
+            auth_method: SecretAuthMethod::ApiKey,
             access_id: Some("p-123".to_string()),
             access_key: Some("key".to_string()),
             k8s_token_path: None,
@@ -1683,7 +1683,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, AkeylessClientError::TlsConfigError(ref msg) if msg.contains("pinned CA")),
+            matches!(err, SecretsManagerError::TlsConfigError(ref msg) if msg.contains("pinned CA")),
             "expected TlsConfigError about pinned CA, got: {err}"
         );
     }
@@ -1699,7 +1699,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, AkeylessClientError::TlsConfigError(ref msg) if msg.contains("client cert")),
+            matches!(err, SecretsManagerError::TlsConfigError(ref msg) if msg.contains("client cert")),
             "expected TlsConfigError about client cert, got: {err}"
         );
     }
