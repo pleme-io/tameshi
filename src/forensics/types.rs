@@ -248,7 +248,7 @@ mod tests {
             cluster: "prod-us-east".to_string(),
             namespace: "default".to_string(),
             node: "node-1".to_string(),
-            pod: "app-abc-123".to_string(),
+            pod: "app-7d9f4b".to_string(),
             container: "main".to_string(),
             image_ref: "ghcr.io/pleme-io/app:v1.0.0".to_string(),
             binary_paths: vec!["/usr/bin/app".to_string()],
@@ -293,7 +293,7 @@ mod tests {
         assert_eq!(ctx.cluster, "prod-us-east");
         assert_eq!(ctx.namespace, "default");
         assert_eq!(ctx.node, "node-1");
-        assert_eq!(ctx.pod, "app-abc-123");
+        assert_eq!(ctx.pod, "app-7d9f4b");
         assert_eq!(ctx.container, "main");
         assert_eq!(ctx.image_ref, "ghcr.io/pleme-io/app:v1.0.0");
         assert_eq!(ctx.binary_paths.len(), 1);
