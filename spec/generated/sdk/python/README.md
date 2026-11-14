@@ -102,32 +102,53 @@ Class | Method | HTTP request | Description
 *CertificationPipelineApi* | [**certify_product**](docs/CertificationPipelineApi.md#certify_product) | **POST** /api/v1/compliance/certify | Certify a product
 *CertificationsApi* | [**get_certification**](docs/CertificationsApi.md#get_certification) | **GET** /api/v1/certifications/{name} | Get certification by name
 *CertificationsApi* | [**list_certifications**](docs/CertificationsApi.md#list_certifications) | **GET** /api/v1/certifications | List all certifications
+*CollectorsApi* | [**hash_helm_render**](docs/CollectorsApi.md#hash_helm_render) | **POST** /api/v1/collectors/helm/render | Hash a rendered Helm chart
 *ComplianceApi* | [**get_compliance_hash**](docs/ComplianceApi.md#get_compliance_hash) | **GET** /api/v1/compliance/hash | Get latest compliance hash
 *ComplianceApi* | [**get_compliance_result**](docs/ComplianceApi.md#get_compliance_result) | **GET** /api/v1/compliance/results/{id} | Get compliance result by ID
 *ComplianceApi* | [**list_compliance_results**](docs/ComplianceApi.md#list_compliance_results) | **GET** /api/v1/compliance/results | List compliance results
 *ComplianceApi* | [**run_compliance_assessment**](docs/ComplianceApi.md#run_compliance_assessment) | **POST** /api/v1/compliance/run | Run compliance assessment
+*ComplianceQueryApi* | [**get_compliance_distance**](docs/ComplianceQueryApi.md#get_compliance_distance) | **GET** /api/v1/compliance/distance | Get compliance distance from target baseline
+*ComplianceQueryApi* | [**get_compliance_state**](docs/ComplianceQueryApi.md#get_compliance_state) | **GET** /api/v1/compliance/state | Get current compliance state
+*ForensicsApi* | [**get_blast_radius**](docs/ForensicsApi.md#get_blast_radius) | **GET** /api/v1/forensics/blast-radius | Query blast radius for a compromised hash
+*ForensicsApi* | [**get_forensics_provenance**](docs/ForensicsApi.md#get_forensics_provenance) | **GET** /api/v1/forensics/provenance | Get point-in-time artifact stack for a node
+*ForensicsApi* | [**get_forensics_timeline**](docs/ForensicsApi.md#get_forensics_timeline) | **GET** /api/v1/forensics/timeline | Get chronological event stream for a hash
+*ForensicsApi* | [**revoke_hash**](docs/ForensicsApi.md#revoke_hash) | **POST** /api/v1/forensics/revoke | Emergency revocation of a compromised hash
 *GatesApi* | [**get_gate**](docs/GatesApi.md#get_gate) | **GET** /api/v1/gates/{name} | Get a signature gate by name
 *GatesApi* | [**list_gates**](docs/GatesApi.md#list_gates) | **GET** /api/v1/gates | List all signature gates
 *GatesApi* | [**verify_gate**](docs/GatesApi.md#verify_gate) | **GET** /api/v1/gates/{name}/verify | Verify a signature gate
+*GlobalApi* | [**get_cluster_state**](docs/GlobalApi.md#get_cluster_state) | **GET** /api/v1/global/clusters/{id}/state | Get a specific cluster&#39;s state
+*GlobalApi* | [**get_global_blast_radius**](docs/GlobalApi.md#get_global_blast_radius) | **GET** /api/v1/global/blast-radius | Global blast radius for a compromised hash
+*GlobalApi* | [**get_global_history**](docs/GlobalApi.md#get_global_history) | **GET** /api/v1/global/history | Get global state root history
+*GlobalApi* | [**get_global_state_root**](docs/GlobalApi.md#get_global_state_root) | **GET** /api/v1/global/state-root | Get the current global state root
+*GlobalApi* | [**global_revoke_everywhere**](docs/GlobalApi.md#global_revoke_everywhere) | **POST** /api/v1/global/revoke-everywhere | Revoke a compromised hash across all clusters
+*GlobalApi* | [**list_global_clusters**](docs/GlobalApi.md#list_global_clusters) | **GET** /api/v1/global/clusters | List all clusters reporting to the global state
+*GlobalApi* | [**report_cluster_root**](docs/GlobalApi.md#report_cluster_root) | **POST** /api/v1/global/clusters/{id}/report | Report a cluster&#39;s state root
 *HealthApi* | [**healthz**](docs/HealthApi.md#healthz) | **GET** /healthz | Liveness probe
 *HealthApi* | [**readyz**](docs/HealthApi.md#readyz) | **GET** /readyz | Readiness probe
+*HeartbeatApi* | [**get_heartbeat_chain**](docs/HeartbeatApi.md#get_heartbeat_chain) | **GET** /api/v1/heartbeat/chain | Get heartbeat chain entries
+*HeartbeatApi* | [**get_heartbeat_consistency_proof**](docs/HeartbeatApi.md#get_heartbeat_consistency_proof) | **GET** /api/v1/heartbeat/consistency-proof | Get consistency proof between two chain states
+*HeartbeatApi* | [**verify_heartbeat_consistency_proof**](docs/HeartbeatApi.md#verify_heartbeat_consistency_proof) | **POST** /api/v1/heartbeat/verify | Verify a consistency proof
 *ReportsApi* | [**get_compliance_report**](docs/ReportsApi.md#get_compliance_report) | **GET** /api/v1/compliance/report | Generate compliance report
 *SignaturesApi* | [**compute_signature**](docs/SignaturesApi.md#compute_signature) | **POST** /api/v1/signatures/compute | Compute a signature
+*SigningApi* | [**sign_merkle_root**](docs/SigningApi.md#sign_merkle_root) | **POST** /api/v1/signing/sign | Sign a Merkle root
+*SigningApi* | [**verify_signed_root**](docs/SigningApi.md#verify_signed_root) | **POST** /api/v1/signing/verify | Verify a signed root
 
 
 ## Documentation For Models
 
  - [AdmissionDecisionCounts](docs/AdmissionDecisionCounts.md)
- - [AkeylessAuthMethod](docs/AkeylessAuthMethod.md)
- - [AkeylessSecretAccess](docs/AkeylessSecretAccess.md)
- - [AkeylessSecretAttestation](docs/AkeylessSecretAttestation.md)
- - [AkeylessSecretType](docs/AkeylessSecretType.md)
+ - [AffectedNode](docs/AffectedNode.md)
  - [ApiResponseCertifyResponse](docs/ApiResponseCertifyResponse.md)
  - [ApiResponseHashResponse](docs/ApiResponseHashResponse.md)
  - [ApiResponseResultSummaryList](docs/ApiResponseResultSummaryList.md)
  - [ApiResponseRunResponse](docs/ApiResponseRunResponse.md)
+ - [ArtifactDelta](docs/ArtifactDelta.md)
+ - [ArtifactLocation](docs/ArtifactLocation.md)
  - [AuditAction](docs/AuditAction.md)
  - [AuditEntry](docs/AuditEntry.md)
+ - [BlastRadiusResponse](docs/BlastRadiusResponse.md)
+ - [BlastRadiusResponseMerkleProof](docs/BlastRadiusResponseMerkleProof.md)
+ - [BlastRadiusResponseTimeRange](docs/BlastRadiusResponseTimeRange.md)
  - [BuildAttestation](docs/BuildAttestation.md)
  - [CertPhase](docs/CertPhase.md)
  - [Certification](docs/Certification.md)
@@ -138,12 +159,21 @@ Class | Method | HTTP request | Description
  - [CertifyRequest](docs/CertifyRequest.md)
  - [CertifyResponse](docs/CertifyResponse.md)
  - [ChartAttestation](docs/ChartAttestation.md)
+ - [ClusterBlastRadius](docs/ClusterBlastRadius.md)
+ - [ClusterRootEntry](docs/ClusterRootEntry.md)
+ - [ClusterRootReport](docs/ClusterRootReport.md)
+ - [ClusterStatus](docs/ClusterStatus.md)
+ - [CoResidentArtifact](docs/CoResidentArtifact.md)
  - [ComplianceAttestation](docs/ComplianceAttestation.md)
  - [ComplianceBaseline](docs/ComplianceBaseline.md)
  - [ComplianceDimension](docs/ComplianceDimension.md)
+ - [ComplianceDistance](docs/ComplianceDistance.md)
  - [ComplianceResult](docs/ComplianceResult.md)
+ - [ComplianceState](docs/ComplianceState.md)
  - [ComputeSignatureRequest](docs/ComputeSignatureRequest.md)
  - [ComputeSignatureResponse](docs/ComputeSignatureResponse.md)
+ - [ConsistencyProof](docs/ConsistencyProof.md)
+ - [ConsistencyProofVerifyRequest](docs/ConsistencyProofVerifyRequest.md)
  - [DeploymentAttestation](docs/DeploymentAttestation.md)
  - [DimensionType](docs/DimensionType.md)
  - [ErrorResponse](docs/ErrorResponse.md)
@@ -152,7 +182,13 @@ Class | Method | HTTP request | Description
  - [GateStatusRef](docs/GateStatusRef.md)
  - [GateSummary](docs/GateSummary.md)
  - [GateVerifyResult](docs/GateVerifyResult.md)
+ - [GlobalBlastRadiusResponse](docs/GlobalBlastRadiusResponse.md)
+ - [GlobalRevokeResponse](docs/GlobalRevokeResponse.md)
+ - [GlobalStateRootResponse](docs/GlobalStateRootResponse.md)
  - [HashResponse](docs/HashResponse.md)
+ - [HeartbeatEntry](docs/HeartbeatEntry.md)
+ - [HeartbeatEvent](docs/HeartbeatEvent.md)
+ - [HelmRenderRequest](docs/HelmRenderRequest.md)
  - [ImageAttestation](docs/ImageAttestation.md)
  - [InputHash](docs/InputHash.md)
  - [LayerSignature](docs/LayerSignature.md)
@@ -160,17 +196,39 @@ Class | Method | HTTP request | Description
  - [LayerType](docs/LayerType.md)
  - [LayerVerification](docs/LayerVerification.md)
  - [MasterSignature](docs/MasterSignature.md)
+ - [NodeBlastRadius](docs/NodeBlastRadius.md)
+ - [ProvenanceResponse](docs/ProvenanceResponse.md)
+ - [ProvenanceResponseActiveArtifactsInner](docs/ProvenanceResponseActiveArtifactsInner.md)
+ - [ProvenanceResponseActiveArtifactsInnerCertificationArtifact](docs/ProvenanceResponseActiveArtifactsInnerCertificationArtifact.md)
+ - [ProvenanceResponseActiveArtifactsInnerDeploymentContext](docs/ProvenanceResponseActiveArtifactsInnerDeploymentContext.md)
  - [ResultSummary](docs/ResultSummary.md)
+ - [RevokeRequest](docs/RevokeRequest.md)
+ - [RevokeResponse](docs/RevokeResponse.md)
  - [RunResponse](docs/RunResponse.md)
+ - [SecretAccess](docs/SecretAccess.md)
+ - [SecretAttestation](docs/SecretAttestation.md)
+ - [SecretAuthMethod](docs/SecretAuthMethod.md)
+ - [SecretKind](docs/SecretKind.md)
+ - [SignRequest](docs/SignRequest.md)
  - [SignatureGate](docs/SignatureGate.md)
  - [SignatureGateSpec](docs/SignatureGateSpec.md)
  - [SignatureGateStatus](docs/SignatureGateStatus.md)
  - [SignatureMetadata](docs/SignatureMetadata.md)
+ - [SignedRoot](docs/SignedRoot.md)
+ - [SigningAlgorithm](docs/SigningAlgorithm.md)
  - [SlsaLevel](docs/SlsaLevel.md)
  - [SourceAttestation](docs/SourceAttestation.md)
  - [StageStatus](docs/StageStatus.md)
+ - [StorageStats](docs/StorageStats.md)
+ - [StorageTier](docs/StorageTier.md)
  - [TargetResource](docs/TargetResource.md)
+ - [TimelineEvent](docs/TimelineEvent.md)
+ - [TimelineResponse](docs/TimelineResponse.md)
+ - [VerificationOutcome](docs/VerificationOutcome.md)
  - [VerificationResult](docs/VerificationResult.md)
+ - [VerifierIdentity](docs/VerifierIdentity.md)
+ - [VerifyHeartbeatConsistencyProof200Response](docs/VerifyHeartbeatConsistencyProof200Response.md)
+ - [VerifySignedRoot200Response](docs/VerifySignedRoot200Response.md)
 
 
 <a id="documentation-for-authorization"></a>

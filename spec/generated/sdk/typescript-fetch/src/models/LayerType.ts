@@ -27,7 +27,11 @@ export const LayerType = {
     Tatara: 'tatara',
     Fluxcd: 'fluxcd',
     Argocd: 'argocd',
-    Akeyless: 'akeyless'
+    SecretsManager: 'secrets_manager',
+    SecretTarget: 'secret_target',
+    PangeaSynthesis: 'pangea_synthesis',
+    RspecResult: 'rspec_result',
+    InspecResult: 'inspec_result'
 } as const;
 export type LayerType = typeof LayerType[keyof typeof LayerType];
 

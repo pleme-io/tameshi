@@ -29,7 +29,11 @@ const (
 	TATARA LayerType = "tatara"
 	FLUXCD LayerType = "fluxcd"
 	ARGOCD LayerType = "argocd"
-	AKEYLESS LayerType = "akeyless"
+	SECRETS_MANAGER LayerType = "secrets_manager"
+	SECRET_TARGET LayerType = "secret_target"
+	PANGEA_SYNTHESIS LayerType = "pangea_synthesis"
+	RSPEC_RESULT LayerType = "rspec_result"
+	INSPEC_RESULT LayerType = "inspec_result"
 )
 
 // All allowed values of LayerType enum
@@ -43,7 +47,11 @@ var AllowedLayerTypeEnumValues = []LayerType{
 	"tatara",
 	"fluxcd",
 	"argocd",
-	"akeyless",
+	"secrets_manager",
+	"secret_target",
+	"pangea_synthesis",
+	"rspec_result",
+	"inspec_result",
 }
 
 func (v *LayerType) UnmarshalJSON(src []byte) error {

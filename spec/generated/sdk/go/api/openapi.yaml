@@ -41,6 +41,19 @@ tags:
   name: reports
 - description: Product certification pipeline (kensa)
   name: certification-pipeline
+- description: Heartbeat proof chain for admission and compliance events
+  name: heartbeat
+- description: Infrastructure layer hash collectors
+  name: collectors
+- description: Merkle root signing and verification
+  name: signing
+- description: Compliance state and distance queries
+  name: compliance-query
+- description: "Forensic blast radius analysis, timeline provenance, and incident\
+    \ response"
+  name: forensics
+- description: Global state root aggregation across federated clusters
+  name: global
 - description: Health and readiness probes
   name: health
 paths:
@@ -356,6 +369,765 @@ paths:
       summary: Certify a product
       tags:
       - certification-pipeline
+  /api/v1/heartbeat/chain:
+    get:
+      description: |
+        Returns heartbeat proof chain entries within the specified sequence range.
+        Each entry is BLAKE3-linked to its predecessor, forming a tamper-evident log
+        of admission decisions, compliance assessments, and certification events.
+      operationId: getHeartbeatChain
+      parameters:
+      - description: Starting sequence number (inclusive)
+        explode: true
+        in: query
+        name: from_seq
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: Ending sequence number (inclusive)
+        explode: true
+        in: query
+        name: to_seq
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: Maximum number of entries to return
+        explode: true
+        in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 10000
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/HeartbeatEntry"
+                type: array
+          description: Heartbeat chain entries in sequence order
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid sequence range
+      summary: Get heartbeat chain entries
+      tags:
+      - heartbeat
+  /api/v1/heartbeat/consistency-proof:
+    get:
+      description: |
+        Generates a consistency proof demonstrating that the heartbeat chain at
+        sequence `from_seq` is a prefix of the chain at sequence `to_seq`. The
+        proof consists of BLAKE3 intermediate nodes that can be independently
+        verified without downloading the full chain.
+      operationId: getHeartbeatConsistencyProof
+      parameters:
+      - description: Earlier sequence number
+        explode: true
+        in: query
+        name: from_seq
+        required: true
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: Later sequence number
+        explode: true
+        in: query
+        name: to_seq
+        required: true
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsistencyProof"
+          description: Consistency proof between the two chain states
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid sequence range
+      summary: Get consistency proof between two chain states
+      tags:
+      - heartbeat
+  /api/v1/heartbeat/verify:
+    post:
+      description: |
+        Verifies that a consistency proof is valid by recomputing the expected
+        hashes from the proof nodes and comparing them against the provided
+        expected hashes.
+      operationId: verifyHeartbeatConsistencyProof
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsistencyProofVerifyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/verifyHeartbeatConsistencyProof_200_response"
+          description: Verification result
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid proof data
+      summary: Verify a consistency proof
+      tags:
+      - heartbeat
+  /api/v1/collectors/helm/render:
+    post:
+      description: |
+        Renders a Helm chart with the specified values files and computes a
+        deterministic BLAKE3 hash of the rendered output. Returns a full
+        LayerSignature for the Helm layer.
+      operationId: hashHelmRender
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelmRenderRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LayerSignature"
+          description: Layer signature for the rendered Helm chart
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid request (missing chart or values)
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Helm render failed
+      summary: Hash a rendered Helm chart
+      tags:
+      - collectors
+  /api/v1/signing/sign:
+    post:
+      description: |
+        Signs a BLAKE3 Merkle root using the specified algorithm. Supports local
+        Ed25519 signing and remote Fragment signing for
+        remote key management.
+      operationId: signMerkleRoot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignedRoot"
+          description: Signed root with signature and signer metadata
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Signing operation failed
+      summary: Sign a Merkle root
+      tags:
+      - signing
+  /api/v1/signing/verify:
+    post:
+      description: |
+        Verifies the signature on a signed Merkle root. The algorithm and key
+        identity are embedded in the SignedRoot object.
+      operationId: verifySignedRoot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignedRoot"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/verifySignedRoot_200_response"
+          description: Verification result
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid signed root
+      summary: Verify a signed root
+      tags:
+      - signing
+  /api/v1/compliance/state:
+    get:
+      description: |
+        Returns the current aggregate compliance state including status, distance
+        from target baseline, active frameworks, and the latest compliance hash.
+      operationId: getComplianceState
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplianceState"
+          description: Current compliance state
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Failed to compute compliance state
+      summary: Get current compliance state
+      tags:
+      - compliance-query
+  /api/v1/compliance/distance:
+    get:
+      description: |
+        Computes the gap between the current compliance state and the target
+        baseline for the specified framework. Returns the number of controls
+        required, satisfied, and the gap percentage.
+      operationId: getComplianceDistance
+      parameters:
+      - description: Target baseline level
+        explode: true
+        in: query
+        name: baseline
+        required: true
+        schema:
+          enum:
+          - low
+          - moderate
+          - high
+          type: string
+        style: form
+      - description: Compliance framework to measure against
+        explode: true
+        in: query
+        name: framework
+        required: true
+        schema:
+          enum:
+          - nist
+          - oscal
+          - soc2
+          - pci
+          - fedramp
+          - stig
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplianceDistance"
+          description: Compliance distance metrics
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid baseline or framework
+      summary: Get compliance distance from target baseline
+      tags:
+      - compliance-query
+  /api/v1/forensics/blast-radius:
+    get:
+      description: |
+        Searches the MerkleLedger for every deployment that contained the specified
+        BLAKE3 hash. Returns affected nodes, pods, namespaces, temporal range, and
+        co-resident artifacts that shared the same Merkle root. Designed for CIRCIA
+        72-hour incident response.
+      operationId: getBlastRadius
+      parameters:
+      - description: "BLAKE3 hash of the compromised artifact (prefixed, e.g. blake3:abc...)"
+        explode: true
+        in: query
+        name: hash
+        required: true
+        schema:
+          $ref: "#/components/schemas/Blake3Hash"
+        style: form
+      - description: Start of the time window (default 72 hours ago)
+        explode: true
+        in: query
+        name: from
+        required: false
+        schema:
+          format: date-time
+          type: string
+        style: form
+      - description: End of the time window (default now)
+        explode: true
+        in: query
+        name: to
+        required: false
+        schema:
+          format: date-time
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlastRadiusResponse"
+          description: Blast radius report for the compromised hash
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid hash format or time range
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Hash not found in ledger
+      summary: Query blast radius for a compromised hash
+      tags:
+      - forensics
+  /api/v1/forensics/timeline:
+    get:
+      description: |
+        Returns a chronological list of every verification event that involved the
+        specified BLAKE3 hash. Each event includes the timestamp, decision, node,
+        pod, binary path, composed root, and ledger sequence number.
+      operationId: getForensicsTimeline
+      parameters:
+      - description: BLAKE3 hash to trace through the ledger
+        explode: true
+        in: query
+        name: hash
+        required: true
+        schema:
+          $ref: "#/components/schemas/Blake3Hash"
+        style: form
+      - description: Start of the time window (default 72 hours ago)
+        explode: true
+        in: query
+        name: from
+        required: false
+        schema:
+          format: date-time
+          type: string
+        style: form
+      - description: End of the time window (default now)
+        explode: true
+        in: query
+        name: to
+        required: false
+        schema:
+          format: date-time
+          type: string
+        style: form
+      - description: Filter events to a specific node
+        explode: true
+        in: query
+        name: node
+        required: false
+        schema:
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineResponse"
+          description: Timeline of verification events for the hash
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid hash format or time range
+      summary: Get chronological event stream for a hash
+      tags:
+      - forensics
+  /api/v1/forensics/provenance:
+    get:
+      description: |
+        Returns all CertificationArtifacts that were active on the specified node
+        at the given timestamp, including their full Merkle trees, signed roots,
+        and deployment contexts.
+      operationId: getForensicsProvenance
+      parameters:
+      - description: Node name to query
+        explode: true
+        in: query
+        name: node
+        required: true
+        schema:
+          type: string
+        style: form
+      - description: Point-in-time timestamp
+        explode: true
+        in: query
+        name: at
+        required: true
+        schema:
+          format: date-time
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvenanceResponse"
+          description: Active artifacts on the node at the given timestamp
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Missing or invalid parameters
+      summary: Get point-in-time artifact stack for a node
+      tags:
+      - forensics
+  /api/v1/forensics/revoke:
+    post:
+      description: |
+        Revokes a compromised BLAKE3 hash across all nodes. Updates kanshi BPF
+        allow-maps to block execution of the compromised binary and records a
+        Revocation event in the HeartbeatChain for audit purposes.
+      operationId: revokeHash
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeResponse"
+          description: Revocation result with affected node count
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Revocation partially failed
+      summary: Emergency revocation of a compromised hash
+      tags:
+      - forensics
+  /api/v1/global/state-root:
+    get:
+      description: |
+        Returns the global state root aggregating all cluster roots. The root
+        hash is a BLAKE3 Merkle root computed from all cluster roots in
+        deterministic BTreeMap order.
+      operationId: getGlobalStateRoot
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalStateRootResponse"
+          description: Global state root
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Internal server error
+      summary: Get the current global state root
+      tags:
+      - global
+  /api/v1/global/blast-radius:
+    get:
+      description: |
+        Aggregates blast radius reports from all clusters for a given
+        compromised BLAKE3 hash. Returns per-cluster and per-node breakdowns,
+        total affected counts, and first/last seen timestamps globally.
+      operationId: getGlobalBlastRadius
+      parameters:
+      - description: BLAKE3 hash (prefixed) of the compromised artifact
+        explode: true
+        in: query
+        name: hash
+        required: true
+        schema:
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        style: form
+      - description: Start of time range (ISO 8601). Defaults to 24h ago.
+        explode: true
+        in: query
+        name: from
+        required: false
+        schema:
+          format: date-time
+          type: string
+        style: form
+      - description: End of time range (ISO 8601). Defaults to now.
+        explode: true
+        in: query
+        name: to
+        required: false
+        schema:
+          format: date-time
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalBlastRadiusResponse"
+          description: Global blast radius report
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid hash format
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Internal server error
+      summary: Global blast radius for a compromised hash
+      tags:
+      - global
+  /api/v1/global/clusters:
+    get:
+      description: |
+        Returns a list of all clusters that have reported their state root,
+        including liveness status, node count, and artifact count.
+      operationId: listGlobalClusters
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ClusterRootEntry"
+                type: array
+          description: List of cluster root entries
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Internal server error
+      summary: List all clusters reporting to the global state
+      tags:
+      - global
+  /api/v1/global/clusters/{id}/state:
+    get:
+      description: |
+        Returns the full state entry for a specific cluster, including its
+        signed root, node count, artifact count, and liveness status.
+      operationId: getClusterState
+      parameters:
+      - description: Unique cluster identifier
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterRootEntry"
+          description: Cluster state entry
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Cluster not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Internal server error
+      summary: Get a specific cluster's state
+      tags:
+      - global
+  /api/v1/global/clusters/{id}/report:
+    post:
+      description: |
+        Accepts a cluster root report from a local cluster, including its
+        signed Merkle root, node count, artifact count, and optional delta
+        of changed artifacts since the last report.
+      operationId: reportClusterRoot
+      parameters:
+      - description: Unique cluster identifier (must match report body)
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClusterRootReport"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalStateRootResponse"
+          description: "Report accepted, returns updated global state root"
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid report or cluster ID mismatch
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Internal server error
+      summary: Report a cluster's state root
+      tags:
+      - global
+  /api/v1/global/history:
+    get:
+      description: |
+        Returns the history of global state root changes, ordered by
+        sequence number. Each entry includes the root hash, cluster
+        composition, and timestamp.
+      operationId: getGlobalHistory
+      parameters:
+      - description: Maximum number of history entries to return. Defaults to 100.
+        explode: true
+        in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          maximum: 1000
+          minimum: 1
+          type: integer
+        style: form
+      - description: Return entries starting from this sequence number.
+        explode: true
+        in: query
+        name: from_sequence
+        required: false
+        schema:
+          format: int64
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/GlobalStateRootResponse"
+                type: array
+          description: List of historical global state roots
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Internal server error
+      summary: Get global state root history
+      tags:
+      - global
+  /api/v1/global/revoke-everywhere:
+    post:
+      description: |
+        Broadcasts a revocation command to all active clusters, updating
+        their kanshi BPF allow-maps to block execution of the compromised
+        binary. Returns aggregate results from all clusters.
+      operationId: globalRevokeEverywhere
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalRevokeResponse"
+          description: Global revocation result
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Invalid request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Revocation partially failed
+      summary: Revoke a compromised hash across all clusters
+      tags:
+      - global
   /healthz:
     get:
       description: Returns 200 when the service process is alive.
@@ -397,7 +1169,11 @@ components:
       - tatara
       - fluxcd
       - argocd
-      - akeyless
+      - secrets_manager
+      - secret_target
+      - pangea_synthesis
+      - rspec_result
+      - inspec_result
       type: string
     GateSummary:
       description: Abbreviated view of a SignatureGate for list responses
@@ -1036,6 +1812,21 @@ components:
       type: object
     LayerSignature:
       description: Signature data for a single infrastructure layer
+      example:
+        metadata:
+          environment: environment
+          computedAt: 2000-01-23T04:56:07.000+00:00
+          collectorVersion: collectorVersion
+          source: source
+        inputs:
+        - size: 0
+          name: name
+          hash: hash
+        - size: 0
+          name: name
+          hash: hash
+        layer: nix
+        hash: hash
       properties:
         layer:
           $ref: "#/components/schemas/LayerType"
@@ -1057,6 +1848,11 @@ components:
       type: object
     SignatureMetadata:
       description: Metadata about a signature computation
+      example:
+        environment: environment
+        computedAt: 2000-01-23T04:56:07.000+00:00
+        collectorVersion: collectorVersion
+        source: source
       properties:
         computedAt:
           description: Timestamp when the signature was computed
@@ -1079,6 +1875,10 @@ components:
       type: object
     InputHash:
       description: Hash of a single input artifact within a layer
+      example:
+        size: 0
+        name: name
+        hash: hash
       properties:
         name:
           description: Logical name of the input artifact
@@ -1778,18 +2578,18 @@ components:
       - L3
       - L4
       type: string
-    AkeylessSecretAttestation:
-      description: Attestation of Akeyless secret access during deployment
+    SecretAttestation:
+      description: Attestation of secrets-manager secret access during deployment
       properties:
         gatewayUrl:
-          description: URL of the Akeyless Gateway
+          description: URL of the secrets-manager Gateway
           type: string
         authMethod:
-          $ref: "#/components/schemas/AkeylessAuthMethod"
+          $ref: "#/components/schemas/SecretAuthMethod"
         secretsAccessed:
           description: List of secrets accessed during deployment
           items:
-            $ref: "#/components/schemas/AkeylessSecretAccess"
+            $ref: "#/components/schemas/SecretAccess"
           type: array
         gatewayCertificateHash:
           description: BLAKE3 hash of the gateway TLS certificate
@@ -1804,8 +2604,8 @@ components:
       - secretsAccessed
       - sessionHash
       type: object
-    AkeylessAuthMethod:
-      description: Akeyless authentication method type
+    SecretAuthMethod:
+      description: Secrets-manager authentication method type
       enum:
       - ApiKey
       - AwsIam
@@ -1817,14 +2617,14 @@ components:
       - Certificate
       - Universal
       type: string
-    AkeylessSecretAccess:
-      description: Record of a single Akeyless secret access
+    SecretAccess:
+      description: Record of a single secrets-manager secret access
       properties:
         path:
-          description: Akeyless secret path
+          description: Secrets-manager secret path
           type: string
         secretType:
-          $ref: "#/components/schemas/AkeylessSecretType"
+          $ref: "#/components/schemas/SecretKind"
         valueHash:
           description: BLAKE3 hash of the secret value (not the secret itself)
           type: string
@@ -1842,8 +2642,8 @@ components:
       - secretType
       - valueHash
       type: object
-    AkeylessSecretType:
-      description: Type of Akeyless secret
+    SecretKind:
+      description: Type of secrets-manager secret
       enum:
       - Static
       - DynamicAwsIam
@@ -2068,6 +2868,348 @@ components:
       - reason
       - signature
       type: object
+    HeartbeatEntry:
+      description: Single entry in the heartbeat proof chain
+      example:
+        result: allowed
+        sequence: 0
+        previousHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        resource: resource
+        verifier:
+          component: component
+          instance: instance
+          version: version
+        entryHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        signatureChecked: signatureChecked
+        event: admission_decision
+        timestamp: 2000-01-23T04:56:07.000+00:00
+      properties:
+        sequence:
+          description: Monotonically increasing sequence number
+          format: int64
+          type: integer
+        timestamp:
+          description: When the heartbeat event occurred
+          format: date-time
+          type: string
+        verifier:
+          $ref: "#/components/schemas/VerifierIdentity"
+        event:
+          $ref: "#/components/schemas/HeartbeatEvent"
+        result:
+          $ref: "#/components/schemas/VerificationOutcome"
+        resource:
+          description: Identifier of the resource involved (e.g. apps/v1/Deployment/my-app)
+          type: string
+        signatureChecked:
+          description: BLAKE3 signature hash that was checked during this event
+          type: string
+        entryHash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        previousHash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - entryHash
+      - event
+      - previousHash
+      - resource
+      - result
+      - sequence
+      - signatureChecked
+      - timestamp
+      - verifier
+      type: object
+    VerifierIdentity:
+      description: Identity of the component that produced a heartbeat entry
+      example:
+        component: component
+        instance: instance
+        version: version
+      properties:
+        component:
+          description: "Component name (e.g. sekiban, kensa, inshou)"
+          type: string
+        instance:
+          description: "Instance identifier (e.g. pod name, hostname)"
+          type: string
+        version:
+          description: Component version
+          type: string
+      required:
+      - component
+      - instance
+      - version
+      type: object
+    HeartbeatEvent:
+      description: Type of event recorded in the heartbeat chain
+      enum:
+      - admission_decision
+      - gate_verification
+      - compliance_assessment
+      - certification
+      - gate_check
+      - binary_verification
+      - script_verification
+      - break_glass
+      - revocation
+      type: string
+    VerificationOutcome:
+      description: Outcome of the verification or admission decision
+      enum:
+      - allowed
+      - denied
+      - skipped
+      - error
+      type: string
+    ConsistencyProof:
+      description: Proof that a chain prefix is consistent with a later chain state
+      example:
+        toSeq: 6
+        fromHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        proofNodes:
+        - proofNodes
+        - proofNodes
+        fromSeq: 0
+        verified: true
+        toHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        fromSeq:
+          description: Sequence number of the earlier chain state
+          format: int64
+          type: integer
+        toSeq:
+          description: Sequence number of the later chain state
+          format: int64
+          type: integer
+        fromHash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        toHash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        proofNodes:
+          description: BLAKE3 intermediate hashes forming the consistency proof
+          items:
+            type: string
+          type: array
+        verified:
+          description: Whether the proof has been verified server-side
+          type: boolean
+      required:
+      - fromHash
+      - fromSeq
+      - proofNodes
+      - toHash
+      - toSeq
+      - verified
+      type: object
+    ConsistencyProofVerifyRequest:
+      description: Request to verify a heartbeat consistency proof
+      example:
+        expectedToHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        proof:
+          toSeq: 6
+          fromHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          proofNodes:
+          - proofNodes
+          - proofNodes
+          fromSeq: 0
+          verified: true
+          toHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        expectedFromHash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        proof:
+          $ref: "#/components/schemas/ConsistencyProof"
+        expectedFromHash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        expectedToHash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - expectedFromHash
+      - expectedToHash
+      - proof
+      type: object
+    HelmRenderRequest:
+      description: Request to render and hash a Helm chart
+      example:
+        valuesFiles:
+        - valuesFiles
+        - valuesFiles
+        releaseName: releaseName
+        namespace: namespace
+        chartPath: chartPath
+      properties:
+        chartPath:
+          description: Path to the Helm chart directory or packaged chart
+          type: string
+        valuesFiles:
+          description: Paths to values files to apply during rendering
+          items:
+            type: string
+          type: array
+        releaseName:
+          description: Helm release name to use during rendering
+          type: string
+        namespace:
+          description: Kubernetes namespace for the rendered output
+          type: string
+      required:
+      - chartPath
+      - namespace
+      - releaseName
+      type: object
+    SignRequest:
+      description: Request to sign a Merkle root
+      example:
+        root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        keyName: keyName
+        algorithm: ed25519_local
+      properties:
+        root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        algorithm:
+          $ref: "#/components/schemas/SigningAlgorithm"
+        keyName:
+          description: Key name for remote signing (required for remote_fragment)
+          nullable: true
+          type: string
+      required:
+      - algorithm
+      - root
+      type: object
+    SignedRoot:
+      description: A signed Merkle root with signature metadata
+      example:
+        signerId: signerId
+        signature: signature
+        root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        signedAt: 2000-01-23T04:56:07.000+00:00
+        algorithm: ed25519_local
+      properties:
+        root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        signature:
+          description: Base64-encoded cryptographic signature
+          type: string
+        algorithm:
+          $ref: "#/components/schemas/SigningAlgorithm"
+        signerId:
+          description: Identity of the signer (key fingerprint or secrets-manager
+            key path)
+          type: string
+        signedAt:
+          description: Timestamp when the root was signed
+          format: date-time
+          type: string
+      required:
+      - algorithm
+      - root
+      - signature
+      - signedAt
+      - signerId
+      type: object
+    SigningAlgorithm:
+      description: Algorithm used to sign a Merkle root
+      enum:
+      - ed25519_local
+      - remote_fragment
+      - mock_fragment
+      - break_glass
+      type: string
+    ComplianceState:
+      description: Aggregate compliance state across all active frameworks
+      example:
+        distance: 0.8008282
+        frameworks:
+        - frameworks
+        - frameworks
+        lastAssessedAt: 2000-01-23T04:56:07.000+00:00
+        hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        status: compliant
+      properties:
+        status:
+          description: Overall compliance status
+          enum:
+          - compliant
+          - non_compliant
+          - partially_compliant
+          - unknown
+          type: string
+        distance:
+          description: "Aggregate distance from full compliance (0.0 = fully compliant,\
+            \ 1.0 = fully non-compliant)"
+          format: float
+          type: number
+        frameworks:
+          description: Active compliance frameworks being assessed
+          items:
+            type: string
+          type: array
+        lastAssessedAt:
+          description: Timestamp of the most recent compliance assessment
+          format: date-time
+          type: string
+        hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - distance
+      - frameworks
+      - hash
+      - lastAssessedAt
+      - status
+      type: object
+    ComplianceDistance:
+      description: Gap analysis between current state and target baseline for a framework
+      example:
+        satisfied: 6
+        gap: 1
+        percentage: 5.962134
+        targetControls: 0
+      properties:
+        targetControls:
+          description: Total number of controls required by the target baseline
+          type: integer
+        satisfied:
+          description: Number of controls currently satisfied
+          type: integer
+        gap:
+          description: Number of unsatisfied controls (targetControls - satisfied)
+          type: integer
+        percentage:
+          description: Compliance percentage (0.0 to 100.0)
+          format: float
+          type: number
+      required:
+      - gap
+      - percentage
+      - satisfied
+      - targetControls
+      type: object
     ErrorResponse:
       description: Standard error response
       example:
@@ -2169,4 +3311,1121 @@ components:
           $ref: "#/components/schemas/CertifyResponse"
       required:
       - data
+      type: object
+    BlastRadiusResponse:
+      description: |
+        Blast radius report for a compromised BLAKE3 hash. Enumerates every node,
+        pod, namespace, and time window where the hash appeared in any
+        CertificationArtifact, plus co-resident artifacts sharing the same Merkle root.
+      example:
+        query_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        co_resident_artifacts:
+        - intent_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          artifact_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          binary_path: binary_path
+          control_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        - intent_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          artifact_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          binary_path: binary_path
+          control_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        merkle_proof:
+          leaf_index: 1
+          proof_nodes:
+          - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        chain_integrity: true
+        time_range:
+          first_seen: 2000-01-23T04:56:07.000+00:00
+          last_seen: 2000-01-23T04:56:07.000+00:00
+        evidence_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        affected_nodes:
+        - node: node
+          cluster: cluster
+          last_execution: 2000-01-23T04:56:07.000+00:00
+          execution_count: 6
+          pods:
+          - pods
+          - pods
+          first_execution: 2000-01-23T04:56:07.000+00:00
+          namespaces:
+          - namespaces
+          - namespaces
+        - node: node
+          cluster: cluster
+          last_execution: 2000-01-23T04:56:07.000+00:00
+          execution_count: 6
+          pods:
+          - pods
+          - pods
+          first_execution: 2000-01-23T04:56:07.000+00:00
+          namespaces:
+          - namespaces
+          - namespaces
+        total_affected: 0
+      properties:
+        query_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        total_affected:
+          description: Total number of affected nodes
+          type: integer
+        time_range:
+          $ref: "#/components/schemas/BlastRadiusResponse_time_range"
+        affected_nodes:
+          description: List of nodes where the compromised hash was active
+          items:
+            $ref: "#/components/schemas/AffectedNode"
+          type: array
+        co_resident_artifacts:
+          description: Other artifacts that shared the same Merkle root as the compromised
+            hash
+          items:
+            $ref: "#/components/schemas/CoResidentArtifact"
+          type: array
+        merkle_proof:
+          $ref: "#/components/schemas/BlastRadiusResponse_merkle_proof"
+        chain_integrity:
+          description: Whether the ledger hash chain is intact for the queried range
+          type: boolean
+        evidence_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - affected_nodes
+      - chain_integrity
+      - co_resident_artifacts
+      - evidence_hash
+      - query_hash
+      - time_range
+      - total_affected
+      type: object
+    AffectedNode:
+      description: A node where the compromised hash was active during the queried
+        window
+      example:
+        node: node
+        cluster: cluster
+        last_execution: 2000-01-23T04:56:07.000+00:00
+        execution_count: 6
+        pods:
+        - pods
+        - pods
+        first_execution: 2000-01-23T04:56:07.000+00:00
+        namespaces:
+        - namespaces
+        - namespaces
+      properties:
+        node:
+          description: Node name
+          type: string
+        cluster:
+          description: "Cluster name (e.g. plo, zek)"
+          type: string
+        first_execution:
+          description: Earliest execution of the compromised hash on this node
+          format: date-time
+          type: string
+        last_execution:
+          description: Most recent execution of the compromised hash on this node
+          format: date-time
+          type: string
+        execution_count:
+          description: Total number of verification events involving this hash on
+            this node
+          type: integer
+        pods:
+          description: Pod names that ran the compromised hash
+          items:
+            type: string
+          type: array
+        namespaces:
+          description: Namespaces containing pods that ran the compromised hash
+          items:
+            type: string
+          type: array
+      required:
+      - cluster
+      - execution_count
+      - first_execution
+      - last_execution
+      - namespaces
+      - node
+      - pods
+      type: object
+    CoResidentArtifact:
+      description: An artifact that shared the same Merkle root as the compromised
+        hash
+      example:
+        intent_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        artifact_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        binary_path: binary_path
+        control_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        composed_root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        artifact_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        control_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        intent_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        binary_path:
+          description: Nix store path or binary path of the co-resident artifact
+          type: string
+      required:
+      - artifact_hash
+      - binary_path
+      - composed_root
+      - control_hash
+      - intent_hash
+      type: object
+    TimelineResponse:
+      description: Chronological list of verification events for a specific hash
+      example:
+        events:
+        - node: node
+          sequence: 0
+          event_type: admission_decision
+          decision: allowed
+          pod: pod
+          binary_path: binary_path
+          composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          timestamp: 2000-01-23T04:56:07.000+00:00
+        - node: node
+          sequence: 0
+          event_type: admission_decision
+          decision: allowed
+          pod: pod
+          binary_path: binary_path
+          composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          timestamp: 2000-01-23T04:56:07.000+00:00
+      properties:
+        events:
+          description: Ordered list of verification events
+          items:
+            $ref: "#/components/schemas/TimelineEvent"
+          type: array
+      required:
+      - events
+      type: object
+    TimelineEvent:
+      description: A single verification event in the forensics timeline
+      example:
+        node: node
+        sequence: 0
+        event_type: admission_decision
+        decision: allowed
+        pod: pod
+        binary_path: binary_path
+        composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        timestamp: 2000-01-23T04:56:07.000+00:00
+      properties:
+        timestamp:
+          description: When the verification event occurred
+          format: date-time
+          type: string
+        event_type:
+          $ref: "#/components/schemas/HeartbeatEvent"
+        decision:
+          $ref: "#/components/schemas/VerificationOutcome"
+        node:
+          description: Node where the event occurred
+          type: string
+        pod:
+          description: Pod that triggered the event
+          type: string
+        binary_path:
+          description: Path of the binary being verified
+          type: string
+        composed_root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        sequence:
+          description: Ledger sequence number for this event
+          format: int64
+          type: integer
+      required:
+      - binary_path
+      - composed_root
+      - decision
+      - event_type
+      - node
+      - pod
+      - sequence
+      - timestamp
+      type: object
+    ProvenanceResponse:
+      description: Point-in-time snapshot of all active artifacts on a node
+      example:
+        active_artifacts:
+        - deployment_context:
+            container: container
+            cluster: cluster
+            node: node
+            image_ref: image_ref
+            sdlc_chain_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            pod: pod
+            binary_paths:
+            - binary_paths
+            - binary_paths
+            namespace: namespace
+            compliance_report_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          signed_root:
+            signerId: signerId
+            signature: signature
+            root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            signedAt: 2000-01-23T04:56:07.000+00:00
+            algorithm: ed25519_local
+          certification_artifact:
+            intent_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            artifact_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            control_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        - deployment_context:
+            container: container
+            cluster: cluster
+            node: node
+            image_ref: image_ref
+            sdlc_chain_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            pod: pod
+            binary_paths:
+            - binary_paths
+            - binary_paths
+            namespace: namespace
+            compliance_report_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          signed_root:
+            signerId: signerId
+            signature: signature
+            root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            signedAt: 2000-01-23T04:56:07.000+00:00
+            algorithm: ed25519_local
+          certification_artifact:
+            intent_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            artifact_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            control_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        node: node
+        timestamp: 2000-01-23T04:56:07.000+00:00
+      properties:
+        node:
+          description: Node name queried
+          type: string
+        timestamp:
+          description: Point-in-time that was queried
+          format: date-time
+          type: string
+        active_artifacts:
+          description: All CertificationArtifacts active on the node at the queried
+            time
+          items:
+            $ref: "#/components/schemas/ProvenanceResponse_active_artifacts_inner"
+          type: array
+      required:
+      - active_artifacts
+      - node
+      - timestamp
+      type: object
+    RevokeRequest:
+      description: Request to revoke a compromised hash across all nodes
+      example:
+        severity: low
+        reason: reason
+        hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        operator: operator
+      properties:
+        hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        reason:
+          description: CVE identifier or reason for revocation (e.g. CVE-2026-XXXX)
+          type: string
+        severity:
+          description: Severity of the incident
+          enum:
+          - low
+          - medium
+          - high
+          - critical
+          type: string
+        operator:
+          description: Identity of the operator performing the revocation (e.g. email)
+          type: string
+      required:
+      - hash
+      - operator
+      - reason
+      - severity
+      type: object
+    RevokeResponse:
+      description: Result of a hash revocation operation
+      example:
+        heartbeat_entry_sequence: 6
+        affected_nodes: 0
+        revoked: true
+        bpf_maps_updated: true
+      properties:
+        revoked:
+          description: Whether the revocation was successfully applied
+          type: boolean
+        affected_nodes:
+          description: Number of nodes where the hash was revoked
+          type: integer
+        bpf_maps_updated:
+          description: Whether kanshi BPF allow-maps were updated on all affected
+            nodes
+          type: boolean
+        heartbeat_entry_sequence:
+          description: Sequence number of the Revocation event in the HeartbeatChain
+          format: int64
+          type: integer
+      required:
+      - affected_nodes
+      - bpf_maps_updated
+      - heartbeat_entry_sequence
+      - revoked
+      type: object
+    GlobalStateRootResponse:
+      description: Global state root aggregating all cluster roots
+      example:
+        sequence: 1
+        root_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        previous_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        cluster_roots:
+          key:
+            cluster_id: cluster_id
+            cluster_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+            last_reported: 2000-01-23T04:56:07.000+00:00
+            artifact_count: 6
+            signed_root:
+              signerId: signerId
+              signature: signature
+              root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+              signedAt: 2000-01-23T04:56:07.000+00:00
+              algorithm: ed25519_local
+            node_count: 0
+            status: active
+        computed_at: 2000-01-23T04:56:07.000+00:00
+      properties:
+        root_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        cluster_roots:
+          additionalProperties:
+            $ref: "#/components/schemas/ClusterRootEntry"
+          description: "Per-cluster state, keyed by cluster_id"
+          type: object
+        computed_at:
+          description: When this global root was computed
+          format: date-time
+          type: string
+        sequence:
+          description: Monotonically increasing sequence number
+          format: int64
+          type: integer
+        previous_root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - cluster_roots
+      - computed_at
+      - previous_root
+      - root_hash
+      - sequence
+      type: object
+    ClusterRootEntry:
+      description: A single cluster's contribution to the global state root
+      example:
+        cluster_id: cluster_id
+        cluster_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        last_reported: 2000-01-23T04:56:07.000+00:00
+        artifact_count: 6
+        signed_root:
+          signerId: signerId
+          signature: signature
+          root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          signedAt: 2000-01-23T04:56:07.000+00:00
+          algorithm: ed25519_local
+        node_count: 0
+        status: active
+      properties:
+        cluster_id:
+          description: "Unique cluster identifier (e.g. plo-us-east, edge-fleet-07)"
+          type: string
+        cluster_root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        signed_root:
+          $ref: "#/components/schemas/SignedRoot"
+        node_count:
+          description: Number of nodes reporting attestations
+          type: integer
+        artifact_count:
+          description: Total number of CertificationArtifacts across all nodes
+          format: int64
+          type: integer
+        last_reported:
+          description: Last time this cluster reported its root
+          format: date-time
+          type: string
+        status:
+          $ref: "#/components/schemas/ClusterStatus"
+      required:
+      - artifact_count
+      - cluster_id
+      - cluster_root
+      - last_reported
+      - node_count
+      - signed_root
+      - status
+      type: object
+    ClusterStatus:
+      description: Cluster liveness status
+      enum:
+      - active
+      - stale
+      - offline
+      - revoked
+      type: string
+    GlobalBlastRadiusResponse:
+      description: Global blast radius report aggregating across all clusters
+      example:
+        query_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        clusters_not_affected:
+        - clusters_not_affected
+        - clusters_not_affected
+        total_nodes_affected: 6
+        cluster_reports:
+        - cluster_id: cluster_id
+          node_details:
+          - node: node
+            last_execution: 2000-01-23T04:56:07.000+00:00
+            execution_count: 2
+            binary_paths:
+            - binary_paths
+            - binary_paths
+            pods:
+            - pods
+            - pods
+            first_execution: 2000-01-23T04:56:07.000+00:00
+          - node: node
+            last_execution: 2000-01-23T04:56:07.000+00:00
+            execution_count: 2
+            binary_paths:
+            - binary_paths
+            - binary_paths
+            pods:
+            - pods
+            - pods
+            first_execution: 2000-01-23T04:56:07.000+00:00
+          first_seen: 2000-01-23T04:56:07.000+00:00
+          last_seen: 2000-01-23T04:56:07.000+00:00
+          pods_affected: 5
+          nodes_affected: 5
+        - cluster_id: cluster_id
+          node_details:
+          - node: node
+            last_execution: 2000-01-23T04:56:07.000+00:00
+            execution_count: 2
+            binary_paths:
+            - binary_paths
+            - binary_paths
+            pods:
+            - pods
+            - pods
+            first_execution: 2000-01-23T04:56:07.000+00:00
+          - node: node
+            last_execution: 2000-01-23T04:56:07.000+00:00
+            execution_count: 2
+            binary_paths:
+            - binary_paths
+            - binary_paths
+            pods:
+            - pods
+            - pods
+            first_execution: 2000-01-23T04:56:07.000+00:00
+          first_seen: 2000-01-23T04:56:07.000+00:00
+          last_seen: 2000-01-23T04:56:07.000+00:00
+          pods_affected: 5
+          nodes_affected: 5
+        total_clusters_affected: 0
+        total_pods_affected: 1
+        global_last_seen: 2000-01-23T04:56:07.000+00:00
+        global_first_seen: 2000-01-23T04:56:07.000+00:00
+      properties:
+        query_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        total_clusters_affected:
+          description: Total clusters containing the compromised artifact
+          type: integer
+        total_nodes_affected:
+          description: Total nodes across all affected clusters
+          type: integer
+        total_pods_affected:
+          description: Total pods across all affected clusters
+          type: integer
+        clusters_not_affected:
+          description: Clusters confirmed NOT affected
+          items:
+            type: string
+          type: array
+        cluster_reports:
+          items:
+            $ref: "#/components/schemas/ClusterBlastRadius"
+          type: array
+        global_first_seen:
+          description: Earliest attestation of this hash across all clusters
+          format: date-time
+          type: string
+        global_last_seen:
+          description: Most recent attestation of this hash across all clusters
+          format: date-time
+          type: string
+      required:
+      - cluster_reports
+      - clusters_not_affected
+      - query_hash
+      - total_clusters_affected
+      - total_nodes_affected
+      - total_pods_affected
+      type: object
+    ClusterBlastRadius:
+      description: Per-cluster blast radius detail
+      example:
+        cluster_id: cluster_id
+        node_details:
+        - node: node
+          last_execution: 2000-01-23T04:56:07.000+00:00
+          execution_count: 2
+          binary_paths:
+          - binary_paths
+          - binary_paths
+          pods:
+          - pods
+          - pods
+          first_execution: 2000-01-23T04:56:07.000+00:00
+        - node: node
+          last_execution: 2000-01-23T04:56:07.000+00:00
+          execution_count: 2
+          binary_paths:
+          - binary_paths
+          - binary_paths
+          pods:
+          - pods
+          - pods
+          first_execution: 2000-01-23T04:56:07.000+00:00
+        first_seen: 2000-01-23T04:56:07.000+00:00
+        last_seen: 2000-01-23T04:56:07.000+00:00
+        pods_affected: 5
+        nodes_affected: 5
+      properties:
+        cluster_id:
+          description: Cluster identifier
+          type: string
+        nodes_affected:
+          description: Number of affected nodes in this cluster
+          type: integer
+        pods_affected:
+          description: Number of affected pods in this cluster
+          type: integer
+        first_seen:
+          description: First attestation in this cluster
+          format: date-time
+          type: string
+        last_seen:
+          description: Most recent attestation in this cluster
+          format: date-time
+          type: string
+        node_details:
+          items:
+            $ref: "#/components/schemas/NodeBlastRadius"
+          type: array
+      required:
+      - cluster_id
+      - first_seen
+      - last_seen
+      - node_details
+      - nodes_affected
+      - pods_affected
+      type: object
+    NodeBlastRadius:
+      description: Per-node blast radius detail
+      example:
+        node: node
+        last_execution: 2000-01-23T04:56:07.000+00:00
+        execution_count: 2
+        binary_paths:
+        - binary_paths
+        - binary_paths
+        pods:
+        - pods
+        - pods
+        first_execution: 2000-01-23T04:56:07.000+00:00
+      properties:
+        node:
+          description: Node identifier
+          type: string
+        pods:
+          description: Affected pods on this node
+          items:
+            type: string
+          type: array
+        binary_paths:
+          description: Binary paths containing the compromised artifact
+          items:
+            type: string
+          type: array
+        first_execution:
+          description: First execution on this node
+          format: date-time
+          type: string
+        last_execution:
+          description: Most recent execution on this node
+          format: date-time
+          type: string
+        execution_count:
+          description: Total execution count
+          format: int64
+          type: integer
+      required:
+      - binary_paths
+      - execution_count
+      - first_execution
+      - last_execution
+      - node
+      - pods
+      type: object
+    ClusterRootReport:
+      description: Report sent by a local cluster to the master server
+      example:
+        cluster_id: cluster_id
+        cluster_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        reported_at: 2000-01-23T04:56:07.000+00:00
+        artifact_count: 6
+        artifact_delta:
+          removed:
+          - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          added:
+          - node: node
+            cluster_id: cluster_id
+            pod: pod
+            binary_path: binary_path
+            namespace: namespace
+            composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          - node: node
+            cluster_id: cluster_id
+            pod: pod
+            binary_path: binary_path
+            namespace: namespace
+            composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        signed_root:
+          signerId: signerId
+          signature: signature
+          root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          signedAt: 2000-01-23T04:56:07.000+00:00
+          algorithm: ed25519_local
+        node_count: 0
+      properties:
+        cluster_id:
+          description: Unique cluster identifier
+          type: string
+        cluster_root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        signed_root:
+          $ref: "#/components/schemas/SignedRoot"
+        node_count:
+          description: Number of nodes reporting attestations
+          type: integer
+        artifact_count:
+          description: Total number of CertificationArtifacts across all nodes
+          format: int64
+          type: integer
+        reported_at:
+          description: When this report was generated
+          format: date-time
+          type: string
+        artifact_delta:
+          $ref: "#/components/schemas/ArtifactDelta"
+      required:
+      - artifact_count
+      - cluster_id
+      - cluster_root
+      - node_count
+      - reported_at
+      - signed_root
+      type: object
+    ArtifactDelta:
+      description: Delta of artifacts since last report (bandwidth optimization)
+      example:
+        removed:
+        - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        added:
+        - node: node
+          cluster_id: cluster_id
+          pod: pod
+          binary_path: binary_path
+          namespace: namespace
+          composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        - node: node
+          cluster_id: cluster_id
+          pod: pod
+          binary_path: binary_path
+          namespace: namespace
+          composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        added:
+          description: Artifacts added since last report
+          items:
+            $ref: "#/components/schemas/ArtifactLocation"
+          type: array
+        removed:
+          description: Composed root hashes of artifacts removed since last report
+          items:
+            $ref: "#/components/schemas/Blake3Hash"
+          type: array
+      required:
+      - added
+      - removed
+      type: object
+    ArtifactLocation:
+      description: Location of an artifact in the global fleet
+      example:
+        node: node
+        cluster_id: cluster_id
+        pod: pod
+        binary_path: binary_path
+        namespace: namespace
+        composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        cluster_id:
+          description: Cluster where the artifact resides
+          type: string
+        node:
+          description: Node within the cluster
+          type: string
+        namespace:
+          description: Kubernetes namespace
+          type: string
+        pod:
+          description: Pod name
+          type: string
+        binary_path:
+          description: Path to the binary on disk
+          type: string
+        composed_root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - binary_path
+      - cluster_id
+      - composed_root
+      - namespace
+      - node
+      - pod
+      type: object
+    GlobalRevokeResponse:
+      description: Aggregate result of revoking a hash across all clusters
+      example:
+        total_nodes_affected: 6
+        total_clusters_revoked: 0
+        cluster_results:
+        - heartbeat_entry_sequence: 6
+          affected_nodes: 0
+          revoked: true
+          bpf_maps_updated: true
+        - heartbeat_entry_sequence: 6
+          affected_nodes: 0
+          revoked: true
+          bpf_maps_updated: true
+        total_bpf_maps_updated: 1
+      properties:
+        total_clusters_revoked:
+          description: Number of clusters where revocation was applied
+          type: integer
+        total_nodes_affected:
+          description: Total nodes across all clusters where hash was revoked
+          type: integer
+        total_bpf_maps_updated:
+          description: Total BPF maps updated across all clusters
+          type: integer
+        cluster_results:
+          description: Per-cluster revocation results
+          items:
+            $ref: "#/components/schemas/RevokeResponse"
+          type: array
+      required:
+      - cluster_results
+      - total_bpf_maps_updated
+      - total_clusters_revoked
+      - total_nodes_affected
+      type: object
+    StorageTier:
+      description: Storage tier for ledger data lifecycle
+      enum:
+      - hot
+      - warm
+      - cold
+      - archive
+      type: string
+    StorageStats:
+      description: Statistics about ledger storage usage across tiers
+      properties:
+        total_entries:
+          description: Total number of ledger entries across all tiers
+          format: int64
+          type: integer
+        hot_entries:
+          description: "Entries in the hot tier (in-memory, fast access)"
+          format: int64
+          type: integer
+        warm_entries:
+          description: Entries in the warm tier (local SSD)
+          format: int64
+          type: integer
+        cold_entries:
+          description: Entries in the cold tier (S3/object storage)
+          format: int64
+          type: integer
+        archive_entries:
+          description: Entries in the archive tier (Glacier/deep archive)
+          format: int64
+          type: integer
+        total_bytes:
+          description: Total storage consumed across all tiers in bytes
+          format: int64
+          type: integer
+      required:
+      - archive_entries
+      - cold_entries
+      - hot_entries
+      - total_bytes
+      - total_entries
+      - warm_entries
+      type: object
+    verifyHeartbeatConsistencyProof_200_response:
+      example:
+        verified: true
+        error: error
+      properties:
+        verified:
+          description: Whether the consistency proof is valid
+          type: boolean
+        error:
+          description: Error message if verification failed
+          nullable: true
+          type: string
+      required:
+      - verified
+      type: object
+    verifySignedRoot_200_response:
+      example:
+        verified: true
+      properties:
+        verified:
+          description: Whether the signed root is valid
+          type: boolean
+      required:
+      - verified
+      type: object
+    BlastRadiusResponse_time_range:
+      example:
+        first_seen: 2000-01-23T04:56:07.000+00:00
+        last_seen: 2000-01-23T04:56:07.000+00:00
+      properties:
+        first_seen:
+          description: Earliest timestamp the hash was observed in the ledger
+          format: date-time
+          type: string
+        last_seen:
+          description: Most recent timestamp the hash was observed in the ledger
+          format: date-time
+          type: string
+      required:
+      - first_seen
+      - last_seen
+      type: object
+    BlastRadiusResponse_merkle_proof:
+      description: Inclusion proof for the compromised hash in its Merkle tree
+      example:
+        leaf_index: 1
+        proof_nodes:
+        - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        - blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      nullable: true
+      properties:
+        leaf_index:
+          description: Index of the compromised hash leaf in the Merkle tree
+          type: integer
+        proof_nodes:
+          description: BLAKE3 intermediate hashes forming the inclusion proof
+          items:
+            $ref: "#/components/schemas/Blake3Hash"
+          type: array
+      type: object
+    ProvenanceResponse_active_artifacts_inner_certification_artifact:
+      description: "Full CertificationArtifact (3-leaf Merkle binding provenance,\
+        \ compliance, intent)"
+      example:
+        intent_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        artifact_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        control_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        artifact_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        control_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        intent_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        composed_root:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - artifact_hash
+      - composed_root
+      - control_hash
+      - intent_hash
+      type: object
+    ProvenanceResponse_active_artifacts_inner_deployment_context:
+      description: Deployment context at the queried timestamp
+      example:
+        container: container
+        cluster: cluster
+        node: node
+        image_ref: image_ref
+        sdlc_chain_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        pod: pod
+        binary_paths:
+        - binary_paths
+        - binary_paths
+        namespace: namespace
+        compliance_report_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        cluster:
+          description: Kubernetes cluster name
+          type: string
+        namespace:
+          description: Kubernetes namespace
+          type: string
+        node:
+          description: Node name
+          type: string
+        pod:
+          description: Pod name
+          type: string
+        container:
+          description: Container name
+          type: string
+        image_ref:
+          description: Full container image reference
+          type: string
+        binary_paths:
+          description: Nix store paths or binary paths within the container
+          items:
+            type: string
+          type: array
+        sdlc_chain_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+        compliance_report_hash:
+          description: BLAKE3 hash in prefixed hex format
+          example: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pattern: "^blake3:[a-f0-9]{64}$"
+          type: string
+      required:
+      - binary_paths
+      - cluster
+      - container
+      - image_ref
+      - namespace
+      - node
+      - pod
+      type: object
+    ProvenanceResponse_active_artifacts_inner:
+      example:
+        deployment_context:
+          container: container
+          cluster: cluster
+          node: node
+          image_ref: image_ref
+          sdlc_chain_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          pod: pod
+          binary_paths:
+          - binary_paths
+          - binary_paths
+          namespace: namespace
+          compliance_report_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+        signed_root:
+          signerId: signerId
+          signature: signature
+          root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          signedAt: 2000-01-23T04:56:07.000+00:00
+          algorithm: ed25519_local
+        certification_artifact:
+          intent_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          artifact_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          control_hash: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+          composed_root: blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+      properties:
+        certification_artifact:
+          $ref: "#/components/schemas/ProvenanceResponse_active_artifacts_inner_certification_artifact"
+        signed_root:
+          $ref: "#/components/schemas/SignedRoot"
+        deployment_context:
+          $ref: "#/components/schemas/ProvenanceResponse_active_artifacts_inner_deployment_context"
+      required:
+      - certification_artifact
+      - deployment_context
+      - signed_root
       type: object

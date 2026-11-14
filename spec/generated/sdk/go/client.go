@@ -55,15 +55,27 @@ type APIClient struct {
 
 	CertificationsAPI *CertificationsAPIService
 
+	CollectorsAPI *CollectorsAPIService
+
 	ComplianceAPI *ComplianceAPIService
+
+	ComplianceQueryAPI *ComplianceQueryAPIService
+
+	ForensicsAPI *ForensicsAPIService
 
 	GatesAPI *GatesAPIService
 
+	GlobalAPI *GlobalAPIService
+
 	HealthAPI *HealthAPIService
+
+	HeartbeatAPI *HeartbeatAPIService
 
 	ReportsAPI *ReportsAPIService
 
 	SignaturesAPI *SignaturesAPIService
+
+	SigningAPI *SigningAPIService
 }
 
 type service struct {
@@ -85,11 +97,17 @@ func NewAPIClient(cfg *Configuration) *APIClient {
 	c.AuditAPI = (*AuditAPIService)(&c.common)
 	c.CertificationPipelineAPI = (*CertificationPipelineAPIService)(&c.common)
 	c.CertificationsAPI = (*CertificationsAPIService)(&c.common)
+	c.CollectorsAPI = (*CollectorsAPIService)(&c.common)
 	c.ComplianceAPI = (*ComplianceAPIService)(&c.common)
+	c.ComplianceQueryAPI = (*ComplianceQueryAPIService)(&c.common)
+	c.ForensicsAPI = (*ForensicsAPIService)(&c.common)
 	c.GatesAPI = (*GatesAPIService)(&c.common)
+	c.GlobalAPI = (*GlobalAPIService)(&c.common)
 	c.HealthAPI = (*HealthAPIService)(&c.common)
+	c.HeartbeatAPI = (*HeartbeatAPIService)(&c.common)
 	c.ReportsAPI = (*ReportsAPIService)(&c.common)
 	c.SignaturesAPI = (*SignaturesAPIService)(&c.common)
+	c.SigningAPI = (*SigningAPIService)(&c.common)
 
 	return c
 }

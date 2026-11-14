@@ -35,7 +35,11 @@ class LayerType(str, Enum):
     TATARA = 'tatara'
     FLUXCD = 'fluxcd'
     ARGOCD = 'argocd'
-    AKEYLESS = 'akeyless'
+    SECRETS_MANAGER = 'secrets_manager'
+    SECRET_TARGET = 'secret_target'
+    PANGEA_SYNTHESIS = 'pangea_synthesis'
+    RSPEC_RESULT = 'rspec_result'
+    INSPEC_RESULT = 'inspec_result'
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:

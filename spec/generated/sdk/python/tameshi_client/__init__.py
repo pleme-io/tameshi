@@ -21,11 +21,17 @@ __all__ = [
     "AuditApi",
     "CertificationPipelineApi",
     "CertificationsApi",
+    "CollectorsApi",
     "ComplianceApi",
+    "ComplianceQueryApi",
+    "ForensicsApi",
     "GatesApi",
+    "GlobalApi",
     "HealthApi",
+    "HeartbeatApi",
     "ReportsApi",
     "SignaturesApi",
+    "SigningApi",
     "ApiResponse",
     "ApiClient",
     "Configuration",
@@ -36,16 +42,18 @@ __all__ = [
     "ApiAttributeError",
     "ApiException",
     "AdmissionDecisionCounts",
-    "AkeylessAuthMethod",
-    "AkeylessSecretAccess",
-    "AkeylessSecretAttestation",
-    "AkeylessSecretType",
+    "AffectedNode",
     "ApiResponseCertifyResponse",
     "ApiResponseHashResponse",
     "ApiResponseResultSummaryList",
     "ApiResponseRunResponse",
+    "ArtifactDelta",
+    "ArtifactLocation",
     "AuditAction",
     "AuditEntry",
+    "BlastRadiusResponse",
+    "BlastRadiusResponseMerkleProof",
+    "BlastRadiusResponseTimeRange",
     "BuildAttestation",
     "CertPhase",
     "Certification",
@@ -56,12 +64,21 @@ __all__ = [
     "CertifyRequest",
     "CertifyResponse",
     "ChartAttestation",
+    "ClusterBlastRadius",
+    "ClusterRootEntry",
+    "ClusterRootReport",
+    "ClusterStatus",
+    "CoResidentArtifact",
     "ComplianceAttestation",
     "ComplianceBaseline",
     "ComplianceDimension",
+    "ComplianceDistance",
     "ComplianceResult",
+    "ComplianceState",
     "ComputeSignatureRequest",
     "ComputeSignatureResponse",
+    "ConsistencyProof",
+    "ConsistencyProofVerifyRequest",
     "DeploymentAttestation",
     "DimensionType",
     "ErrorResponse",
@@ -70,7 +87,13 @@ __all__ = [
     "GateStatusRef",
     "GateSummary",
     "GateVerifyResult",
+    "GlobalBlastRadiusResponse",
+    "GlobalRevokeResponse",
+    "GlobalStateRootResponse",
     "HashResponse",
+    "HeartbeatEntry",
+    "HeartbeatEvent",
+    "HelmRenderRequest",
     "ImageAttestation",
     "InputHash",
     "LayerSignature",
@@ -78,28 +101,56 @@ __all__ = [
     "LayerType",
     "LayerVerification",
     "MasterSignature",
+    "NodeBlastRadius",
+    "ProvenanceResponse",
+    "ProvenanceResponseActiveArtifactsInner",
+    "ProvenanceResponseActiveArtifactsInnerCertificationArtifact",
+    "ProvenanceResponseActiveArtifactsInnerDeploymentContext",
     "ResultSummary",
+    "RevokeRequest",
+    "RevokeResponse",
     "RunResponse",
+    "SecretAccess",
+    "SecretAttestation",
+    "SecretAuthMethod",
+    "SecretKind",
+    "SignRequest",
     "SignatureGate",
     "SignatureGateSpec",
     "SignatureGateStatus",
     "SignatureMetadata",
+    "SignedRoot",
+    "SigningAlgorithm",
     "SlsaLevel",
     "SourceAttestation",
     "StageStatus",
+    "StorageStats",
+    "StorageTier",
     "TargetResource",
+    "TimelineEvent",
+    "TimelineResponse",
+    "VerificationOutcome",
     "VerificationResult",
+    "VerifierIdentity",
+    "VerifyHeartbeatConsistencyProof200Response",
+    "VerifySignedRoot200Response",
 ]
 
 # import apis into sdk package
 from tameshi_client.api.audit_api import AuditApi as AuditApi
 from tameshi_client.api.certification_pipeline_api import CertificationPipelineApi as CertificationPipelineApi
 from tameshi_client.api.certifications_api import CertificationsApi as CertificationsApi
+from tameshi_client.api.collectors_api import CollectorsApi as CollectorsApi
 from tameshi_client.api.compliance_api import ComplianceApi as ComplianceApi
+from tameshi_client.api.compliance_query_api import ComplianceQueryApi as ComplianceQueryApi
+from tameshi_client.api.forensics_api import ForensicsApi as ForensicsApi
 from tameshi_client.api.gates_api import GatesApi as GatesApi
+from tameshi_client.api.global_api import GlobalApi as GlobalApi
 from tameshi_client.api.health_api import HealthApi as HealthApi
+from tameshi_client.api.heartbeat_api import HeartbeatApi as HeartbeatApi
 from tameshi_client.api.reports_api import ReportsApi as ReportsApi
 from tameshi_client.api.signatures_api import SignaturesApi as SignaturesApi
+from tameshi_client.api.signing_api import SigningApi as SigningApi
 
 # import ApiClient
 from tameshi_client.api_response import ApiResponse as ApiResponse
@@ -114,16 +165,18 @@ from tameshi_client.exceptions import ApiException as ApiException
 
 # import models into sdk package
 from tameshi_client.models.admission_decision_counts import AdmissionDecisionCounts as AdmissionDecisionCounts
-from tameshi_client.models.akeyless_auth_method import AkeylessAuthMethod as AkeylessAuthMethod
-from tameshi_client.models.akeyless_secret_access import AkeylessSecretAccess as AkeylessSecretAccess
-from tameshi_client.models.akeyless_secret_attestation import AkeylessSecretAttestation as AkeylessSecretAttestation
-from tameshi_client.models.akeyless_secret_type import AkeylessSecretType as AkeylessSecretType
+from tameshi_client.models.affected_node import AffectedNode as AffectedNode
 from tameshi_client.models.api_response_certify_response import ApiResponseCertifyResponse as ApiResponseCertifyResponse
 from tameshi_client.models.api_response_hash_response import ApiResponseHashResponse as ApiResponseHashResponse
 from tameshi_client.models.api_response_result_summary_list import ApiResponseResultSummaryList as ApiResponseResultSummaryList
 from tameshi_client.models.api_response_run_response import ApiResponseRunResponse as ApiResponseRunResponse
+from tameshi_client.models.artifact_delta import ArtifactDelta as ArtifactDelta
+from tameshi_client.models.artifact_location import ArtifactLocation as ArtifactLocation
 from tameshi_client.models.audit_action import AuditAction as AuditAction
 from tameshi_client.models.audit_entry import AuditEntry as AuditEntry
+from tameshi_client.models.blast_radius_response import BlastRadiusResponse as BlastRadiusResponse
+from tameshi_client.models.blast_radius_response_merkle_proof import BlastRadiusResponseMerkleProof as BlastRadiusResponseMerkleProof
+from tameshi_client.models.blast_radius_response_time_range import BlastRadiusResponseTimeRange as BlastRadiusResponseTimeRange
 from tameshi_client.models.build_attestation import BuildAttestation as BuildAttestation
 from tameshi_client.models.cert_phase import CertPhase as CertPhase
 from tameshi_client.models.certification import Certification as Certification
@@ -134,12 +187,21 @@ from tameshi_client.models.certification_summary import CertificationSummary as 
 from tameshi_client.models.certify_request import CertifyRequest as CertifyRequest
 from tameshi_client.models.certify_response import CertifyResponse as CertifyResponse
 from tameshi_client.models.chart_attestation import ChartAttestation as ChartAttestation
+from tameshi_client.models.cluster_blast_radius import ClusterBlastRadius as ClusterBlastRadius
+from tameshi_client.models.cluster_root_entry import ClusterRootEntry as ClusterRootEntry
+from tameshi_client.models.cluster_root_report import ClusterRootReport as ClusterRootReport
+from tameshi_client.models.cluster_status import ClusterStatus as ClusterStatus
+from tameshi_client.models.co_resident_artifact import CoResidentArtifact as CoResidentArtifact
 from tameshi_client.models.compliance_attestation import ComplianceAttestation as ComplianceAttestation
 from tameshi_client.models.compliance_baseline import ComplianceBaseline as ComplianceBaseline
 from tameshi_client.models.compliance_dimension import ComplianceDimension as ComplianceDimension
+from tameshi_client.models.compliance_distance import ComplianceDistance as ComplianceDistance
 from tameshi_client.models.compliance_result import ComplianceResult as ComplianceResult
+from tameshi_client.models.compliance_state import ComplianceState as ComplianceState
 from tameshi_client.models.compute_signature_request import ComputeSignatureRequest as ComputeSignatureRequest
 from tameshi_client.models.compute_signature_response import ComputeSignatureResponse as ComputeSignatureResponse
+from tameshi_client.models.consistency_proof import ConsistencyProof as ConsistencyProof
+from tameshi_client.models.consistency_proof_verify_request import ConsistencyProofVerifyRequest as ConsistencyProofVerifyRequest
 from tameshi_client.models.deployment_attestation import DeploymentAttestation as DeploymentAttestation
 from tameshi_client.models.dimension_type import DimensionType as DimensionType
 from tameshi_client.models.error_response import ErrorResponse as ErrorResponse
@@ -148,7 +210,13 @@ from tameshi_client.models.gate_phase import GatePhase as GatePhase
 from tameshi_client.models.gate_status_ref import GateStatusRef as GateStatusRef
 from tameshi_client.models.gate_summary import GateSummary as GateSummary
 from tameshi_client.models.gate_verify_result import GateVerifyResult as GateVerifyResult
+from tameshi_client.models.global_blast_radius_response import GlobalBlastRadiusResponse as GlobalBlastRadiusResponse
+from tameshi_client.models.global_revoke_response import GlobalRevokeResponse as GlobalRevokeResponse
+from tameshi_client.models.global_state_root_response import GlobalStateRootResponse as GlobalStateRootResponse
 from tameshi_client.models.hash_response import HashResponse as HashResponse
+from tameshi_client.models.heartbeat_entry import HeartbeatEntry as HeartbeatEntry
+from tameshi_client.models.heartbeat_event import HeartbeatEvent as HeartbeatEvent
+from tameshi_client.models.helm_render_request import HelmRenderRequest as HelmRenderRequest
 from tameshi_client.models.image_attestation import ImageAttestation as ImageAttestation
 from tameshi_client.models.input_hash import InputHash as InputHash
 from tameshi_client.models.layer_signature import LayerSignature as LayerSignature
@@ -156,15 +224,37 @@ from tameshi_client.models.layer_status import LayerStatus as LayerStatus
 from tameshi_client.models.layer_type import LayerType as LayerType
 from tameshi_client.models.layer_verification import LayerVerification as LayerVerification
 from tameshi_client.models.master_signature import MasterSignature as MasterSignature
+from tameshi_client.models.node_blast_radius import NodeBlastRadius as NodeBlastRadius
+from tameshi_client.models.provenance_response import ProvenanceResponse as ProvenanceResponse
+from tameshi_client.models.provenance_response_active_artifacts_inner import ProvenanceResponseActiveArtifactsInner as ProvenanceResponseActiveArtifactsInner
+from tameshi_client.models.provenance_response_active_artifacts_inner_certification_artifact import ProvenanceResponseActiveArtifactsInnerCertificationArtifact as ProvenanceResponseActiveArtifactsInnerCertificationArtifact
+from tameshi_client.models.provenance_response_active_artifacts_inner_deployment_context import ProvenanceResponseActiveArtifactsInnerDeploymentContext as ProvenanceResponseActiveArtifactsInnerDeploymentContext
 from tameshi_client.models.result_summary import ResultSummary as ResultSummary
+from tameshi_client.models.revoke_request import RevokeRequest as RevokeRequest
+from tameshi_client.models.revoke_response import RevokeResponse as RevokeResponse
 from tameshi_client.models.run_response import RunResponse as RunResponse
+from tameshi_client.models.secret_access import SecretAccess as SecretAccess
+from tameshi_client.models.secret_attestation import SecretAttestation as SecretAttestation
+from tameshi_client.models.secret_auth_method import SecretAuthMethod as SecretAuthMethod
+from tameshi_client.models.secret_kind import SecretKind as SecretKind
+from tameshi_client.models.sign_request import SignRequest as SignRequest
 from tameshi_client.models.signature_gate import SignatureGate as SignatureGate
 from tameshi_client.models.signature_gate_spec import SignatureGateSpec as SignatureGateSpec
 from tameshi_client.models.signature_gate_status import SignatureGateStatus as SignatureGateStatus
 from tameshi_client.models.signature_metadata import SignatureMetadata as SignatureMetadata
+from tameshi_client.models.signed_root import SignedRoot as SignedRoot
+from tameshi_client.models.signing_algorithm import SigningAlgorithm as SigningAlgorithm
 from tameshi_client.models.slsa_level import SlsaLevel as SlsaLevel
 from tameshi_client.models.source_attestation import SourceAttestation as SourceAttestation
 from tameshi_client.models.stage_status import StageStatus as StageStatus
+from tameshi_client.models.storage_stats import StorageStats as StorageStats
+from tameshi_client.models.storage_tier import StorageTier as StorageTier
 from tameshi_client.models.target_resource import TargetResource as TargetResource
+from tameshi_client.models.timeline_event import TimelineEvent as TimelineEvent
+from tameshi_client.models.timeline_response import TimelineResponse as TimelineResponse
+from tameshi_client.models.verification_outcome import VerificationOutcome as VerificationOutcome
 from tameshi_client.models.verification_result import VerificationResult as VerificationResult
+from tameshi_client.models.verifier_identity import VerifierIdentity as VerifierIdentity
+from tameshi_client.models.verify_heartbeat_consistency_proof200_response import VerifyHeartbeatConsistencyProof200Response as VerifyHeartbeatConsistencyProof200Response
+from tameshi_client.models.verify_signed_root200_response import VerifySignedRoot200Response as VerifySignedRoot200Response
 
